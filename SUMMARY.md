@@ -2,10 +2,6 @@
 
 * [Getting Started](getting-started.md)
 * [Basics](basics.md)
-* [Tutorials](tutorials/README.md)
-  * [Off-Ramp Partner Playbook](tutorials/off-ramp-partner-playbook.md)
-* [Tools & SDKs](tools-and-sdks.md)
-* [Need Help](need-help.md)
 * [API Reference](reference/README.md)
   * [Health](reference/health.md)
   * [Supported Resources](reference/supported-resources.md)
@@ -15,3 +11,7 @@
   * [Off-Ramp](reference/off-ramp.md)
   * [Orders](reference/orders.md)
   * [Webhooks](reference/webhooks.md)
+* [Tutorials](tutorials/README.md)
+  * [Off-Ramp Partner Playbook](tutorials/off-ramp-partner-playbook.md)
+* [Tools & SDKs](tools-and-sdks.md)
+* [Need Help](need-help.md)
