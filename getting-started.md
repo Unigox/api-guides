@@ -24,20 +24,20 @@ All partner endpoints require `X-API-Key`.
 
 For a basic connectivity check, start with:
 
-- [Health](https://unigox.gitbook.io/unigox-api/health)
+- [Health](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/health)
 
 ## Your first successful off-ramp
 
 The standard first implementation path is:
 
-1. Create a user in [User Management](https://unigox.gitbook.io/unigox-api/user-management).
+1. Create a user in [User Management](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/user-management).
 2. Submit KYC and upload documents if required.
 3. Create payout details for that user.
-4. Get an off-ramp quote in [Off-Ramp](https://unigox.gitbook.io/unigox-api/off-ramp).
+4. Get an off-ramp quote in [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp).
 5. Initiate the order.
 6. Authorize the crypto transfer.
 7. Wait for webhook updates.
-8. Confirm fiat received in [Orders](https://unigox.gitbook.io/unigox-api/orders).
+8. Confirm fiat received in [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders).
 
 ## Where to go next
 
