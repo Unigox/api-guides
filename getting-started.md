@@ -26,14 +26,14 @@ Before sending live traffic:
 
 For schema-level request and response details, use:
 
-- [Health](https://unigox.gitbook.io/unigox-api/reference/health)
-- [Supported Resources](https://unigox.gitbook.io/unigox-api/reference/supported-resources)
-- [Exchange Pairs](https://unigox.gitbook.io/unigox-api/reference/exchange-pairs)
-- [User Management](https://unigox.gitbook.io/unigox-api/reference/user-management)
-- [On-Ramp](https://unigox.gitbook.io/unigox-api/reference/on-ramp)
-- [Off-Ramp](https://unigox.gitbook.io/unigox-api/reference/off-ramp)
-- [Orders](https://unigox.gitbook.io/unigox-api/reference/orders)
-- [Webhooks](https://unigox.gitbook.io/unigox-api/reference/webhooks)
+- [Health](reference/health.md)
+- [Supported Resources](reference/supported-resources.md)
+- [Exchange Pairs](reference/exchange-pairs.md)
+- [User Management](reference/user-management.md)
+- [On-Ramp](reference/on-ramp.md)
+- [Off-Ramp](reference/off-ramp.md)
+- [Orders](reference/orders.md)
+- [Webhooks](reference/webhooks.md)
 
 ## Your first successful off-ramp
 
@@ -50,6 +50,6 @@ Recommended sequence:
 
 ## Where to go next
 
-- Read [Basics](https://unigox.gitbook.io/unigox-api/basics) for webhook behavior, lifecycle, and production readiness.
-- Read [Off-Ramp Partner Playbook](https://unigox.gitbook.io/unigox-api/tutorials/off-ramp-partner-playbook) for the full phased integration flow.
-- Use [API Reference](https://unigox.gitbook.io/unigox-api/reference) when implementing requests.
+- Read [Basics](basics.md) for webhook behavior, lifecycle, and production readiness.
+- Read [Off-Ramp Partner Playbook](tutorials/off-ramp-partner-playbook.md) for the full phased integration flow.
+- Use [API Reference](reference/README.md) when implementing requests.

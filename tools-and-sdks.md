@@ -10,12 +10,12 @@ This page collects the practical integration assets partners usually need first.
 
 Recommended first run order:
 
-1. [Health](https://unigox.gitbook.io/unigox-api/reference/health)
-2. [Supported Resources](https://unigox.gitbook.io/unigox-api/reference/supported-resources)
-3. [User Management](https://unigox.gitbook.io/unigox-api/reference/user-management)
-4. [Off-Ramp](https://unigox.gitbook.io/unigox-api/reference/off-ramp)
-5. [Orders](https://unigox.gitbook.io/unigox-api/reference/orders)
-6. [Webhooks](https://unigox.gitbook.io/unigox-api/reference/webhooks)
+1. [Health](reference/health.md)
+2. [Supported Resources](reference/supported-resources.md)
+3. [User Management](reference/user-management.md)
+4. [Off-Ramp](reference/off-ramp.md)
+5. [Orders](reference/orders.md)
+6. [Webhooks](reference/webhooks.md)
 
 ## SDKs
 
