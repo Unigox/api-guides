@@ -1,0 +1,3358 @@
+openapi: 3.0.3
+info:
+  title: Unigox API Gateway
+  description: |
+    Build fiat on/off-ramp flows in your app with Unigox partner APIs.
+
+    This documentation contains the generated API reference only.
+    For onboarding guides, tutorials, tools, and support pages, use the guide pages in the main sidebar.
+
+    ## Welcome
+
+    Unigox is a global P2P fiat on/off-ramp gateway for B2B partners. We focus
+    on local rails coverage, fast execution, and simple partner integration.
+
+    Key partner value:
+    - coverage across Africa, LatAm, Asia, Middle East, Europe, and Australia
+    - support for local rails and institutions relevant in emerging markets
+    - compliance flows for KYC, verification, and webhook integrity
+
+    ## API Reference
+
+    Endpoint groups are ordered for partner integration flow:
+    `Health` → `Supported Resources` → `Exchange Pairs` → `User Management` → `On-Ramp` → `Off-Ramp` → `Orders` → `Webhooks`.
+  version: 1.0.0
+  contact:
+    name: Unigox API Support
+    email: support@unigox.com
+
+externalDocs:
+  description: Unigox Python SDK
+  url: https://github.com/Unigox/sdk_python/blob/main/partner_authorize_crypto_transfer_sdk.py
+
+servers:
+  - url: https://api-staging.unigox.com
+    description: Sandbox server
+  - url: https://api.unigox.com
+    description: Production server
+
+tags:
+  - name: Health
+    description: Service health and status endpoints
+    x-page-icon: hand
+  - name: Supported Resources
+    description: Discover payment supported resources including cryptocurrencies, blockchains, fiat currencies, and rails
+    x-page-icon: list-check
+  - name: Exchange Pairs
+    description: Get information about supported trading pairs
+    x-page-icon: shuffle
+  - name: User Management
+    description: Endpoints to create and manage user accounts
+    x-page-icon: user
+  - name: On-Ramp
+    description: On-ramp operations (fiat to crypto) — coming soon
+    x-page-icon: hourglass-half
+  - name: Off-Ramp
+    description: Off-ramp operations (crypto to fiat) — sell crypto and receive fiat
+    x-page-icon: arrow-right-arrow-left
+  - name: Orders
+    description: Order management, status tracking, and lifecycle actions
+    x-page-icon: receipt
+  - name: Webhooks
+    description: |
+      Real-time notifications for order status changes. When an order transitions to a new status,
+      the system sends a signed HTTP POST to your configured webhook URL.
+
+      **Event model**
+
+      A single event type is used for all order updates: `order.status.changed`.
+
+      **Payload shape**
+
+      ```json
+      {
+        "event_id": "evt_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "event_type": "order.status.changed",
+        "created_at": "2026-02-01T12:00:05Z",
+        "data": {
+          "order_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+          "status": "crypto_received",
+          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "crypto_amount": "101.500000",
+          "crypto_currency": "USDT",
+          "fiat_amount": "152880.00",
+          "fiat_currency": "NGN",
+          "provider": "p2p",
+          "payment_details_id": "987"
+        }
+      }
+      ```
+
+      **Signature verification**
+
+      Every delivery includes two headers for HMAC-SHA256 verification:
+      - `X-Unigox-Signature: sha256=<hex>` — HMAC of `"<timestamp>.<raw_body>"`
+      - `X-Unigox-Timestamp: <unix_seconds>`
+
+      Verification pseudocode:
+      ```
+      expected = HMAC-SHA256(webhook_secret, "<timestamp>.<raw_body>")
+      valid    = constant_time_compare(expected, signature_from_header)
+      ```
+
+      **Delivery guarantees**
+
+      - At-least-once delivery. Your endpoint may receive the same event more than once.
+      - De-duplicate by `event_id`.
+      - Respond with any 2xx status within 10 seconds to acknowledge receipt.
+
+      **Retry policy**
+
+      Failed deliveries (non-2xx or timeout) are retried with exponential backoff:
+      1 min → 5 min → 15 min → 1 h → 6 h → 12 h → 24 h (max 10 attempts over ~3.5 days).
+
+      **Partner-facing statuses**
+
+      | Status | Description |
+      |---|---|
+      | `created` | Order created |
+      | `awaiting_liquidity_provider` | Waiting for vendor match |
+      | `awaiting_crypto_transfer_authorization` | Partner must authorize crypto transfer |
+      | `crypto_received` | Crypto received in escrow |
+      | `fiat_payment_started` | Buyer submitted fiat payment proof |
+      | `fiat_payment_review_started` | Payment proof under admin review |
+      | `awaiting_fiat_received_confirmation` | Proof approved, awaiting seller confirmation |
+      | `completed` | Order completed, crypto released |
+      | `cancelled` | Order cancelled or payment declined |
+      | `failed` | Escrow error |
+      | `dispute_started` | Dispute opened |
+    x-page-icon: bell
+
+paths:
+  # ============================================
+  # 1. HEALTH CHECK
+  # ============================================
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the API gateway
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: api
+                  time:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T12:00:00Z"
+
+  # ============================================
+  # 2. DISCOVERY - CAPABILITIES
+  # ============================================
+  # Step 1: Discover supported cryptocurrencies
+  /api/v1/supported/crypto-currencies:
+    get:
+      tags:
+        - Supported Resources
+      summary: Cryptocurrencies
+      description: Get a list of all supported cryptocurrencies with their blockchains and contract addresses. Useful for discovering available crypto assets for trading.
+      operationId: getCryptoCurrencies
+      responses:
+        '200':
+          description: Successfully retrieved cryptocurrencies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCurrenciesResponse'
+
+  # Step 2: Discover supported blockchains
+  /api/v1/supported/blockchains:
+    get:
+      tags:
+        - Supported Resources
+      summary: Blockchains
+      description: Get a list of all supported blockchains with their associated cryptocurrencies. Useful for discovering which blockchains are available and what tokens they support.
+      operationId: getBlockchains
+      responses:
+        '200':
+          description: Successfully retrieved blockchains
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockchainsResponse'
+
+  # Step 3: Discover supported fiat currencies
+  /api/v1/supported/fiat-currencies:
+    get:
+      tags:
+        - Supported Resources
+      summary: Fiat currencies
+      description: Get a list of all supported fiat currencies with their onramp/offramp capabilities. Useful for discovering available fiat currencies for onramp and offramp operations.
+      operationId: getFiatCurrencies
+      responses:
+        '200':
+          description: Successfully retrieved fiat currencies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FiatCurrenciesResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Step 4: Discover payment rails for a country/currency
+  /api/v1/supported/payment-rails:
+    get:
+      tags:
+        - Supported Resources
+      summary: Payment rails
+      description: Get payment rail capabilities for a specific country, currency, and direction (onramp/offramp). Returns available payment rails with their required fields and supported currencies.
+      operationId: getPaymentRails
+      parameters:
+        - name: country
+          in: query
+          description: ISO 2-letter country code (e.g., NG, US, IN)
+          schema:
+            type: string
+            example: NG
+        - name: currency
+          in: query
+          description: Fiat currency code (e.g., NGN, USD, EUR). Either country or currency must be provided.
+          schema:
+            type: string
+            example: NGN
+        - name: direction
+          in: query
+          required: true
+          description: Transaction direction - either "onramp" (fiat to crypto) or "offramp" (crypto to fiat)
+          schema:
+            type: string
+            enum: [onramp, offramp]
+            example: offramp
+      responses:
+        '200':
+          description: Successfully retrieved payment capabilities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCapabilityResponse'
+              example:
+                success: true
+                data:
+                  country: NG
+                  currency: NGN
+                  direction: offramp
+                  rails:
+                    - slug: nip-nigeria
+                      name: NIP Nigeria (NIBSS Instant Payments)
+                      institution_required: false
+                      institution_lookup_key: null
+                      currencies:
+                        - NGN
+                      settlement:
+                        speed: INSTANT
+                        typical_minutes: 2
+                        note: null
+                      limits: null
+                      fields:
+                        - key: account_number
+                          label: Account Number
+                          type: text
+                          required: true
+                          pattern: "^\\d{10}$"
+                          placeholder: "10-digit account number"
+                          lookup: false
+                        - key: full_name
+                          label: Full Name
+                          type: text
+                          required: false
+                          pattern: "^[a-zA-ZÀ-ÿ\\u0100-\\u017F\\u0400-\\u04FF\\s'-]{2,50}$"
+                          placeholder: "Enter full name"
+                  links:
+                    search_institutions: /api/v1/supported/institutions
+        '400':
+          description: Bad request - missing required parameters or invalid values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Step 5: Discover institutions (banks) for a payment rail (used when institution_required: true)
+  /api/v1/supported/institutions:
+    get:
+      tags:
+        - Supported Resources
+      summary: Institutions (banks) for a payment rail
+      description: Get a list of financial institutions (banks) available for a specific payment rail. Useful for populating bank selection dropdowns when institution selection is required.
+      operationId: getInstitutions
+      parameters:
+        - name: rail
+          in: query
+          required: true
+          description: Payment rail slug (e.g., iban-sepa, pix-brazil, cvu-cbu)
+          schema:
+            type: string
+            example: iban-sepa
+        - name: institution_id
+          in: query
+          description: Optional institution ID to filter by specific institution
+          schema:
+            type: string
+            example: revolut
+        - name: country
+          in: query
+          description: ISO 2-letter country code for filtering
+          schema:
+            type: string
+            example: IN
+        - name: currency
+          in: query
+          description: ISO 3-letter currency code for filtering
+          schema:
+            type: string
+            example: INR
+        - name: search
+          in: query
+          description: Free-text search by institution name
+          schema:
+            type: string
+            example: hdfc
+        - name: code
+          in: query
+          description: Lookup by specific code such as IFSC or sort code
+          schema:
+            type: string
+            example: HDFC0001234
+        - name: limit
+          in: query
+          description: Maximum number of results to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+        - name: offset
+          in: query
+          description: Number of results to skip for pagination
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+            example: 0
+      responses:
+        '200':
+          description: Successfully retrieved institutions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstitutionsResponse'
+              example:
+                success: true
+                data:
+                  institutions:
+                    - id: wise
+                      name: Wise
+                      type: BANK
+                      code: ""
+                      branch: null
+                      supported_rails:
+                        - iban-sepa
+                        - wise-network
+                  pagination:
+                    total: 1
+                    limit: 20
+                    offset: 0
+        '400':
+          description: Bad request - invalid rail or other validation errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================
+  # 3. EXCHANGE PAIRS
+  # ============================================
+  /api/v1/supported-exchange-pairs:
+    get:
+      tags:
+        - Exchange Pairs
+      summary: Supported exchange pairs
+      description: Get a list of all supported cryptocurrency and fiat currency exchange pairs. Shows which currency combinations can be traded.
+      operationId: getSupportedPairs
+      responses:
+        '200':
+          description: Successfully retrieved supported pairs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportedPairsResponse'
+              example:
+                success: true
+                data:
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: ARS
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: ARS
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: AUD
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: AUD
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: CAD
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: CAD
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: EUR
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: EUR
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GBP
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GBP
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GEL
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GEL
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GHS
+                    type: BUY
+
+  # ============================================
+  # 5. ACCOUNT MANAGEMENT
+  # ============================================
+  # 5. PARTNER AUTHENTICATION
+  # ============================================
+  /api/v1/partner/verify-auth:
+    get:
+      tags:
+        - User Management
+      summary: Verify API key authentication
+      description: |
+        Verifies that the provided API key is valid and authentication is working correctly.
+      operationId: verifyAuth
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: "Authentication successful"
+                          authenticated:
+                            type: boolean
+                            example: true
+              example:
+                success: true
+                data:
+                  message: "Authentication successful"
+                  authenticated: true
+        '401':
+          description: Unauthorized - invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data:
+                  error_key: "unauthorized"
+
+  # ============================================
+  # 6. PARTNER USER MANAGEMENT
+  # ============================================
+  # Step 1: Create or get partner user
+  /api/v1/partner/users:
+    post:
+      tags:
+        - User Management
+      summary: Create or get partner user
+      description: Creates a new user relation or returns existing if already created. Returns user_ref (same as input) for subsequent API calls. Partners can only access their own users.
+      operationId: createPartnerUser
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_ref, email]
+              properties:
+                user_ref:
+                  type: string
+                  description: Partner's unique user ID (usually primary key or UUID)
+                  example: "partner_unique_id_123"
+                email:
+                  type: string
+                  format: email
+                  description: User's email address
+                  example: user@example.com
+      responses:
+        '201':
+          description: Successfully created user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUserResponse'
+        '200':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUserResponse'
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized (missing or invalid X-API-Key)
+        '500':
+          description: Internal Server Error
+
+  # Step 2: Get partner user by id
+  /api/v1/partner/users/{id}:
+    get:
+      tags:
+        - User Management
+      summary: Partner user by ID
+      description: Get user details including KYC status and payment profiles using the id (public_uuid) returned during user creation. Partners can only access their own users.
+      operationId: getPartnerUser
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetUserResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+
+  # ============================================
+  # 7. PARTNER KYC VERIFICATION FLOW
+  # ============================================
+  # Step 3: Submit KYC data for a partner user
+  /api/v1/partner/users/{id}/kyc-submissions:
+    post:
+      tags:
+        - User Management
+      summary: Submit KYC data for a partner user
+      description: |
+        Submit KYC (Know Your Customer) data for a partner user. Supports three methods:
+        - direct_data: Partner submits PII data directly, Unigox initiates verification
+        - external_token: Partner provides external KYC provider token (e.g., SumSub)
+        - handoff: Unigox handles KYC verification and generates verification URL
+      operationId: submitKYC
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/KYCSubmitDirectData'
+                - $ref: '#/components/schemas/KYCSubmitExternalToken'
+                - $ref: '#/components/schemas/KYCSubmitHandoff'
+            examples:
+              direct_data:
+                summary: Direct data submission
+                value:
+                  method: direct_data
+                  data:
+                    pii:
+                      first_name: John
+                      last_name: Doe
+                      dob: "1990-01-01"
+                      country_code: NG
+                      address: "123 Street Name, Lagos"
+                      postal_code: "100001"
+              external_token:
+                summary: External token (SumSub)
+                value:
+                  method: external_token
+                  data:
+                    provider: sumsub
+                    token: "sumsub_external_session_id"
+              handoff:
+                summary: Handoff to Unigox
+                value:
+                  method: handoff
+                  data:
+                    pii:
+                      first_name: John
+                      last_name: Doe
+                      country_code: NG
+      responses:
+        '200':
+          description: KYC submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KYCSubmitResponse'
+        '400':
+          description: Bad Request - invalid method or missing required data
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+        '500':
+          description: Internal Server Error
+
+  # Step 4: Upload KYC document for a partner user (for direct_data method)
+  /api/v1/partner/users/{id}/kyc/documents:
+    post:
+      tags:
+        - User Management
+      summary: Upload KYC document for a partner user
+      description: |
+        Upload a document (ID, passport, proof of address, etc.) for a partner user's KYC verification.
+        Used after submitting KYC with direct_data method to provide supporting documents.
+        Requires partner API key authentication and multipart/form-data.
+        
+        **Automatic Verification:** After uploading all required documents (selfie + identity_front),
+        verification starts automatically. This simplifies partner integration.
+      operationId: uploadPartnerKYCDocument
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document, document_type]
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: Document file to upload (image or PDF)
+                document_type:
+                  type: string
+                  required: true
+                  description: |
+                    Type of document being uploaded. Supported document types:
+                    
+                    **Required documents:**
+                    - `selfie` - Selfie photo for liveness verification (required)
+                    - `identity_front` - Front side of identity document (required)
+                    
+                    **Optional documents:**
+                    - `identity_back` - Back side of identity document
+                    
+                    **Generic identity document types:**
+                    - `identity_front` - Front side of any identity document
+                    - `identity_back` - Back side of any identity document
+                    
+                    **Passport:**
+                    - `passport_front` - Front page of passport
+                    - `passport` - Alias for passport_front
+                    
+                    **National ID:**
+                    - `national_id_front` - Front side of national ID
+                    - `national_id_back` - Back side of national ID
+                    - `national_id` - Alias for national_id_front
+                    
+                    **Driver License:**
+                    - `driver_license_front` - Front side of driver license
+                    - `driver_license_back` - Back side of driver license
+                    - `driver_license` - Alias for driver_license_front
+                    
+                    **Voter ID:**
+                    - `voter_id_front` - Front side of voter ID card
+                    - `voter_id_back` - Back side of voter ID card
+                    - `voter_id` - Alias for voter_id_front
+                    
+                    **Resident Card:**
+                    - `resident_card_front` - Front side of resident card
+                    - `resident_card_back` - Back side of resident card
+                    - `resident_card` - Alias for resident_card_front
+                    
+                    **ID Card:**
+                    - `id_card_front` - Front side of ID card
+                    - `id_card_back` - Back side of ID card
+                    - `id_card` - Alias for id_card_front
+                    
+                    **Country-specific documents:**
+                    - `ghana_card_front`, `ghana_card_back`, `ghana_card` - Ghana Card
+                    - `ghana_ssnit_card_front`, `ghana_ssnit_card_back`, `ghana_ssnit_card` - Ghana SSNIT Card
+                    - `kenya_alien_card_front`, `kenya_alien_card_back`, `kenya_alien_card` - Kenya Alien Card
+                    - `green_book_front`, `green_book_back`, `green_book` - Green Book (South Africa)
+                    - `tax_id_front`, `tax_id_back`, `tax_id` - Tax ID (e.g., India PAN Card)
+                    - `colombia_ppt_front`, `colombia_ppt_back`, `colombia_ppt` - Colombia PPT (Permiso por Protección Temporal)
+                    
+                    **Note:** Verification starts automatically after uploading all required documents (selfie + identity_front).
+                  enum:
+                    - identity_front
+                    - identity_back
+                    - passport_front
+                    - passport
+                    - national_id_front
+                    - national_id_back
+                    - national_id
+                    - driver_license_front
+                    - driver_license_back
+                    - driver_license
+                    - voter_id_front
+                    - voter_id_back
+                    - voter_id
+                    - resident_card_front
+                    - resident_card_back
+                    - resident_card
+                    - id_card_front
+                    - id_card_back
+                    - id_card
+                    - ghana_card_front
+                    - ghana_card_back
+                    - ghana_card
+                    - ghana_ssnit_card_front
+                    - ghana_ssnit_card_back
+                    - ghana_ssnit_card
+                    - kenya_alien_card_front
+                    - kenya_alien_card_back
+                    - kenya_alien_card
+                    - green_book_front
+                    - green_book_back
+                    - green_book
+                    - tax_id_front
+                    - tax_id_back
+                    - tax_id
+                    - colombia_ppt_front
+                    - colombia_ppt_back
+                    - colombia_ppt
+                    - selfie
+                  example: "identity_front"
+            encoding:
+              document:
+                contentType: image/jpeg, image/png, application/pdf
+      responses:
+        '200':
+          description: Document uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      document_id:
+                        type: string
+                        description: AiPrise document UUID
+                        example: "f1d5f922-bee2-4c7e-88ef-18022958c4c2"
+                      document_type:
+                        type: string
+                        example: "identity_front"
+                      file_name:
+                        type: string
+                        example: "passport_photo.jpg"
+                      message:
+                        type: string
+                        description: |
+                          Success message. If all required documents are uploaded, message indicates
+                          that verification started automatically.
+                        example: "Document uploaded successfully"
+                      verification_session_id:
+                        type: string
+                        description: |
+                          Verification session ID (only present if verification started automatically
+                          after uploading the last required document: selfie + identity_front)
+                        example: "4fd410c9-ba9b-46cf-a4f0-132204a9a564"
+                      verification_status:
+                        type: string
+                        enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED]
+                        description: |
+                          Verification status (only present if verification started automatically
+                          after uploading the last required document: selfie + identity_front)
+                        example: "IN_PROGRESS"
+        '400':
+          description: Bad Request - invalid file type, missing document, or user not ready for uploads
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found or no active KYC session
+        '500':
+          description: Internal Server Error
+
+  # Step 5: Get verification status for a partner user (check KYC status)
+  /api/v1/partner/users/{id}/verification-status:
+    get:
+      tags:
+        - User Management
+      summary: Verification status for a partner user
+      description: |
+        Get the current verification status for a partner user. This endpoint checks the verification status
+        with the KYC provider (e.g., AiPrise) and returns the current status, verification URL (if available),
+        and other relevant information. Optionally, you can provide a verification_id to check a specific
+        verification session.
+      operationId: getVerificationStatus
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: verification_id
+          in: query
+          required: false
+          description: Optional verification session ID. If not provided, the latest verification session for the user will be checked.
+          schema:
+            type: string
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      responses:
+        '200':
+          description: Successfully retrieved verification status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationStatusResponse'
+              example:
+                success: true
+                data:
+                  status: "IN_PROGRESS"
+                  verification_url: "https://verify-sandbox.aiprise.com/?verification_session_id=abc123"
+                  verification_seconds_left: 3600
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+        '500':
+          description: Internal Server Error
+
+  # ============================================
+  # 6. PARTNER PAYMENT DETAILS MANAGEMENT
+  # ============================================
+  # Step 6: Create payment details for a partner user (for offramp operations)
+  /api/v1/partner/users/{id}/payment-details:
+    post:
+      tags:
+        - User Management
+      summary: Create payment details for a partner user
+      description: |
+        Create payment details (beneficiary details) for a partner user. Used for offramp operations where crypto is converted to fiat and sent to the user's payment account. Partners can only access their own users.
+      operationId: createPaymentDetails
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentDetailsRequest'
+            examples:
+              iban-sepa:
+                summary: SEPA payment details (Europe)
+                value:
+                  currency: EUR
+                  rail: iban-sepa
+                  institution_id: wise
+                  country_code: DE
+                  details:
+                    full_name: "John Doe"
+                    iban: DE89370400440532013000
+              cvu-argentina:
+                summary: CVU payment details (Argentina - Mobile Money/Wallets)
+                value:
+                  currency: ARS
+                  rail: cvu-cbu
+                  institution_id: uala
+                  country_code: AR
+                  details:
+                    cvu: "0000003100000001234567"
+                    alias: "john.doe"
+                    phone_number: "+541112345678"
+              cbu-argentina:
+                summary: CBU payment details (Argentina - Traditional/Digital Banks)
+                value:
+                  currency: ARS
+                  rail: cvu-cbu
+                  institution_id: banco-santander-argentina
+                  country_code: AR
+                  details:
+                    cbu: "0000003100000001234567"
+                    alias: "john.doe"
+                    phone_number: "+541112345678"
+      responses:
+        '201':
+          description: Payment details created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePaymentDetailsResponse'
+        '400':
+          description: Bad Request - invalid payment details or unsupported combination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data:
+                  error_key: "invalid_payment_details"
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+        '500':
+          description: Internal Server Error
+
+    # Step 7: Get all payment details for a partner user
+    get:
+      tags:
+        - User Management
+      summary: Payment details for a partner user
+      description: Retrieve all payment details (payment profiles) for a partner user. Returns all saved beneficiary details that can be used for offramp operations. Partners can only access their own users.
+      operationId: getPaymentDetails
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Successfully retrieved payment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPaymentDetailsResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+        '500':
+          description: Internal Server Error
+
+    # Step 8: Delete payment details for a partner user
+    delete:
+      tags:
+        - User Management
+      summary: Delete payment details for a partner user
+      description: Delete a specific payment details (payment profile) for a partner user by its ID. Partners can only access their own users.
+      operationId: deletePaymentDetails
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: payment_details_id
+          in: path
+          required: true
+          description: Payment details ID to delete
+          schema:
+            type: string
+          example: "987"
+      responses:
+        '200':
+          description: Payment details deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Payment details deleted successfully"
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found or payment details not found
+        '409':
+          description: Conflict - payment details linked to active offers
+        '500':
+          description: Internal Server Error
+
+  # ============================================
+  # 9. ON-RAMP OPERATIONS (Implemented Soon)
+  # ============================================
+  /api/v1/partner/onramp/quote:
+    post:
+      tags:
+        - On-Ramp
+      summary: Get price estimate
+      description: "Get price estimate for on-ramp operation (fiat to crypto). Status: Implemented soon"
+      operationId: getOnRampQuote
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Price estimate retrieved successfully
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  /api/v1/partner/onramp/initiate:
+    post:
+      tags:
+        - On-Ramp
+      summary: Start on-ramp order
+      description: "Initiate a new on-ramp order (fiat to crypto). Status: Implemented soon"
+      operationId: initiateOnRamp
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '201':
+          description: On-ramp order created successfully
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  # ============================================
+  # 10. OFF-RAMP OPERATIONS
+  # ============================================
+  /api/v1/partner/offramp/estimate:
+    post:
+      tags:
+        - Off-Ramp
+      summary: Get off-ramp price estimate
+      description: |
+        Get indicative off-ramp pricing (crypto to fiat) without creating a quote.
+        This endpoint is lightweight and does not reserve liquidity.
+
+        Use this when you need quick pricing discovery before calling `/partner/offramp/quote`.
+        Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
+        This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote.
+      operationId: getOffRampEstimate
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerPriceEstimateRequest'
+            example:
+              crypto_currency: USDT
+              fiat_currency: NGN
+              crypto_amount: "100.00"
+              payment_method_slug: access-bank
+              payment_network_slug: nibss
+              country_code: NG
+              provider_scope: all
+      responses:
+        '200':
+          description: Estimate retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerPriceEstimateResponse'
+              example:
+                success: true
+                data:
+                  rate: "1530.12"
+                  crypto_amount: "101.50"
+                  fiat_amount: "152880.00"
+                  fee_breakdown:
+                    platform_fee: "1.50"
+                    platform_fee_pct: 1.5
+                    partner_fee: "0.00"
+                    partner_fee_pct: 0
+                    total_fee: "1.50"
+                  payment_method_slug: access-bank
+                  payment_network_slug: nibss
+                  provider_scope: all
+                  is_indicative: true
+        '400':
+          description: |
+            Bad request — invalid parameters, missing required fields, 
+            unsupported cryptocurrency, or invalid provider_scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                invalid_amount:
+                  summary: Invalid amount configuration
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "exactly one of crypto_amount or fiat_amount must be provided"
+                unsupported_crypto:
+                  summary: Unsupported cryptocurrency
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "unsupported cryptocurrency: BTC"
+                invalid_provider_scope:
+                  summary: Invalid provider_scope value
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "invalid provider_scope: must be all, licensed_only, or p2p_only"
+        '401':
+          description: Unauthorized - missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAUTHORIZED
+                  message: "missing X-API-Key header"
+        '409':
+          description: No offers available for the requested pair/amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: NO_OFFERS_AVAILABLE
+                  message: "no matching offers found for the provided criteria"
+        '500':
+          description: Internal Server Error
+
+  /api/v1/partner/offramp/quote:
+    post:
+      tags:
+        - Off-Ramp
+      summary: Get off-ramp quote
+      description: |
+        Get a price quote for an off-ramp operation (crypto to fiat). Returns the exchange rate,
+        amounts, and a quote ID that can be used to initiate the order. Quotes expire after 60 seconds.
+
+        The `user_id` is the internal integer user ID returned by `POST /partner/users` (in the `internal_id` field).
+        The `payment_details_id` is the ID of a previously created payment profile for the user.
+
+        **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
+        `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
+        via dashboard in a future release), and `total_fee` (sum of both).
+      operationId: getOffRampQuote
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerQuoteRequest'
+            example:
+              user_id: 12345
+              payment_details_id: 987
+              crypto_currency: USDT
+              crypto_amount: "100.00"
+              fiat_currency: NGN
+              rail: Bank Transfer
+              route: Instant Transfer
+              provider_scope: all
+              slippage_tolerance:
+                type: percent
+                value: 1.5
+      responses:
+        '200':
+          description: Quote retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerQuoteResponse'
+              example:
+                success: true
+                data:
+                  quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  rate: "1530.12"
+                  crypto_amount: "101.50"
+                  fiat_amount: "152880.00"
+                  fee_breakdown:
+                    platform_fee: "1.50"
+                    platform_fee_pct: 1.5
+                    partner_fee: "0.00"
+                    partner_fee_pct: 0
+                    total_fee: "1.50"
+                  payment_details_id: 987
+                  payment_method_id: 5
+                  payment_network_id: 12
+                  expires_at: "2026-02-01T12:00:30Z"
+        '400':
+          description: Bad request — invalid parameters or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "Missing required field: crypto_currency"
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAUTHORIZED
+                  message: "Invalid or missing API key"
+        '404':
+          description: User or payment details not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_PAYMENT_DETAILS
+                  message: "Payment details not found or do not belong to user"
+        '409':
+          description: No offers available for the requested pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: NO_OFFERS_AVAILABLE
+                  message: "No offers available for USDT/NGN"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/offramp/initiate:
+    post:
+      tags:
+        - Off-Ramp
+      summary: Initiate off-ramp order
+      description: |
+        Initiate an off-ramp order using a previously obtained quote. The quote must still be active
+        (not expired or already used). The system refreshes the price and checks slippage tolerance
+        before creating the order.
+
+        If the price has moved beyond the slippage tolerance, a `PRICE_CHANGED_REQUOTE` error is returned
+        with details about the old and new rates, so the partner can request a new quote.
+
+        On success, returns the created order with status `awaiting_liquidity_provider`.
+      operationId: initiateOffRamp
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerInitiateRequest'
+            example:
+              quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      responses:
+        '201':
+          description: Off-ramp order created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerInitiateResponse'
+              example:
+                success: true
+                data:
+                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                  status: awaiting_liquidity_provider
+                  quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  amounts:
+                    crypto_amount: "101.50"
+                    fiat_amount: "152880.00"
+                    crypto_currency: USDT
+                    fiat_currency: NGN
+                    rate: "1530.12"
+                  fee_breakdown:
+                    platform_fee: "1.50"
+                    platform_fee_pct: 1.5
+                    partner_fee: "0.00"
+                    partner_fee_pct: 0
+                    total_fee: "1.50"
+                  timeline:
+                    - status: awaiting_liquidity_provider
+                      timestamp: "2026-02-01T12:00:05Z"
+                      description: "Order created and awaiting liquidity provider"
+                  created_at: "2026-02-01T12:00:05Z"
+        '400':
+          description: Bad request — missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: QUOTE_NOT_FOUND
+                  message: "Quote not found"
+        '409':
+          description: Quote expired, already used, or slippage exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                quote_expired:
+                  summary: Quote has expired
+                  value:
+                    success: false
+                    error:
+                      code: QUOTE_EXPIRED
+                      message: "Quote has expired, please request a new quote"
+                quote_already_used:
+                  summary: Quote already consumed
+                  value:
+                    success: false
+                    error:
+                      code: QUOTE_ALREADY_USED
+                      message: "Quote has already been used"
+                slippage_exceeded:
+                  summary: Price changed beyond tolerance
+                  value:
+                    success: false
+                    error:
+                      code: PRICE_CHANGED_REQUOTE
+                      message: "Price has changed beyond slippage tolerance, please request a new quote"
+                      details:
+                        quoted_rate: 1530.12
+                        current_rate: 1545.00
+                        fiat_difference: 1510.38
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  # ============================================
+  # 11. ORDER MANAGEMENT
+  # ============================================
+  /api/v1/partner/orders/{order_id}:
+    get:
+      tags:
+        - Orders
+      summary: Order details
+      description: |
+        Get the current status, amounts, and full timeline for a specific order.
+        The `next_action` field indicates what the partner should do next (e.g., `authorize_crypto_transfer`).
+        The `allowed_actions` array lists all API actions available for the current status (e.g., `["authorize-crypto-transfer", "cancel"]`).
+        Each entry corresponds to a `POST /api/v1/partner/orders/{order_id}/{action}` endpoint.
+
+        **Status mapping:** Internal trade statuses are mapped to simplified partner-facing statuses.
+        See the `PartnerOrderStatus` enum for all possible values.
+      operationId: getOrder
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID returned by the initiate endpoint
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      responses:
+        '200':
+          description: Order retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerOrderResponse'
+              example:
+                success: true
+                data:
+                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                  status: awaiting_crypto_transfer_authorization
+                  next_action: authorize_crypto_transfer
+                  allowed_actions: ["authorize-crypto-transfer", "cancel"]
+                  crypto_transfer_authorization_seconds_left: 1720
+                  amounts:
+                    crypto_amount: "101.50"
+                    fiat_amount: "152880.00"
+                    crypto_currency: USDT
+                    fiat_currency: NGN
+                    rate: "1530.12"
+                  fee_breakdown:
+                    platform_fee: "1.50"
+                    platform_fee_pct: 1.5
+                    partner_fee: "0.00"
+                    partner_fee_pct: 0
+                    total_fee: "1.50"
+                  timeline:
+                    - status: created
+                      timestamp: "2026-02-01T12:00:05Z"
+                      description: "Order created"
+                    - status: awaiting_crypto_transfer_authorization
+                      timestamp: "2026-02-01T12:00:06Z"
+                      description: "Awaiting crypto transfer authorization"
+                  created_at: "2026-02-01T12:00:05Z"
+                  updated_at: "2026-02-01T12:00:06Z"
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Order not found or does not belong to this partner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: "Order not found"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/transfer-authorization-parameters:
+    get:
+      tags:
+        - SDK
+        - Orders
+      summary: Get transfer authorization parameters
+      description: |
+        Returns pre-filled parameters required to build and sign the EIP-712 forward request.
+        Use this endpoint first, then sign locally and send the signature to
+        `/api/v1/partner/orders/{order_id}/authorize-crypto-transfer`.
+      operationId: getTransferAuthorizationParameters
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transfer authorization parameters returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          order_id:
+                            type: string
+                            format: uuid
+                          network_preset:
+                            type: string
+                          chain_id:
+                            type: string
+                          rpc_url:
+                            type: string
+                            description: JSON-RPC URL for the target chain
+                          token_address:
+                            type: string
+                          forwarder_address:
+                            type: string
+                          recipient_address:
+                            type: string
+                            description: Escrow address to receive the crypto
+                          sender_address:
+                            type: string
+                            description: Partner wallet address (must match the signing private key)
+                          amount_atomic:
+                            type: string
+                          amount_human:
+                            type: string
+                          crypto_currency:
+                            type: string
+                          crypto_decimals:
+                            type: integer
+                          recommended_gas_limit:
+                            type: string
+                          recommended_ttl_seconds:
+                            type: integer
+                          transfer_data:
+                            type: string
+                            description: Pre-encoded ERC20 transfer(address,uint256) calldata (hex with 0x prefix)
+                          forwarder_nonce:
+                            type: string
+                            description: Current forwarder nonce for the sender address (used in EIP-712 signing)
+                          authorization_path:
+                            type: string
+        '401':
+          description: Unauthorized
+        '404':
+          description: Order not found
+
+  /api/v1/partner/orders/{order_id}/authorize-crypto-transfer:
+    post:
+      tags:
+        - SDK
+        - Orders
+      summary: Authorize crypto transfer
+      description: |
+        Submit signed EIP-712 `forward_request` to authorize transfer of order crypto to escrow.
+
+        **Security note:** Your private key is never sent to the API. The SDK uses it locally to
+        construct and sign the EIP-712 ForwardRequest on your machine. Only the resulting signature
+        and the unsigned forward_request fields are submitted. You can verify this by reading the
+        SDK source code.
+
+        Recommended: use SDK helper files (only 4 arguments needed):
+        - Python: `https://github.com/Unigox/sdk_python/blob/main/partner_authorize_crypto_transfer_sdk.py`
+        - JavaScript: `https://github.com/Unigox/sdk_javascript/blob/main/partner_authorize_crypto_transfer_sdk.js`
+
+        The SDK automatically fetches all required parameters (chain, token, forwarder, escrow
+        address, RPC URL) from the `transfer-authorization-parameters` endpoint.
+
+        SDK helper options:
+        - End-to-end one call: `authorize_crypto_transfer(...)` / `authorizeCryptoTransfer(...)`
+        - Build unsigned request only: `build_forward_request(...)` / `buildForwardRequest(...)`
+        - Sign existing request only: `sign_forward_request(...)` / `signForwardRequest(...)`
+        - Build full request body `{forward_request, signature}`:
+          `build_authorize_crypto_transfer_payload(...)` / `buildAuthorizeCryptoTransferPayload(...)`
+
+        Manual implementation: call `GET /transfer-authorization-parameters` first, then build
+        the EIP-712 typed data and sign with your partner wallet private key locally.
+      operationId: authorizeCryptoTransfer
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - forward_request
+                - signature
+              properties:
+                forward_request:
+                  type: object
+                  description: Signed EIP-712 ForwardRequest payload
+                signature:
+                  type: string
+                  description: Hex-encoded signature from partner wallet
+            example:
+              forward_request:
+                from: "0x674b16054290b4f06D7Ba8e3Ac379E3B0a359a16"
+                to: "0x2222222222222222222222222222222222222222"
+                value: "0"
+                gas: "500000"
+                nonce: "0"
+                deadline: "1760000000"
+                data: "0xa9059cbb000000000000000000000000..."
+              signature: "0xabc123..."
+      responses:
+        '200':
+          description: Crypto authorization accepted
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '404':
+          description: Order not found
+        '409':
+          description: Order is not in the correct status for crypto authorization
+        '422':
+          description: |
+            Insufficient token balance — the partner wallet does not hold enough
+            tokens to fund the escrow. Top up the wallet and retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INSUFFICIENT_BALANCE
+                  message: "insufficient USDC balance: wallet 0x... has 1928961 but 3000000 is required"
+        '502':
+          description: Transactor service error (e.g. on-chain simulation failed)
+
+  /api/v1/partner/orders/{order_id}/confirm-fiat-received:
+    post:
+      tags:
+        - Orders
+      summary: Confirm fiat received
+      description: |
+        Confirm that fiat payment has been received by the user for an off-ramp order.
+        This triggers the crypto release from escrow to the buyer.
+      operationId: confirmFiatReceived
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      responses:
+        '200':
+          description: Fiat receipt confirmed successfully
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '404':
+          description: Order not found
+
+  /api/v1/partner/orders/{order_id}/cancel:
+    post:
+      tags:
+        - Orders
+      summary: Cancel order
+      description: |
+        Cancel an order if cancellation is allowed at the current status.
+        Check `allowed_actions` on the order response — `cancel` is available when cancellation is permitted.
+      operationId: cancelOrder
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      responses:
+        '200':
+          description: Order cancelled successfully
+        '400':
+          description: Bad Request — cancellation not allowed at current status
+        '401':
+          description: Unauthorized
+        '404':
+          description: Order not found
+
+  /api/v1/partner/orders:
+    get:
+      tags:
+        - Orders
+      summary: List orders
+      description: |
+        Get a paginated list of orders with optional filtering by status.
+        Each order includes `allowed_actions` indicating which API actions are available.
+      operationId: listOrders
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by partner order status
+          schema:
+            type: string
+            enum: [created, awaiting_liquidity_provider, awaiting_crypto_transfer_authorization, crypto_transfer_authorization_pending, crypto_received, awaiting_fiat_received_confirmation, fiat_received_confirmed, crypto_release_pending, completed, cancelled, failed, price_changed_requote_needed]
+          example: "completed"
+        - name: page
+          in: query
+          required: false
+          description: Page number (default 1)
+          schema:
+            type: integer
+            default: 1
+          example: 1
+        - name: limit
+          in: query
+          required: false
+          description: Results per page (default 20, max 100)
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          example: 20
+      responses:
+        '200':
+          description: Orders retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          orders:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/PartnerOrderResponse'
+                          pagination:
+                            type: object
+                            properties:
+                              page:
+                                type: integer
+                                example: 1
+                              limit:
+                                type: integer
+                                example: 20
+                              total_count:
+                                type: integer
+                                example: 42
+                              total_pages:
+                                type: integer
+                                example: 3
+              example:
+                success: true
+                data:
+                  orders:
+                    - order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                      status: completed
+                      next_action: null
+                      allowed_actions: []
+                      amounts:
+                        crypto_amount: "101.50"
+                        fiat_amount: "152880.00"
+                        crypto_currency: USDT
+                        fiat_currency: NGN
+                        rate: "1530.12"
+                      fee_breakdown:
+                        platform_fee: "1.50"
+                        platform_fee_pct: 1.5
+                        partner_fee: "0.00"
+                        partner_fee_pct: 0
+                        total_fee: "1.50"
+                      timeline:
+                        - status: created
+                          timestamp: "2026-02-01T12:00:05Z"
+                          description: "Order created"
+                        - status: completed
+                          timestamp: "2026-02-01T12:30:00Z"
+                          description: "Order completed"
+                      created_at: "2026-02-01T12:00:05Z"
+                      updated_at: "2026-02-01T12:30:00Z"
+                  pagination:
+                    page: 1
+                    limit: 20
+                    total_count: 42
+                    total_pages: 3
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  # ============================================
+  # 12. WEBHOOKS
+  # ============================================
+  /api/v1/partner/webhooks:
+    post:
+      tags:
+        - Webhooks
+      summary: Register webhook URL
+      description: |
+        Register or update the webhook URL for your partner account. The URL must use HTTPS.
+        Once registered, the webhook is automatically enabled and will start receiving order status events.
+      operationId: registerWebhook
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterWebhookRequest'
+            example:
+              url: "https://partner.example.com/webhooks/unigox"
+      responses:
+        '200':
+          description: Webhook registered successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookConfigResponse'
+              example:
+                success: true
+                data:
+                  url: "https://partner.example.com/webhooks/unigox"
+                  enabled: true
+        '400':
+          description: Bad request — missing or invalid URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                url_required:
+                  summary: URL is required
+                  value:
+                    success: false
+                    data:
+                      error_key: "webhook URL is required"
+                url_not_https:
+                  summary: URL must use HTTPS
+                  value:
+                    success: false
+                    data:
+                      error_key: "webhook URL must use HTTPS"
+        '401':
+          description: Unauthorized — invalid or missing API key
+
+    get:
+      tags:
+        - Webhooks
+      summary: Get webhook config
+      description: |
+        Returns the current webhook configuration for your partner account,
+        including the URL and whether the webhook is enabled.
+      operationId: getWebhook
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Webhook configuration retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookConfigResponse'
+              example:
+                success: true
+                data:
+                  url: "https://partner.example.com/webhooks/unigox"
+                  enabled: true
+        '401':
+          description: Unauthorized — invalid or missing API key
+
+  /api/v1/partner/webhooks/{id}:
+    delete:
+      tags:
+        - Webhooks
+      summary: Delete webhook
+      description: |
+        Remove the webhook URL and disable webhook delivery for your partner account.
+        No further events will be sent until a new URL is registered.
+      operationId: deleteWebhook
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Webhook ID (any value accepted — the system uses the authenticated partner context)
+          schema:
+            type: string
+          example: "1"
+      responses:
+        '200':
+          description: Webhook deleted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: "webhook deleted"
+              example:
+                success: true
+                data:
+                  message: "webhook deleted"
+        '401':
+          description: Unauthorized — invalid or missing API key
+
+  /api/v1/partner/webhooks/test:
+    post:
+      tags:
+        - Webhooks
+      summary: Test webhook
+      description: |
+        Send a signed test event to your configured webhook URL. Uses the same HMAC-SHA256
+        signature scheme as production events. Use this to verify your endpoint is reachable
+        and correctly validating signatures.
+      operationId: testPingWebhook
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Test event delivered successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookTestPingResponse'
+              example:
+                success: true
+                data:
+                  delivered: true
+                  http_status: 200
+        '400':
+          description: Webhook URL not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data:
+                  error_key: "webhook URL is not set"
+        '401':
+          description: Unauthorized — invalid or missing API key
+        '502':
+          description: Webhook delivery failed — target endpoint returned non-2xx or timed out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data:
+                  error_key: "webhook delivery failed"
+
+components:
+  schemas:
+    APIResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Indicates if the request was successful
+          example: true
+        data:
+          description: Response data (structure varies by endpoint) or error information if success is false
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          example: false
+        data:
+          type: object
+          required:
+            - error_key
+          properties:
+            error_key:
+              type: string
+              description: Standardized error key for client error handling
+              example: "required_fields_missing"
+
+    CryptoCurrencyCapability:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Cryptocurrency code (e.g., BTC, ETH)
+          example: BTC
+        name:
+          type: string
+          description: Cryptocurrency name
+          example: Bitcoin
+        contract:
+          type: string
+          description: Token contract address (for ERC-20 tokens)
+          example: "0x..."
+        decimals:
+          type: integer
+          format: int64
+          description: Token decimals (number of decimal places)
+          example: 8
+        blockchains:
+          type: array
+          items:
+            type: string
+          description: List of supported blockchain names/slugs
+          example: ["ethereum", "polygon"]
+
+    CryptoCurrenciesResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/CryptoCurrencyCapability'
+
+    BlockchainCapability:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Blockchain name
+          example: Ethereum
+        slug:
+          type: string
+          description: Blockchain slug identifier
+          example: ethereum
+        ticker:
+          type: string
+          description: Blockchain ticker symbol
+          example: eth
+        crypto_currencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/CryptoCurrencyCapability'
+          description: List of cryptocurrencies supported on this blockchain
+
+    BlockchainsResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/BlockchainCapability'
+
+    FiatCurrencyCapability:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Fiat currency code (ISO 4217)
+          example: USD
+        name:
+          type: string
+          description: Fiat currency name
+          example: United States Dollar
+        institution_id:
+          type: array
+          items:
+            type: string
+          description: List of payment method slugs that support this currency (retrieved from active payment method options)
+          example: ["wise", "revolut", "bank-transfer"]
+        countries:
+          type: array
+          items:
+            type: string
+          description: List of ISO 2-letter country codes where this currency is supported (retrieved from active payment method options)
+          example: ["US", "GB", "EU"]
+        onramp:
+          type: boolean
+          description: |
+            Whether onramp (fiat to crypto) is supported. Currently set to true if there are any active payment method options for this currency.
+            This will be refined in future updates based on trade types and explicit direction configuration.
+          example: true
+        offramp:
+          type: boolean
+          description: |
+            Whether offramp (crypto to fiat) is supported. Currently set to true if there are any active payment method options for this currency.
+            This will be refined in future updates based on trade types and explicit direction configuration.
+          example: true
+
+    FiatCurrenciesResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/FiatCurrencyCapability'
+
+    PaymentField:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Field identifier/key
+          example: vpa
+        label:
+          type: string
+          description: Human-readable field label
+          example: UPI ID
+        type:
+          type: string
+          description: Field input type (text, number, select, etc.)
+          example: text
+        required:
+          type: boolean
+          description: Whether this field is required
+          example: true
+        pattern:
+          type: string
+          description: Regex pattern for validation (optional)
+          example: "^[\\w.-]+@[\\w.-]+$"
+        placeholder:
+          type: string
+          description: Placeholder text for input (optional)
+          example: "username@upi"
+        lookup:
+          type: boolean
+          description: Whether field can be used for lookup (optional)
+          example: true
+        options:
+          type: array
+          description: Options for select fields (optional)
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: CBU
+              name:
+                type: string
+                example: "CBU (Traditional Bank)"
+
+    Rails:
+      type: object
+      properties:
+        slug:
+          type: string
+          description: Payment rail slug identifier
+          example: upi-india
+        name:
+          type: string
+          description: Payment rail name
+          example: UPI India
+        institution_required:
+          type: boolean
+          description: Whether institution (bank) selection is required
+          example: false
+        institution_lookup_key:
+          type: string
+          nullable: true
+          description: Lookup key for institution search, e.g., ifsc or sort_code
+          example: ifsc
+        currencies:
+          type: array
+          items:
+            type: string
+          description: List of supported fiat currency codes
+          example: ["INR"]
+        settlement:
+          type: object
+          nullable: true
+          description: Settlement information
+          properties:
+            speed:
+              type: string
+              enum: [INSTANT, SAME_DAY, NEXT_DAY, STANDARD]
+              description: Settlement speed
+              example: INSTANT
+            typical_minutes:
+              type: integer
+              description: Typical settlement time in minutes
+              example: 2
+            note:
+              type: string
+              nullable: true
+              description: Optional note about settlement
+        limits:
+          type: object
+          nullable: true
+          description: Transaction limits
+          properties:
+            min_amount:
+              type: number
+              nullable: true
+              description: Minimum transaction amount
+            max_amount:
+              type: number
+              nullable: true
+              description: Maximum transaction amount (null = no limit)
+            max_per_transaction:
+              type: number
+              nullable: true
+              description: Maximum per transaction (null = no limit)
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentField'
+          description: Required fields for payment details input
+
+    PaymentCapabilityResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - country
+                - direction
+                - rails
+              properties:
+                country:
+                  type: string
+                  description: Country code used in the query
+                  example: NG
+                currency:
+                  type: string
+                  description: Currency code (from query parameter or first rail)
+                  example: NGN
+                direction:
+                  type: string
+                  enum: [onramp, offramp]
+                  description: Transaction direction
+                  example: offramp
+                rails:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Rails'
+                  description: List of available payment rails
+                links:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Related API endpoints
+                  example:
+                    search_institutions: "/api/v1/supported/institutions"
+
+    InstitutionBranch:
+      type: object
+      nullable: true
+      properties:
+        code:
+          type: string
+          description: Branch code (e.g., IFSC, sort code)
+          example: HDFC0001234
+        name:
+          type: string
+          description: Branch name
+          example: Mumbai Main Branch
+        address:
+          type: string
+          description: Branch address
+          example: "123 Financial Street, Mumbai 400001"
+
+    Institution:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Institution identifier
+          example: hdfc
+        name:
+          type: string
+          description: Institution name
+          example: HDFC Bank
+        type:
+          type: string
+          description: Institution type (e.g., BANK, WALLET)
+          example: BANK
+        code:
+          type: string
+          nullable: true
+          description: Institution code for lookup (e.g., IFSC, sort code)
+          example: HDFC0001234
+        branch:
+          $ref: '#/components/schemas/InstitutionBranch'
+        supported_rails:
+          type: array
+          items:
+            type: string
+          description: List of payment rail slugs this institution supports
+          example: ["imps-india", "upi-india"]
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of items
+          example: 1
+        limit:
+          type: integer
+          description: Items per page
+          example: 20
+        offset:
+          type: integer
+          description: Current offset
+          example: 0
+
+    InstitutionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - institutions
+                - pagination
+              properties:
+                institutions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Institution'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    SupportedPair:
+      type: object
+      properties:
+        crypto_currency_code:
+          type: string
+          description: Cryptocurrency code (e.g., USDC, BTC)
+          example: USDC
+        fiat_currency_code:
+          type: string
+          description: Fiat currency code (e.g., USD, EUR)
+          example: USD
+        type:
+          type: string
+          enum: [BUY, SELL]
+          description: Trading pair type - BUY (fiat to crypto) or SELL (crypto to fiat)
+          example: BUY
+
+    SupportedPairsResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/SupportedPair'
+
+    CreateUserResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  description: Public UUID token (public_uuid) shown to partner as user id
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                kyc_status:
+                  type: string
+                  enum: [NOT_INITIATED, IN_PROGRESS, VERIFIED, VERIFICATION_REJECTED]
+                  example: NOT_INITIATED
+                created_at:
+                  type: string
+                  format: date-time
+                  example: "2026-01-06T14:30:00Z"
+
+    GetUserResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  description: Public UUID token (public_uuid) shown to partner as user id
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                created_at:
+                  type: string
+                  format: date-time
+                  example: "2026-01-06T14:30:00Z"
+                kyc:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [NOT_INITIATED, IN_PROGRESS, VERIFIED, VERIFICATION_REJECTED]
+                      example: IN_PROGRESS
+                    kyc_method:
+                      type: string
+                      enum: [direct_data, external_token, handoff]
+                      description: KYC submission method used
+                      example: direct_data
+                    first_name:
+                      type: string
+                      description: User's first name from KYC data
+                      example: John
+                    last_name:
+                      type: string
+                      description: User's last name from KYC data
+                      example: Doe
+                    country_code:
+                      type: string
+                      description: User's country code (ISO 2-letter) from KYC data
+                      example: NG
+                    rejection_reason:
+                      type: string
+                      nullable: true
+                      description: Reason for KYC rejection (if status is VERIFICATION_REJECTED)
+                      example: "Verification declined by AiPrise"
+                    updated_at:
+                      type: string
+                      format: date-time
+                      description: Last update timestamp for KYC status
+                      example: "2026-01-06T14:30:00Z"
+                payment_profiles:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: "987"
+                      rail:
+                        type: string
+                        example: nip-nigeria
+                      currency:
+                        type: string
+                        example: NGN
+                      institution_name:
+                        type: string
+                        nullable: true
+                        example: Guaranty Trust Bank
+                      institution_id:
+                        type: string
+                        nullable: true
+                        description: Institution identifier (our internal slug)
+                        example: guaranty-trust-bank
+                      details:
+                        type: object
+                        additionalProperties: true
+                        example:
+                          account_number: "0123456789"
+
+    KYCSubmitDirectData:
+      type: object
+      required: [method, data]
+      properties:
+        method:
+          type: string
+          enum: [direct_data]
+          example: direct_data
+        data:
+          type: object
+          required: [pii]
+          properties:
+            pii:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                  example: John
+                last_name:
+                  type: string
+                  example: Doe
+                dob:
+                  type: string
+                  format: date
+                  example: "1990-01-01"
+                country_code:
+                  type: string
+                  example: NG
+                address:
+                  type: string
+                  example: "123 Street Name, Lagos"
+                postal_code:
+                  type: string
+                  example: "100001"
+
+    KYCSubmitExternalToken:
+      type: object
+      required: [method, data]
+      properties:
+        method:
+          type: string
+          enum: [external_token]
+          example: external_token
+        data:
+          type: object
+          required: [provider, token]
+          properties:
+            provider:
+              type: string
+              enum: [sumsub]
+              example: sumsub
+            token:
+                  type: string
+                  example: "sumsub_external_session_id"
+
+    KYCSubmitHandoff:
+      type: object
+      required: [method, data]
+      properties:
+        method:
+          type: string
+          enum: [handoff]
+          example: handoff
+        data:
+          type: object
+          properties:
+            pii:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                  example: John
+                last_name:
+                  type: string
+                  example: Doe
+                country_code:
+                  type: string
+                  example: NG
+
+    KYCSubmitResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                kyc_status:
+                  type: string
+                  enum: [NOT_INITIATED, IN_PROGRESS, VERIFIED, VERIFICATION_REJECTED]
+                  example: IN_PROGRESS
+                message:
+                  type: string
+                  example: "PII data accepted"
+                verification_url:
+                  type: string
+                  format: uri
+                  nullable: true
+                  description: Verification URL (only returned for handoff method)
+                  example: "https://verify.aiprise.com/?verification_session_id=4fd410c9-ba9b-46cf-a4f0-132204a9a564"
+
+    VerificationStatusResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [NOT_STARTED, PENDING, IN_PROGRESS, COMPLETED, VERIFIED, FAILED, VERIFICATION_REJECTED]
+                  description: Current verification status
+                  example: "IN_PROGRESS"
+                verification_url:
+                  type: string
+                  format: uri
+                  nullable: true
+                  description: Verification URL (for handoff method)
+                  example: "https://verify-sandbox.aiprise.com/?verification_session_id=abc123"
+                verification_seconds_left:
+                  type: integer
+                  nullable: true
+                  description: Seconds remaining for verification session (if applicable)
+                  example: 3600
+                provider_messages:
+                  type: array
+                  items:
+                    type: string
+                  nullable: true
+                  description: Provider-specific messages or rejection reasons
+                  example: ["Verification in progress"]
+
+    CreatePaymentDetailsRequest:
+      type: object
+      required: [currency, rail, institution_id, details]
+      properties:
+        currency:
+          type: string
+          description: ISO 3-letter fiat currency code (e.g., INR, EUR, USD)
+          example: INR
+        rail:
+          type: string
+          description: Payment rail identifier (e.g., "upi-india", "iban-sepa", "imps-india")
+          example: iban-sepa
+        institution_id:
+          type: string
+          description: |
+            Institution (payment method) identifier - our internal slug (e.g., "wise", "hdfc-bank", "revolut", "uala", "banco-santander-argentina").
+            Required for all rails. For rails with multiple formats (e.g., CVU/CBU), the format is automatically determined based on the payment method type of this institution.
+          example: wise
+        details:
+          type: object
+          description: Payment details object with fields specific to the payment network (e.g., account_number, vpa, iban, full_name)
+          additionalProperties: true
+          example:
+            full_name: "John Doe"
+            iban: DE89370400440532013000
+        country_code:
+          type: string
+          description: Optional ISO 2-letter country code
+          example: DE
+
+    PaymentProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Payment profile ID
+          example: "987"
+        rail:
+          type: string
+          description: Payment rail identifier
+          example: nip-nigeria
+        currency:
+          type: string
+          description: Fiat currency code
+          example: NGN
+        institution_name:
+          type: string
+          nullable: true
+          description: Institution (bank) name if applicable
+          example: Guaranty Trust Bank
+        institution_id:
+          type: string
+          nullable: true
+          description: Institution identifier (our internal slug)
+          example: guaranty-trust-bank
+        details:
+          type: object
+          description: Payment details (account number, VPA, IBAN, etc.)
+          additionalProperties: true
+          example:
+            account_number: "0123456789"
+
+    CreatePaymentDetailsResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PaymentProfile'
+
+    GetPaymentDetailsResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/PaymentProfile'
+              description: List of all payment profiles for the user
+
+    # ============================================
+    # Off-Ramp & Order Schemas
+    # ============================================
+    SlippageTolerance:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [percent, amount, fiat]
+          description: |
+            Tolerance type:
+            - `percent` — percentage of the quoted rate (e.g., 1.5 = 1.5%)
+            - `amount` — absolute fiat amount (e.g., 50.00 = 50 NGN)
+            - `fiat` — alias of `amount`
+          example: percent
+        value:
+          type: number
+          format: double
+          description: Tolerance value (percentage or fiat amount depending on type)
+          example: 1.5
+
+    PartnerPriceEstimateRequest:
+      type: object
+      required: [crypto_currency, fiat_currency]
+      oneOf:
+        - required: [crypto_amount]
+        - required: [fiat_amount]
+      properties:
+        crypto_currency:
+          type: string
+          description: Cryptocurrency code (e.g., USDT, USDC)
+          example: USDT
+        fiat_currency:
+          type: string
+          description: Target fiat currency code (e.g., NGN, USD, EUR)
+          example: NGN
+        crypto_amount:
+          type: string
+          description: Crypto amount to estimate from. Provide exactly one of crypto_amount or fiat_amount.
+          example: "100.00"
+        fiat_amount:
+          type: string
+          description: Fiat amount to estimate from. Provide exactly one of crypto_amount or fiat_amount.
+          example: "150000.00"
+        payment_method_slug:
+          type: string
+          description: Optional payment method slug filter to narrow routing
+          example: access-bank
+        payment_network_slug:
+          type: string
+          description: Optional payment network slug filter to narrow routing
+          example: nibss
+        provider_scope:
+          type: string
+          description: Optional provider scope filter; defaults to all
+          enum: [all, licensed_only, p2p_only]
+          example: all
+        country_code:
+          type: string
+          description: Optional ISO country code (alpha-2) used for fee/routing context
+          example: NG
+
+    PartnerPriceEstimateResponse:
+      type: object
+      properties:
+        rate:
+          type: string
+          description: Indicative crypto-to-fiat exchange rate
+          example: "1530.12"
+        crypto_amount:
+          type: string
+          description: Estimated total crypto amount (includes fees)
+          example: "101.50"
+        fiat_amount:
+          type: string
+          description: Estimated fiat amount
+          example: "152880.00"
+        fee_breakdown:
+          $ref: '#/components/schemas/FeeBreakdown'
+        payment_method_slug:
+          type: string
+          description: Matched payment method slug used for estimate
+          example: access-bank
+        payment_network_slug:
+          type: string
+          description: Matched payment network slug used for estimate
+          example: nibss
+        provider_scope:
+          type: string
+          description: Applied provider scope
+          example: all
+        is_indicative:
+          type: boolean
+          description: True when response is an estimate and not a reserving quote
+          example: true
+
+    PartnerQuoteRequest:
+      type: object
+      required: [user_id, payment_details_id, crypto_currency, crypto_amount, fiat_currency]
+      properties:
+        user_id:
+          type: integer
+          format: int64
+          description: Internal user ID (integer, from `POST /partner/users` response `internal_id` field)
+          example: 12345
+        payment_details_id:
+          type: integer
+          format: int64
+          description: ID of a previously created payment profile for the user
+          example: 987
+        crypto_currency:
+          type: string
+          description: Cryptocurrency code (e.g., USDT, USDC)
+          example: USDT
+        crypto_amount:
+          type: string
+          description: Amount of crypto to sell (standard units, e.g., "100.00" for 100 USDT)
+          example: "100.00"
+        fiat_currency:
+          type: string
+          description: Target fiat currency code (e.g., NGN, USD, EUR)
+          example: NGN
+        rail:
+          type: string
+          description: Optional rail hint; must be compatible with payment details if provided
+          example: Bank Transfer
+        route:
+          type: string
+          description: Optional route hint; must be compatible with payment details if provided
+          example: Instant Transfer
+        provider_scope:
+          type: string
+          description: Optional provider scope filter; defaults to all
+          enum: [all, licensed_only, p2p_only]
+          example: all
+        slippage_tolerance:
+          $ref: '#/components/schemas/SlippageTolerance'
+
+    PartnerQuoteResponse:
+      type: object
+      properties:
+        quote_id:
+          type: string
+          format: uuid
+          description: Unique quote identifier — use this to initiate the order
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        rate:
+          type: string
+          description: Crypto-to-fiat exchange rate
+          example: "1530.12"
+        crypto_amount:
+          type: string
+          description: Total crypto amount the user sends (includes all fees)
+          example: "101.50"
+        fiat_amount:
+          type: string
+          description: Fiat amount the user receives
+          example: "152880.00"
+        fee_breakdown:
+          $ref: '#/components/schemas/FeeBreakdown'
+        payment_details_id:
+          type: integer
+          format: int64
+          description: Payment details ID used for this quote
+          example: 987
+        payment_method_id:
+          type: integer
+          format: int64
+          description: Matched payment method ID
+          example: 5
+        payment_network_id:
+          type: integer
+          format: int64
+          description: Matched payment network ID
+          example: 12
+        expires_at:
+          type: string
+          format: date-time
+          description: Quote expiration timestamp (30 seconds from creation)
+          example: "2026-02-01T12:00:30Z"
+
+    PartnerInitiateRequest:
+      type: object
+      required: [quote_id]
+      properties:
+        quote_id:
+          type: string
+          format: uuid
+          description: Quote ID from the quote endpoint. Payment details are taken from the quote.
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+    PartnerInitiateResponse:
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+          description: Unique order identifier for tracking
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        status:
+          $ref: '#/components/schemas/PartnerOrderStatus'
+        quote_id:
+          type: string
+          format: uuid
+          description: Quote ID that was consumed
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        amounts:
+          $ref: '#/components/schemas/PartnerOrderAmounts'
+        fee_breakdown:
+          $ref: '#/components/schemas/FeeBreakdown'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEntry'
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-01T12:00:05Z"
+
+    PartnerOrderResponse:
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+          description: Unique order identifier
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        status:
+          $ref: '#/components/schemas/PartnerOrderStatus'
+        next_action:
+          type: string
+          nullable: true
+          description: |
+            Suggested next action for the partner. Possible values:
+            - `authorize_crypto_transfer` — partner should authorize crypto transfer
+            - `confirm_fiat_received` — partner should confirm fiat receipt
+            - `request_new_quote` — price changed, request a new quote
+            - null — no action needed (terminal or processing state)
+          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, null]
+          example: authorize_crypto_transfer
+        allowed_actions:
+          type: array
+          items:
+            type: string
+          description: |
+            List of API actions the partner can perform for the current order status.
+            Each entry corresponds to a `POST /api/v1/partner/orders/{order_id}/{action}` endpoint.
+            Status-to-actions mapping:
+            - `created` → `["cancel"]`
+            - `awaiting_liquidity_provider` → `["cancel"]`
+            - `awaiting_crypto_transfer_authorization` → `["authorize-crypto-transfer", "cancel"]`
+            - `crypto_transfer_authorization_pending` → `["cancel"]`
+            - `crypto_received` → `["confirm-fiat-received"]`
+            - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]`
+            - `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed` → `[]`
+          example: ["authorize-crypto-transfer", "cancel"]
+        crypto_transfer_authorization_seconds_left:
+          type: integer
+          format: int64
+          nullable: true
+          description: |
+            Remaining seconds to authorize crypto transfer while order is in
+            `awaiting_crypto_transfer_authorization` / `crypto_transfer_authorization_pending`.
+            `null` for all other statuses.
+          example: 1720
+        amounts:
+          $ref: '#/components/schemas/PartnerOrderAmounts'
+        fee_breakdown:
+          $ref: '#/components/schemas/FeeBreakdown'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEntry'
+          description: Chronological list of status changes
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-01T12:00:05Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-02-01T12:00:06Z"
+
+    PartnerOrderAmounts:
+      type: object
+      properties:
+        crypto_amount:
+          type: string
+          description: Total crypto amount (standard units)
+          example: "101.50"
+        fiat_amount:
+          type: string
+          description: Fiat amount the user receives
+          example: "152880.00"
+        crypto_currency:
+          type: string
+          description: Cryptocurrency code
+          example: USDT
+        fiat_currency:
+          type: string
+          description: Fiat currency code
+          example: NGN
+        rate:
+          type: string
+          description: Crypto-to-fiat exchange rate
+          example: "1530.12"
+
+    FeeBreakdown:
+      type: object
+      description: Transparent breakdown of all fee components (amounts in crypto)
+      properties:
+        platform_fee:
+          type: string
+          description: Platform fee in crypto
+          example: "1.50"
+        platform_fee_pct:
+          type: number
+          format: double
+          description: Platform fee as a percentage
+          example: 1.5
+        partner_fee:
+          type: string
+          description: Partner's fee markup in crypto (0 until partner fee dashboard is available)
+          example: "0.00"
+        partner_fee_pct:
+          type: number
+          format: double
+          description: Partner's fee percentage (0 until partner fee dashboard is available)
+          example: 0
+        total_fee:
+          type: string
+          description: Total fee in crypto (platform_fee + partner_fee)
+          example: "1.50"
+
+    PartnerOrderStatus:
+      type: string
+      description: |
+        Partner-facing order status. Internal trade statuses are mapped to these simplified values:
+        - `created` — order created, quote locked
+        - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
+        - `awaiting_crypto_transfer_authorization` — partner must authorize crypto transfer via EIP-712 signature
+        - `crypto_transfer_authorization_pending` — authorization submitted, awaiting on-chain confirmation
+        - `crypto_received` — crypto locked in escrow
+        - `awaiting_fiat_received_confirmation` — waiting for partner to confirm fiat receipt
+        - `fiat_received_confirmed` — fiat confirmed, crypto release pending
+        - `crypto_release_pending` — escrow release in progress
+        - `completed` — order fully completed
+        - `cancelled` — order cancelled
+        - `failed` — terminal error
+        - `price_changed_requote_needed` — slippage exceeded at initiation (not a trade status)
+      enum:
+        - created
+        - awaiting_liquidity_provider
+        - awaiting_crypto_transfer_authorization
+        - crypto_transfer_authorization_pending
+        - crypto_received
+        - awaiting_fiat_received_confirmation
+        - fiat_received_confirmed
+        - crypto_release_pending
+        - completed
+        - cancelled
+        - failed
+        - price_changed_requote_needed
+      example: awaiting_crypto_transfer_authorization
+
+    TimelineEntry:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/PartnerOrderStatus'
+        timestamp:
+          type: string
+          format: date-time
+          description: When this status was reached
+          example: "2026-02-01T12:00:05Z"
+        description:
+          type: string
+          description: Human-readable description of the status change
+          example: "Order created"
+
+    RegisterWebhookRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS URL that will receive webhook events
+          example: "https://partner.example.com/webhooks/unigox"
+
+    WebhookConfigResponse:
+      type: object
+      properties:
+        url:
+          type: string
+          nullable: true
+          description: Currently configured webhook URL (null if not set)
+          example: "https://partner.example.com/webhooks/unigox"
+        enabled:
+          type: boolean
+          description: Whether webhook delivery is active
+          example: true
+
+    WebhookTestPingResponse:
+      type: object
+      properties:
+        delivered:
+          type: boolean
+          description: Whether the test event was delivered successfully
+          example: true
+        http_status:
+          type: integer
+          description: HTTP status code returned by the webhook endpoint
+          example: 200
+
+    WebhookEventPayload:
+      type: object
+      description: Payload shape delivered to your webhook URL on each order status change
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier for de-duplication
+          example: "evt_a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        event_type:
+          type: string
+          description: Event type (always `order.status.changed`)
+          example: "order.status.changed"
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the event was created
+          example: "2026-02-01T12:00:05Z"
+        data:
+          type: object
+          properties:
+            order_id:
+              type: string
+              format: uuid
+              description: Partner order UUID
+              example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+            status:
+              $ref: '#/components/schemas/PartnerOrderStatus'
+            user_id:
+              type: string
+              format: uuid
+              description: Public UUID of the end-user (from user creation)
+              example: "550e8400-e29b-41d4-a716-446655440000"
+            crypto_amount:
+              type: string
+              description: Total crypto amount including fees
+              example: "101.500000"
+            crypto_currency:
+              type: string
+              description: Cryptocurrency code
+              example: "USDT"
+            fiat_amount:
+              type: string
+              description: Fiat amount
+              example: "152880.00"
+            fiat_currency:
+              type: string
+              description: Fiat currency code
+              example: "NGN"
+            provider:
+              type: string
+              description: Liquidity provider type
+              enum: [p2p, licensed]
+              example: "p2p"
+            payment_details_id:
+              type: string
+              description: Payment details ID used for the order
+              example: "987"
+
+    PartnerErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Machine-readable error code. Possible values:
+                - `QUOTE_EXPIRED` — quote TTL has passed
+                - `QUOTE_NOT_FOUND` — quote ID does not exist
+                - `QUOTE_ALREADY_USED` — quote was already consumed by initiate
+                - `PRICE_CHANGED_REQUOTE` — price changed beyond slippage tolerance, partner should request a new quote
+                - `ORDER_NOT_FOUND` — order ID does not exist or belongs to another partner
+                - `NO_OFFERS_AVAILABLE` — no vendor offers for the requested pair
+                - `INVALID_REQUEST` — malformed request or missing fields
+                - `INVALID_PAYMENT_DETAILS` — payment details not found or invalid
+                - `RAIL_ROUTE_MISMATCH` — rail or route does not match payment details
+                - `UNAUTHORIZED` — authentication failed
+                - `INTERNAL_ERROR` — unexpected server error
+                - `INVALID_STATUS` — order is not in the correct status for the requested action
+                - `TRANSACTOR_ERROR` — on-chain transaction relay failed (e.g. simulation reverted)
+                - `INSUFFICIENT_BALANCE` — partner wallet lacks tokens to fund escrow
+                - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
+              enum:
+                - QUOTE_EXPIRED
+                - QUOTE_NOT_FOUND
+                - QUOTE_ALREADY_USED
+                - PRICE_CHANGED_REQUOTE
+                - ORDER_NOT_FOUND
+                - NO_OFFERS_AVAILABLE
+                - INVALID_REQUEST
+                - INVALID_PAYMENT_DETAILS
+                - RAIL_ROUTE_MISMATCH
+                - UNAUTHORIZED
+                - INTERNAL_ERROR
+                - INVALID_STATUS
+                - TRANSACTOR_ERROR
+                - INSUFFICIENT_BALANCE
+                - OPERATION_NOT_ALLOWED
+              example: QUOTE_EXPIRED
+            message:
+              type: string
+              description: Human-readable error message
+              example: "Quote has expired, please request a new quote"
+            details:
+              type: object
+              nullable: true
+              additionalProperties: true
+              description: Additional context (e.g., quoted_rate, current_rate for slippage errors)
+              example:
+                quoted_rate: 1530.12
+                current_rate: 1545.00
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Partner API key for authentication. Required for all partner account endpoints.
