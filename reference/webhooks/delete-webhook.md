@@ -2,6 +2,6 @@
 
 Delete webhook.
 
-{% openapi src="<https://openapi.gitbook.com/o/e0uEDf9W74izxMHzVmef/spec/unigox-api.yaml>" path="/api/v1/partner/webhooks/{id}" method="delete" %}
+{% swagger src="<https://openapi.gitbook.com/o/e0uEDf9W74izxMHzVmef/spec/unigox-api.yaml>" path="/api/v1/partner/webhooks/{id}" method="delete" %}
 <https://openapi.gitbook.com/o/e0uEDf9W74izxMHzVmef/spec/unigox-api.yaml>
-{% endopenapi %}
+{% endswagger %}
