@@ -1,5 +1,14 @@
 # Exchange Pairs
 
-Use the generated reference for quoteable asset and fiat conversion pairs:
+Use this endpoint to discover which currency pairs are currently supported for quoting and execution.
 
-[Open Exchange Pairs reference](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/exchange-pairs)
+## Endpoints in this section
+
+### `GET /api/v1/supported-exchange-pairs`
+
+Supported exchange pairs.
+
+- Authentication: not required
+- Request body: none
+- Query parameters: none
+- Response codes: `200`

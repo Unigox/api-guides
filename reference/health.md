@@ -1,5 +1,14 @@
 # Health
 
-Use the generated reference for the health and connectivity endpoints:
+Use this endpoint to confirm the API is reachable before you start an integration flow.
 
-[Open Health reference](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/health)
+## Endpoints in this section
+
+### `GET /health`
+
+Health check.
+
+- Authentication: not required
+- Request body: none
+- Query parameters: none
+- Response codes: `200`

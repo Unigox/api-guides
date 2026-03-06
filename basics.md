@@ -55,7 +55,7 @@ Partner guidance:
 - acknowledge quickly, then process asynchronously
 - use polling only for recovery and reconciliation
 
-For full webhook request, test, and payload details, see [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks).
+For full webhook request, test, and payload details, see [Webhooks](https://unigox.gitbook.io/unigox-api/reference/webhooks).
 
 ## Order Lifecycle
 
@@ -83,7 +83,7 @@ Alternative terminal paths can include:
 - `failed`
 - `dispute_started`
 
-For the actual order actions and state fields, see [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders).
+For the actual order actions and state fields, see [Orders](https://unigox.gitbook.io/unigox-api/reference/orders).
 
 ## Moving to production
 

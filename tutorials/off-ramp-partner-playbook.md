@@ -4,10 +4,10 @@ This tutorial follows the full live off-ramp integration from one-time setup to 
 
 When you need payload and schema details, jump into:
 
-- [User Management](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/user-management)
-- [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp)
-- [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
-- [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
+- [User Management](https://unigox.gitbook.io/unigox-api/reference/user-management)
+- [Off-Ramp](https://unigox.gitbook.io/unigox-api/reference/off-ramp)
+- [Orders](https://unigox.gitbook.io/unigox-api/reference/orders)
+- [Webhooks](https://unigox.gitbook.io/unigox-api/reference/webhooks)
 
 ## Phase 1: Setup (one-time)
 
