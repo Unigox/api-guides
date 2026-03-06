@@ -2,13 +2,6 @@
 
 Use this endpoint to confirm the API is reachable before you start an integration flow.
 
-## Endpoints in this section
-
-### `GET /health`
-
-Health check.
-
-- Authentication: not required
-- Request body: none
-- Query parameters: none
-- Response codes: `200`
+{% openapi src="<https://openapi.gitbook.com/o/e0uEDf9W74izxMHzVmef/spec/unigox-api.yaml>" path="/health" method="get" %}
+<https://openapi.gitbook.com/o/e0uEDf9W74izxMHzVmef/spec/unigox-api.yaml>
+{% endopenapi %}
