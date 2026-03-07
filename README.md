@@ -2,7 +2,7 @@
 
 Public API documentation is published on GitBook:
 
-- https://unigox.gitbook.io/unigox-api/
+- https://developers.unigox.com/
 
 OpenAPI source file in this repository:
 
