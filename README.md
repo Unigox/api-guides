@@ -1,10 +1,12 @@
-# Unigox API Guides
+# Unigox API Specification
 
 Public API documentation is published on GitBook:
 
 - https://developers.unigox.com/
 
-OpenAPI source file in this repository:
+This repository contains the public OpenAPI source used for the Unigox API documentation.
+
+OpenAPI source file:
 
 - `openapi/swagger.yaml`
 
