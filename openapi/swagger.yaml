@@ -60,14 +60,22 @@ tags:
     x-page-icon: receipt
   - name: Webhooks
     description: |
-      Real-time notifications for order status changes. When an order transitions to a new status,
-      the system sends a signed HTTP POST to your configured webhook URL.
+      Real-time notifications for order and KYC status changes.
+      The system sends a signed HTTP POST to your configured webhook URL on every relevant event.
 
       **Event model**
 
-      A single event type is used for all order updates: `order.status.changed`.
+      Two event types are delivered:
 
-      **Payload shape**
+      | Event type | Fired when |
+      |---|---|
+      | `order.status.changed` | An order transitions to a new status |
+      | `user.kyc.updated` | A user's KYC verification is approved or declined |
+
+      All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
+      and the same signature scheme. The structure of the `data` object differs per event type.
+
+      **Payload shape — `order.status.changed`**
 
       ```json
       {
@@ -87,6 +95,40 @@ tags:
         }
       }
       ```
+
+      **Payload shape — `user.kyc.updated`**
+
+      Fired when a user's KYC status transitions to `verified` or `rejected`.
+      Use this event to unlock order creation for the user on your side.
+
+      ```json
+      {
+        "event_id": "evt_2d8418dd-e3a8-4463-a11e-6b54f354ca90",
+        "event_type": "user.kyc.updated",
+        "created_at": "2026-03-10T11:37:42Z",
+        "data": {
+          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "kyc_status": "verified"
+        }
+      }
+      ```
+
+      When KYC is declined, `rejection_reasons` is included:
+
+      ```json
+      {
+        "event_id": "evt_fc75484d-b374-4d05-b54e-820f3dd80e6d",
+        "event_type": "user.kyc.updated",
+        "created_at": "2026-03-10T12:00:00Z",
+        "data": {
+          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "kyc_status": "rejected",
+          "rejection_reasons": ["Document expired", "Photo quality low"]
+        }
+      }
+      ```
+
+      `kyc_status` values: `verified` | `rejected`
 
       **Signature verification**
 
@@ -111,7 +153,7 @@ tags:
       Failed deliveries (non-2xx or timeout) are retried with exponential backoff:
       1 min → 5 min → 15 min → 1 h → 6 h → 12 h → 24 h (max 10 attempts over ~3.5 days).
 
-      **Partner-facing statuses**
+      **Partner-facing statuses** (`order.status.changed`)
 
       | Status | Description |
       |---|---|
