@@ -1520,9 +1520,28 @@ paths:
       summary: Order details
       description: |
         Get the current status, amounts, and full timeline for a specific order.
-        The `next_action` field indicates what the partner should do next (e.g., `authorize_crypto_transfer`).
-        The `allowed_actions` array lists all API actions available for the current status (e.g., `["authorize-crypto-transfer", "cancel"]`).
-        Each entry corresponds to a `POST /api/v1/partner/orders/{order_id}/{action}` endpoint.
+        The `next_action` field indicates what the partner **must** do to advance the order.
+        `null` means no action is required from the partner at this stage — the order is waiting
+        for the counterparty (e.g. the buyer to submit fiat payment proof).
+
+        The `allowed_actions` array lists all API actions the partner **can** perform at the current
+        status. An action can be in `allowed_actions` even when `next_action` is `null` — this means
+        the action is optional. For example, `confirm-fiat-received` is available at `crypto_received`
+        as a fast-track: if you already know the fiat has arrived (via your own systems), you can
+        confirm immediately without waiting for the buyer's payment proof flow to complete.
+
+        **Order flow summary:**
+
+        | Status | next_action | Who acts |
+        |---|---|---|
+        | `created` | — | Partner (or wait for vendor match) |
+        | `awaiting_crypto_transfer_authorization` | `authorize_crypto_transfer` | **Partner** |
+        | `crypto_transfer_authorization_pending` | — | System (on-chain confirmation) |
+        | `crypto_received` | — | **Buyer** submits fiat payment proof |
+        | `fiat_payment_started` | — | System reviews proof |
+        | `fiat_payment_review_started` | — | System accepts/rejects proof |
+        | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
+        | `completed` | — | — |
 
         **Status mapping:** Internal trade statuses are mapped to simplified partner-facing statuses.
         See the `PartnerOrderStatus` enum for all possible values.
@@ -3092,11 +3111,15 @@ components:
           type: string
           nullable: true
           description: |
-            Suggested next action for the partner. Possible values:
-            - `authorize_crypto_transfer` — partner should authorize crypto transfer
-            - `confirm_fiat_received` — partner should confirm fiat receipt
-            - `request_new_quote` — price changed, request a new quote
-            - null — no action needed (terminal or processing state)
+            The action the partner **must** perform to advance the order. `null` means
+            no action is required from the partner at this stage — the order is waiting
+            for the counterparty or for an automated system step.
+
+            Possible values:
+            - `authorize_crypto_transfer` — partner must authorize escrow funding
+            - `confirm_fiat_received` — partner must confirm they received the fiat payment
+            - `request_new_quote` — price changed, partner must request a new quote
+            - `null` — no required action (waiting for buyer or system)
           enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, null]
           example: authorize_crypto_transfer
         allowed_actions:
@@ -3104,15 +3127,22 @@ components:
           items:
             type: string
           description: |
-            List of API actions the partner can perform for the current order status.
-            Each entry corresponds to a `POST /api/v1/partner/orders/{order_id}/{action}` endpoint.
+            List of API actions the partner **can** perform at the current status. An action
+            may be present here even when `next_action` is `null` — meaning it is optional.
+
+            Notable case: `confirm-fiat-received` appears at both `crypto_received` and
+            `awaiting_fiat_received_confirmation`. At `crypto_received` it is a **fast-track**:
+            if you already know the fiat has arrived via your own systems, you can confirm
+            immediately. Otherwise, wait for the buyer's proof flow to complete — the order
+            will reach `awaiting_fiat_received_confirmation` automatically.
+
             Status-to-actions mapping:
             - `created` → `["cancel"]`
             - `awaiting_liquidity_provider` → `["cancel"]`
             - `awaiting_crypto_transfer_authorization` → `["authorize-crypto-transfer", "cancel"]`
             - `crypto_transfer_authorization_pending` → `["cancel"]`
-            - `crypto_received` → `["confirm-fiat-received"]`
-            - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]`
+            - `crypto_received` → `["confirm-fiat-received"]` (optional fast-track)
+            - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]` (required)
             - `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed` → `[]`
           example: ["authorize-crypto-transfer", "cancel"]
         crypto_transfer_authorization_seconds_left:
