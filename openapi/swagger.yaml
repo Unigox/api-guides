@@ -3070,6 +3070,7 @@ components:
             - `awaiting_crypto_transfer_authorization` → `["authorize-crypto-transfer", "cancel"]`
             - `crypto_transfer_authorization_pending` → `["cancel"]`
             - `crypto_received` → `["confirm-fiat-received"]`
+            - `fiat_payment_started` → `["confirm-fiat-received"]`
             - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]`
             - `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed` → `[]`
           example: ["authorize-crypto-transfer", "cancel"]
