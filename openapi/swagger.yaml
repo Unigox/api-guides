@@ -3142,6 +3142,7 @@ components:
             - `awaiting_crypto_transfer_authorization` → `["authorize-crypto-transfer", "cancel"]`
             - `crypto_transfer_authorization_pending` → `["cancel"]`
             - `crypto_received` → `["confirm-fiat-received"]` (optional fast-track)
+            - `fiat_payment_started` → `["confirm-fiat-received"]` (optional fast-track after buyer proof submission)
             - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]` (required)
             - `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed` → `[]`
           example: ["authorize-crypto-transfer", "cancel"]
@@ -3232,6 +3233,7 @@ components:
         - `awaiting_crypto_transfer_authorization` — partner must authorize crypto transfer via EIP-712 signature
         - `crypto_transfer_authorization_pending` — authorization submitted, awaiting on-chain confirmation
         - `crypto_received` — crypto locked in escrow
+        - `fiat_payment_started` — buyer submitted fiat payment proof
         - `awaiting_fiat_received_confirmation` — waiting for partner to confirm fiat receipt
         - `fiat_received_confirmed` — fiat confirmed, crypto release pending
         - `crypto_release_pending` — escrow release in progress
@@ -3245,6 +3247,7 @@ components:
         - awaiting_crypto_transfer_authorization
         - crypto_transfer_authorization_pending
         - crypto_received
+        - fiat_payment_started
         - awaiting_fiat_received_confirmation
         - fiat_received_confirmed
         - crypto_release_pending
