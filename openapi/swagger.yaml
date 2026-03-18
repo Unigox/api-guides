@@ -52,6 +52,9 @@ tags:
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — coming soon
     x-page-icon: hourglass-half
+  - name: Liquidity
+    description: Real-time aggregated liquidity data — available trading pairs, amount ranges, and payment methods
+    x-page-icon: chart-bar
   - name: Off-Ramp
     description: Off-ramp operations (crypto to fiat) — sell crypto and receive fiat
     x-page-icon: arrow-right-arrow-left
@@ -1115,6 +1118,81 @@ paths:
           description: Conflict - payment details linked to active offers
         '500':
           description: Internal Server Error
+
+  # ============================================
+  # 8. LIQUIDITY
+  # ============================================
+  /api/v1/partner/liquidity:
+    get:
+      tags:
+        - Liquidity
+      summary: Get aggregated liquidity by trading pairs
+      description: |
+        Returns real-time aggregated liquidity data across all active off-ramp offers.
+
+        Use this endpoint for **liquidity discovery** — to determine which crypto/fiat pairs
+        are currently available, what fiat amount ranges are supported, and which payment
+        methods are accepted. No pricing or vendor details are returned.
+
+        **Trade type semantics:** `trade_type` is expressed in partner terms.
+        `SELL` means the partner sells crypto and receives fiat (the most common off-ramp direction).
+        `BUY` means the partner buys crypto by sending fiat.
+
+        **Eligibility:** Only offers that pass the same gates as the vendor-matching engine
+        are included — the offer must be authorized, the vendor must be active and online,
+        and at least one payment method option must be active.
+
+        **Aggregation:** Results are grouped by `(crypto_currency_code, fiat_currency_code, trade_type)`.
+        Amount ranges span the minimum and maximum across all eligible offers in the group.
+        Payment methods are deduplicated and sorted alphabetically.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Liquidity pairs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      pairs:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/LiquidityPair'
+              example:
+                success: true
+                data:
+                  pairs:
+                    - crypto_currency_code: USDC
+                      fiat_currency_code: EUR
+                      trade_type: SELL
+                      min_amount: 50.00
+                      max_amount: 10000.00
+                      min_amount_usd: 54.35
+                      max_amount_usd: 10870.00
+                      payment_methods:
+                        - sepa
+                        - wise
+                    - crypto_currency_code: USDC
+                      fiat_currency_code: NGN
+                      trade_type: SELL
+                      min_amount: 50000.00
+                      max_amount: 5000000.00
+                      min_amount_usd: 31.25
+                      max_amount_usd: 3125.00
+                      payment_methods:
+                        - gtbank
+                        - zenith-bank
+        '401':
+          description: Unauthorized — missing or invalid API key
+        '500':
+          description: Internal server error
 
   # ============================================
   # 9. ON-RAMP OPERATIONS (Implemented Soon)
@@ -2898,6 +2976,63 @@ components:
           format: double
           description: Tolerance value (percentage or fiat amount depending on type)
           example: 1.5
+
+    LiquidityPair:
+      type: object
+      required:
+        - crypto_currency_code
+        - fiat_currency_code
+        - trade_type
+        - min_amount
+        - max_amount
+        - min_amount_usd
+        - max_amount_usd
+        - payment_methods
+      properties:
+        crypto_currency_code:
+          type: string
+          description: Cryptocurrency code (e.g. USDC, BTC)
+          example: USDC
+        fiat_currency_code:
+          type: string
+          description: Fiat currency code (ISO 4217)
+          example: EUR
+        trade_type:
+          type: string
+          enum: [BUY, SELL]
+          description: |
+            Partner-facing trade direction.
+            `SELL` — partner sells crypto and receives fiat (off-ramp).
+            `BUY` — partner buys crypto by sending fiat (on-ramp).
+          example: SELL
+        min_amount:
+          type: number
+          format: double
+          description: Minimum fiat amount accepted across all eligible offers, in the pair's native fiat currency
+          example: 50.00
+        max_amount:
+          type: number
+          format: double
+          description: Maximum fiat amount accepted across all eligible offers, in the pair's native fiat currency
+          example: 10000.00
+        min_amount_usd:
+          type: number
+          format: double
+          description: Minimum fiat amount converted to USD
+          example: 54.35
+        max_amount_usd:
+          type: number
+          format: double
+          description: Maximum fiat amount converted to USD
+          example: 10870.00
+        payment_methods:
+          type: array
+          items:
+            type: string
+          description: Deduplicated, alphabetically sorted list of payment method slugs available for this pair
+          example:
+            - sepa
+            - wise
 
     PartnerPriceEstimateRequest:
       type: object
