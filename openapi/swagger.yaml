@@ -2926,6 +2926,7 @@ components:
             Institution (payment method) identifier - our internal slug (e.g., "wise", "hdfc-bank", "revolut", "uala", "banco-santander-argentina").
             Required for all rails except the currently supported omission rails: `iban-sepa` and `nip-nigeria`.
             If omitted for one of those supported rails, the backend will assign the generic `other-bank` payment method automatically.
+            If omitted for any other rail, the API returns a validation error.
             For rails with multiple formats (e.g., CVU/CBU), the format is automatically determined based on the payment method type of this institution.
           example: wise
         details:
