@@ -266,7 +266,12 @@ paths:
       tags:
         - Supported Resources
       summary: Payment rails
-      description: Get payment rail capabilities for a specific country, currency, and direction (onramp/offramp). Returns available payment rails with their required fields and supported currencies.
+      description: |
+        Get payment rail capabilities for a specific country, currency, and direction (onramp/offramp). Returns available payment rails with their required fields and supported currencies.
+
+        Partner rule:
+        - if `institution_required` is `true`, send `institution_id` chosen from `/api/v1/supported/institutions`
+        - if `institution_required` is `false`, partners may omit `institution_id`; the backend will resolve the generic `other-bank` payment method automatically for supported rails
       operationId: getPaymentRails
       parameters:
         - name: country
@@ -968,6 +973,14 @@ paths:
       summary: Create payment details for a partner user
       description: |
         Create payment details (beneficiary details) for a partner user. Used for offramp operations where crypto is converted to fiat and sent to the user's payment account. Partners can only access their own users.
+
+        Institution handling:
+        - for rails with `institution_required = true`, `institution_id` must be provided from `/api/v1/supported/institutions`
+        - for rails with `institution_required = false`, partners may omit `institution_id`; the backend will assign the generic `other-bank` payment method automatically
+
+        Currently, omitting `institution_id` is supported for:
+        - `iban-sepa`
+        - `nip-nigeria`
       operationId: createPaymentDetails
       security:
         - ApiKeyAuth: []
@@ -988,11 +1001,10 @@ paths:
               $ref: '#/components/schemas/CreatePaymentDetailsRequest'
             examples:
               iban-sepa:
-                summary: SEPA payment details (Europe)
+                summary: SEPA payment details (Europe, institution optional)
                 value:
                   currency: EUR
                   rail: iban-sepa
-                  institution_id: wise
                   country_code: DE
                   details:
                     full_name: "John Doe"
@@ -2440,7 +2452,7 @@ components:
           example: UPI India
         institution_required:
           type: boolean
-          description: Whether institution (bank) selection is required
+          description: Whether institution (bank) selection is required before creating payment details. If `false`, partners may omit `institution_id` and the backend will resolve the generic `other-bank` payment method automatically for supported rails.
           example: false
         institution_lookup_key:
           type: string
@@ -2892,7 +2904,7 @@ components:
 
     CreatePaymentDetailsRequest:
       type: object
-      required: [currency, rail, institution_id, details]
+      required: [currency, rail, details]
       properties:
         currency:
           type: string
@@ -2906,7 +2918,9 @@ components:
           type: string
           description: |
             Institution (payment method) identifier - our internal slug (e.g., "wise", "hdfc-bank", "revolut", "uala", "banco-santander-argentina").
-            Required for all rails. For rails with multiple formats (e.g., CVU/CBU), the format is automatically determined based on the payment method type of this institution.
+            Required only when the selected rail has `institution_required = true`.
+            If omitted for a supported rail with `institution_required = false`, the backend will assign the generic `other-bank` payment method automatically.
+            For rails with multiple formats (e.g., CVU/CBU), the format is automatically determined based on the payment method type of this institution.
           example: wise
         details:
           type: object
