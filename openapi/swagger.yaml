@@ -911,6 +911,13 @@ paths:
         with the KYC provider (e.g., AiPrise) and returns the current status, verification URL (if available),
         and other relevant information. Optionally, you can provide a verification_id to check a specific
         verification session.
+
+        Interpretation of terminal states:
+        - `VERIFIED` — verification passed and the user is approved
+        - `VERIFICATION_REJECTED` — verification completed with a rejection outcome
+        - `FAILED` — verification could not be completed due to an error
+        - `COMPLETED` — provider workflow finished processing, but partners should still treat `VERIFIED`
+          as the success state and `VERIFICATION_REJECTED` / `FAILED` as terminal non-success states
       operationId: getVerificationStatus
       security:
         - ApiKeyAuth: []
@@ -2854,7 +2861,15 @@ components:
                 status:
                   type: string
                   enum: [NOT_STARTED, PENDING, IN_PROGRESS, COMPLETED, VERIFIED, FAILED, VERIFICATION_REJECTED]
-                  description: Current verification status
+                  description: |
+                    Current verification status.
+
+                    Recommended partner interpretation:
+                    - `NOT_STARTED`, `PENDING`, `IN_PROGRESS` — still processing
+                    - `VERIFIED` — approved / successful verification
+                    - `VERIFICATION_REJECTED` — completed with rejection
+                    - `FAILED` — terminal error
+                    - `COMPLETED` — provider workflow completed, but partners should not treat this alone as approval; wait for `VERIFIED` to consider the user approved
                   example: "IN_PROGRESS"
                 verification_url:
                   type: string
