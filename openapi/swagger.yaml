@@ -2909,6 +2909,12 @@ components:
                   example: ["Verification in progress"]
 
     CreatePaymentDetailsRequest:
+      description: Conditional request schema for partner payment details. `institution_id` may be omitted only for `iban-sepa` and `nip-nigeria`.
+      oneOf:
+        - $ref: '#/components/schemas/CreatePaymentDetailsRequestInstitutionOptional'
+        - $ref: '#/components/schemas/CreatePaymentDetailsRequestInstitutionRequired'
+
+    CreatePaymentDetailsRequestBase:
       type: object
       required: [currency, rail, details]
       properties:
@@ -2920,15 +2926,6 @@ components:
           type: string
           description: Payment rail identifier (e.g., "upi-india", "iban-sepa", "imps-india")
           example: iban-sepa
-        institution_id:
-          type: string
-          description: |
-            Institution (payment method) identifier - our internal slug (e.g., "wise", "hdfc-bank", "revolut", "uala", "banco-santander-argentina").
-            Required for all rails except the currently supported omission rails: `iban-sepa` and `nip-nigeria`.
-            If omitted for one of those supported rails, the backend will assign the generic `other-bank` payment method automatically.
-            If omitted for any other rail, the API returns a validation error.
-            For rails with multiple formats (e.g., CVU/CBU), the format is automatically determined based on the payment method type of this institution.
-          example: wise
         details:
           type: object
           description: Payment details object with fields specific to the payment network (e.g., account_number, vpa, iban, full_name)
@@ -2940,6 +2937,44 @@ components:
           type: string
           description: Optional ISO 2-letter country code
           example: DE
+
+    CreatePaymentDetailsRequestInstitutionOptional:
+      allOf:
+        - $ref: '#/components/schemas/CreatePaymentDetailsRequestBase'
+        - type: object
+          properties:
+            rail:
+              type: string
+              enum: [iban-sepa, nip-nigeria]
+              description: Payment rail identifier for rails that support omission of `institution_id`
+              example: iban-sepa
+            institution_id:
+              type: string
+              description: |
+                Optional for `iban-sepa` and `nip-nigeria`.
+                If omitted, the backend assigns the generic `other-bank` payment method automatically.
+              example: other-bank
+
+    CreatePaymentDetailsRequestInstitutionRequired:
+      allOf:
+        - $ref: '#/components/schemas/CreatePaymentDetailsRequestBase'
+        - type: object
+          required: [institution_id]
+          properties:
+            rail:
+              type: string
+              description: Payment rail identifier for rails that require institution selection
+              not:
+                enum: [iban-sepa, nip-nigeria]
+              example: cvu-cbu
+            institution_id:
+              type: string
+              description: |
+                Institution (payment method) identifier - our internal slug (e.g., "wise", "hdfc-bank", "revolut", "uala", "banco-santander-argentina").
+                Required for all rails except `iban-sepa` and `nip-nigeria`.
+                If omitted for any other rail, the API returns a validation error.
+                For rails with multiple formats (e.g., CVU/CBU), the format is automatically determined based on the payment method type of this institution.
+              example: wise
 
     PaymentProfile:
       type: object
