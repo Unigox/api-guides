@@ -1220,45 +1220,542 @@ paths:
           description: Internal server error
 
   # ============================================
-  # 9. ON-RAMP OPERATIONS (Implemented Soon)
+  # 9. ON-RAMP OPERATIONS
   # ============================================
+  /api/v1/partner/onramp/estimate:
+    post:
+      tags:
+        - On-Ramp
+      summary: Get on-ramp price estimate
+      description: |
+        Get indicative on-ramp pricing (fiat to crypto) without creating a quote.
+        This endpoint is lightweight and does not reserve liquidity.
+
+        Use this when you need quick pricing discovery before calling `/partner/onramp/quote`.
+        Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
+        This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote.
+      operationId: getOnRampEstimate
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerPriceEstimateRequest'
+            example:
+              crypto_currency: USDT
+              fiat_currency: VND
+              fiat_amount: "26345"
+              payment_method_slug: zalopay
+              payment_network_slug: napas-vietnam
+              country_code: VN
+              provider_scope: all
+      responses:
+        '200':
+          description: Estimate retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerPriceEstimateResponse'
+              example:
+                success: true
+                data:
+                  rate: "26345.00"
+                  crypto_amount: "1.005000"
+                  fiat_amount: "26345.00"
+                  fee_breakdown:
+                    platform_fee: "0.005000"
+                    platform_fee_pct: 0.5
+                    partner_fee: "0.00"
+                    partner_fee_pct: 0
+                    total_fee: "0.005000"
+                  payment_method_slug: zalopay
+                  payment_network_slug: napas-vietnam
+                  provider_scope: all
+                  is_indicative: true
+        '400':
+          description: |
+            Bad request — invalid parameters, missing required fields,
+            unsupported cryptocurrency, or invalid provider_scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                invalid_amount:
+                  summary: Invalid amount configuration
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "exactly one of crypto_amount or fiat_amount must be provided"
+                unsupported_crypto:
+                  summary: Unsupported cryptocurrency
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "unsupported cryptocurrency: BTC"
+                invalid_provider_scope:
+                  summary: Invalid provider_scope value
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "invalid provider_scope: must be all, licensed_only, or p2p_only"
+        '401':
+          description: Unauthorized — missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAUTHORIZED
+                  message: "missing X-API-Key header"
+        '409':
+          description: No offers available for the requested pair/amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: NO_OFFERS_AVAILABLE
+                  message: "no matching offers found for the provided criteria"
+        '500':
+          description: Internal Server Error
+
   /api/v1/partner/onramp/quote:
     post:
       tags:
         - On-Ramp
-      summary: Get price estimate
-      description: "Get price estimate for on-ramp operation (fiat to crypto). Status: Implemented soon"
+      summary: Get on-ramp quote
+      description: |
+        Get a price quote for an on-ramp operation (fiat to crypto). Returns the exchange rate,
+        amounts, and a quote ID that can be used to initiate the order. Quotes expire after 60 seconds.
+
+        The `user_id` is the public UUID returned by `POST /partner/users` (the `id` field).
+
+        **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
+        `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
+        via dashboard in a future release), and `total_fee` (sum of both).
+
+        **Payment method:** Provide `payment_method_slug` and/or `payment_network_slug` to narrow routing.
+        If omitted, the best available option for the pair is selected automatically.
       operationId: getOnRampQuote
       security:
         - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerOnRampQuoteRequest'
+            example:
+              user_id: "23d60610-9737-43b2-a751-a2c6a7bba457"
+              fiat_amount: "26345"
+              fiat_currency: VND
+              crypto_currency: USDT
+              payment_method_slug: zalopay
+              payment_network_slug: napas-vietnam
+              country_code: VN
       responses:
         '200':
-          description: Price estimate retrieved successfully
+          description: Quote retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerOnRampQuoteResponse'
+              example:
+                success: true
+                data:
+                  quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  rate: "26345.00"
+                  crypto_amount: "1.005000"
+                  fiat_amount: "26345.00"
+                  fee_breakdown:
+                    platform_fee: "0.005000"
+                    platform_fee_pct: 0.5
+                    partner_fee: "0.00"
+                    partner_fee_pct: 0
+                    total_fee: "0.005000"
+                  payment_method_slug: zalopay
+                  payment_network_slug: napas-vietnam
+                  expires_at: "2026-03-30T19:15:50Z"
         '400':
-          description: Bad Request
+          description: Bad request — invalid parameters or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "Missing required field: fiat_currency"
         '401':
-          description: Unauthorized
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAUTHORIZED
+                  message: "Invalid or missing API key"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "User not found"
+        '409':
+          description: No offers available for the requested pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: NO_OFFERS_AVAILABLE
+                  message: "No offers available for USDT/VND"
         '500':
-          description: Internal Server Error
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
 
   /api/v1/partner/onramp/initiate:
     post:
       tags:
         - On-Ramp
-      summary: Start on-ramp order
-      description: "Initiate a new on-ramp order (fiat to crypto). Status: Implemented soon"
+      summary: Initiate on-ramp order
+      description: |
+        Initiate an on-ramp order using a previously obtained quote. The quote must still be active
+        (not expired or already used).
+
+        On success, returns the created order with status `awaiting_liquidity_provider`.
+        Once a vendor accepts, the order moves to `awaiting_vendor_escrow_funding`, then
+        `awaiting_fiat_transfer` when the crypto is locked in escrow.
+
+        At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order.
+        If the order type is `payment_request`, call `submit-payer-details` first before confirming.
       operationId: initiateOnRamp
       security:
         - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerInitiateRequest'
+            example:
+              quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+              reference_id: "your-internal-order-id"
       responses:
         '201':
           description: On-ramp order created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerInitiateResponse'
+              example:
+                success: true
+                data:
+                  order_id: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+                  status: awaiting_liquidity_provider
+                  quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  reference_id: "your-internal-order-id"
+                  order_type: onramp
+                  amounts:
+                    crypto_amount: "1.010025"
+                    fiat_amount: "26476.72"
+                    crypto_currency: USDT
+                    fiat_currency: VND
+                    rate: "26345.00"
+                  fee_breakdown:
+                    platform_fee: "0.005000"
+                    platform_fee_pct: 0.5
+                    partner_fee: "0.00"
+                    partner_fee_pct: 0
+                    total_fee: "0.005000"
+                  timeline: []
+                  created_at: "2026-03-30T19:00:05Z"
+        '400':
+          description: Bad request — missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Quote not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: QUOTE_NOT_FOUND
+                  message: "Quote not found"
+        '409':
+          description: Quote expired or already used
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                quote_expired:
+                  summary: Quote has expired
+                  value:
+                    success: false
+                    error:
+                      code: QUOTE_EXPIRED
+                      message: "Quote has expired, please request a new quote"
+                quote_already_used:
+                  summary: Quote already consumed
+                  value:
+                    success: false
+                    error:
+                      code: QUOTE_ALREADY_USED
+                      message: "Quote has already been used"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/submit-payer-details:
+    post:
+      tags:
+        - On-Ramp
+      summary: Submit payer details
+      description: |
+        Submit the end-user's payment details for a `payment_request` on-ramp order.
+        Only required when the order type is `payment_request` — regular on-ramp orders do not need this step.
+
+        Call this endpoint after initiating the order and before calling `confirm-payment-sent`.
+        The order must be in `awaiting_fiat_transfer` status.
+
+        Provide either a `payment_details_id` (referencing a previously saved payment profile) or
+        an inline `payment_details` object with the payer's account information.
+      operationId: submitPayerDetails
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID returned by the initiate endpoint
+          schema:
+            type: string
+            format: uuid
+          example: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitPayerDetailsRequest'
+            examples:
+              by_id:
+                summary: Using a saved payment profile
+                value:
+                  payment_details_id: 1444
+              inline:
+                summary: Providing details inline
+                value:
+                  payment_details:
+                    payment_method_id: 5
+                    payment_network_id: 12
+                    details:
+                      phone: "+254712345678"
+                      name: "John Doe"
+                    country_code: KE
+      responses:
+        '200':
+          description: Payer details submitted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: "payer details submitted successfully"
+              example:
+                success: true
+                data:
+                  message: "payer details submitted successfully"
+        '400':
+          description: Bad request — invalid or missing payer details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: "Order not found"
+        '409':
+          description: Order is not in the correct status or not a payment_request order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "Order is not in awaiting_fiat_transfer status"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/confirm-payment-sent:
+    post:
+      tags:
+        - On-Ramp
+      summary: Confirm fiat payment sent
+      description: |
+        Confirm that the end-user has initiated the fiat payment to the vendor.
+        This advances the order from `awaiting_fiat_transfer` to `fiat_transfer_pending`,
+        signalling to the vendor that the fiat is on its way.
+
+        For `payment_request` orders, call `submit-payer-details` first.
+        No request body required.
+      operationId: confirmPaymentSent
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+      responses:
+        '200':
+          description: Payment confirmed successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          order_id:
+                            type: string
+                            format: uuid
+                            example: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+                          status:
+                            type: string
+                            example: fiat_transfer_pending
+              example:
+                success: true
+                data:
+                  order_id: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+                  status: fiat_transfer_pending
         '400':
           description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '401':
-          description: Unauthorized
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: "Order not found"
+        '409':
+          description: Order is not in awaiting_fiat_transfer status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "Order is not in awaiting_fiat_transfer status"
         '500':
-          description: Internal Server Error
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
 
   # ============================================
   # 10. OFF-RAMP OPERATIONS
@@ -3274,6 +3771,10 @@ components:
           format: uuid
           description: Quote ID from the quote endpoint. Payment details are taken from the quote.
           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        reference_id:
+          type: string
+          description: Optional partner-supplied external reference ID (e.g. your internal order ID). Stored on the order and echoed back in responses.
+          example: "your-internal-order-id"
 
     PartnerInitiateResponse:
       type: object
@@ -3290,6 +3791,16 @@ components:
           format: uuid
           description: Quote ID that was consumed
           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        reference_id:
+          type: string
+          nullable: true
+          description: Partner-supplied external reference ID (echoed from initiate request)
+          example: "your-internal-order-id"
+        order_type:
+          type: string
+          enum: [offramp, onramp]
+          description: Direction of the order
+          example: offramp
         amounts:
           $ref: '#/components/schemas/PartnerOrderAmounts'
         fee_breakdown:
@@ -3433,7 +3944,9 @@ components:
     PartnerOrderStatus:
       type: string
       description: |
-        Partner-facing order status. Internal trade statuses are mapped to these simplified values:
+        Partner-facing order status. Internal trade statuses are mapped to these simplified values.
+
+        **Off-ramp statuses (crypto → fiat):**
         - `created` — order created, quote locked
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
         - `awaiting_crypto_transfer_authorization` — partner must authorize crypto transfer via EIP-712 signature
@@ -3447,6 +3960,15 @@ components:
         - `cancelled` — order cancelled
         - `failed` — terminal error
         - `price_changed_requote_needed` — slippage exceeded at initiation (not a trade status)
+
+        **On-ramp statuses (fiat → crypto):**
+        - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
+        - `awaiting_vendor_escrow_funding` — vendor accepted, funding escrow with crypto
+        - `awaiting_fiat_transfer` — crypto locked in escrow, partner must confirm payment sent
+        - `fiat_transfer_pending` — fiat payment confirmed, awaiting vendor confirmation of receipt
+        - `completed` — vendor confirmed fiat received, crypto released to end-user
+        - `cancelled` — order cancelled
+        - `failed` — escrow error
       enum:
         - created
         - awaiting_liquidity_provider
@@ -3457,6 +3979,9 @@ components:
         - awaiting_fiat_received_confirmation
         - fiat_received_confirmed
         - crypto_release_pending
+        - awaiting_vendor_escrow_funding
+        - awaiting_fiat_transfer
+        - fiat_transfer_pending
         - completed
         - cancelled
         - failed
@@ -3570,6 +4095,129 @@ components:
               type: string
               description: Payment details ID used for the order
               example: "987"
+
+    PartnerOnRampQuoteRequest:
+      type: object
+      required: [user_id, fiat_currency, crypto_currency]
+      oneOf:
+        - required: [fiat_amount]
+        - required: [crypto_amount]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: Public UUID of the end-user (returned by `POST /partner/users` as `id`)
+          example: "23d60610-9737-43b2-a751-a2c6a7bba457"
+        fiat_amount:
+          type: string
+          description: Fiat amount the end-user will send. Provide exactly one of fiat_amount or crypto_amount.
+          example: "26345"
+        crypto_amount:
+          type: string
+          description: Crypto amount to receive. Provide exactly one of fiat_amount or crypto_amount.
+          example: "1.00"
+        fiat_currency:
+          type: string
+          description: Source fiat currency code (ISO 4217)
+          example: VND
+        crypto_currency:
+          type: string
+          description: Target cryptocurrency code (e.g., USDT, USDC)
+          example: USDT
+        payment_method_slug:
+          type: string
+          description: Optional payment method slug to narrow routing
+          example: zalopay
+        payment_network_slug:
+          type: string
+          description: Optional payment network slug to narrow routing
+          example: napas-vietnam
+        provider_scope:
+          type: string
+          description: Optional provider scope filter; defaults to all
+          enum: [all, licensed_only, p2p_only]
+          example: all
+        country_code:
+          type: string
+          description: Optional ISO 2-letter country code for fee/routing context
+          example: VN
+
+    PartnerOnRampQuoteResponse:
+      type: object
+      properties:
+        quote_id:
+          type: string
+          format: uuid
+          description: Unique quote identifier — use this to initiate the order
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        rate:
+          type: string
+          description: Fiat-to-crypto exchange rate (fiat units per 1 crypto unit)
+          example: "26345.00"
+        crypto_amount:
+          type: string
+          description: Total crypto amount the end-user will receive (net of fees)
+          example: "1.005000"
+        fiat_amount:
+          type: string
+          description: Fiat amount the end-user sends
+          example: "26345.00"
+        fee_breakdown:
+          $ref: '#/components/schemas/FeeBreakdown'
+        payment_method_slug:
+          type: string
+          description: Matched payment method slug used for this quote
+          example: zalopay
+        payment_network_slug:
+          type: string
+          description: Matched payment network slug used for this quote
+          example: napas-vietnam
+        expires_at:
+          type: string
+          format: date-time
+          description: Quote expiration timestamp (60 seconds from creation)
+          example: "2026-03-30T19:15:50Z"
+
+    SubmitPayerDetailsRequest:
+      type: object
+      description: |
+        Submit the payer's payment details for a `payment_request` on-ramp order.
+        Provide exactly one of `payment_details_id` (saved profile) or `payment_details` (inline object).
+      oneOf:
+        - required: [payment_details_id]
+          properties:
+            payment_details_id:
+              type: integer
+              format: int64
+              description: ID of a previously saved payment profile for the end-user
+              example: 1444
+        - required: [payment_details]
+          properties:
+            payment_details:
+              type: object
+              required: [payment_method_id, payment_network_id, details]
+              properties:
+                payment_method_id:
+                  type: integer
+                  format: int64
+                  description: Payment method ID
+                  example: 5
+                payment_network_id:
+                  type: integer
+                  format: int64
+                  description: Payment network ID
+                  example: 12
+                details:
+                  type: object
+                  description: Payer's account details (fields depend on payment method)
+                  additionalProperties: true
+                  example:
+                    phone: "+254712345678"
+                    name: "John Doe"
+                country_code:
+                  type: string
+                  description: Optional ISO 2-letter country code
+                  example: KE
 
     PartnerErrorResponse:
       type: object
