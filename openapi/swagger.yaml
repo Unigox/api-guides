@@ -739,11 +739,15 @@ paths:
       summary: Upload KYC document for a partner user
       description: |
         Upload a document (ID, passport, proof of address, etc.) for a partner user's KYC verification.
-        Used after submitting KYC with direct_data method to provide supporting documents.
-        Requires partner API key authentication and multipart/form-data.
-        
+
+        Supports two upload methods:
+        - **File upload** (default): multipart/form-data with document file
+        - **URL upload**: JSON body with `upload_method: 'url_link'` and `url` field
+
+        URL upload: HTTPS only, 10MB max, JPEG/PNG/GIF/PDF only.
+
         **Automatic Verification:** After uploading all required documents (selfie + identity_front),
-        verification starts automatically. This simplifies partner integration.
+        verification starts automatically.
       operationId: uploadPartnerKYCDocument
       security:
         - ApiKeyAuth: []
@@ -865,7 +869,25 @@ paths:
                   example: "identity_front"
             encoding:
               document:
-                contentType: image/jpeg, image/png, application/pdf
+                contentType: image/jpeg, image/png, image/gif, application/pdf
+          application/json:
+            schema:
+              type: object
+              required: [upload_method, document_type, url]
+              properties:
+                upload_method:
+                  type: string
+                  enum: [url_link]
+                  example: url_link
+                document_type:
+                  type: string
+                  description: Type of document (same types as file upload)
+                  example: identity_front
+                url:
+                  type: string
+                  format: uri
+                  description: HTTPS URL of the document image. 10MB max, JPEG/PNG/GIF/PDF only.
+                  example: "https://example.com/id-front.jpg"
       responses:
         '200':
           description: Document uploaded successfully
@@ -3285,6 +3307,7 @@ components:
           properties:
             pii:
               type: object
+              required: [first_name, last_name, country_code]
               properties:
                 first_name:
                   type: string
@@ -3292,13 +3315,27 @@ components:
                 last_name:
                   type: string
                   example: Doe
+                country_code:
+                  type: string
+                  example: NG
                 dob:
                   type: string
                   format: date
                   example: "1990-01-01"
-                country_code:
+                middle_name:
                   type: string
-                  example: NG
+                  example: Michael
+                phone_number:
+                  type: string
+                  description: E.164 format
+                  example: "+2348012345678"
+                id_number:
+                  type: string
+                  example: "A12345678"
+                id_type:
+                  type: string
+                  enum: [NATIONAL_ID, DRIVER_LICENSE, PASSPORT]
+                  example: NATIONAL_ID
                 address:
                   type: string
                   example: "123 Street Name, Lagos"
