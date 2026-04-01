@@ -752,12 +752,9 @@ paths:
         document_type: identity_front
         ```
 
-        ### Method 2: URL Upload
-        Send a URL pointing to the document image.
+        ### Method 2: Single URL Upload
+        Send a URL pointing to one document image.
         ```json
-        POST /api/v1/partner/users/{id}/kyc/documents
-        Content-Type: application/json
-
         {
           "upload_method": "url_link",
           "document_type": "identity_front",
@@ -765,7 +762,19 @@ paths:
         }
         ```
 
-        **URL requirements:** HTTPS only, 10MB max, JPEG/PNG/GIF/PDF.
+        ### Method 3: Batch URL Upload
+        Upload multiple documents in one call (up to 10).
+        ```json
+        {
+          "upload_method": "url_link",
+          "documents": [
+            { "document_type": "identity_front", "url": "https://example.com/id-front.jpg" },
+            { "document_type": "selfie", "url": "https://example.com/selfie.jpg" }
+          ]
+        }
+        ```
+
+        **URL requirements:** HTTPS only, 10MB per file, JPEG/PNG/GIF/PDF.
 
         ---
 
@@ -804,40 +813,65 @@ paths:
                       description: Type of document being uploaded
                       enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
                       example: identity_front
-                - title: URL Upload (JSON)
-                  description: Upload document by providing an HTTPS URL to the image.
+                - title: Single URL Upload
+                  description: Upload one document by providing an HTTPS URL.
                   type: object
                   required: [upload_method, document_type, url]
                   properties:
                     upload_method:
                       type: string
                       enum: [url_link]
-                      description: Must be "url_link" for URL-based upload
                       example: url_link
                     document_type:
                       type: string
-                      description: Type of document being uploaded
                       enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
                       example: identity_front
                     url:
                       type: string
                       format: uri
-                      description: HTTPS URL of the document image. 10MB max, JPEG/PNG/GIF/PDF only.
+                      description: HTTPS URL of the image. 10MB max.
                       example: "https://example.com/id-front.jpg"
+                - title: Batch URL Upload
+                  description: Upload multiple documents in one call (up to 10).
+                  type: object
+                  required: [upload_method, documents]
+                  properties:
+                    upload_method:
+                      type: string
+                      enum: [url_link]
+                      example: url_link
+                    documents:
+                      type: array
+                      maxItems: 10
+                      items:
+                        type: object
+                        required: [document_type, url]
+                        properties:
+                          document_type:
+                            type: string
+                            enum: [identity_front, identity_back, selfie, passport, national_id, driver_license]
+                            example: identity_front
+                          url:
+                            type: string
+                            format: uri
+                            example: "https://example.com/id-front.jpg"
               discriminator:
                 propertyName: upload_method
             examples:
-              url_upload_id_front:
-                summary: Upload ID front via URL
+              single_url:
+                summary: Single document via URL
                 value:
                   upload_method: url_link
                   document_type: identity_front
                   url: "https://example.com/id-front.jpg"
-              url_upload_selfie:
-                summary: Upload selfie via URL
+              batch_url:
+                summary: Batch upload (multiple documents)
                 value:
                   upload_method: url_link
-                  document_type: selfie
+                  documents:
+                    - document_type: identity_front
+                      url: "https://example.com/id-front.jpg"
+                    - document_type: selfie
                   url: "https://example.com/selfie.jpg"
       responses:
         '200':
