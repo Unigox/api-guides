@@ -692,14 +692,14 @@ paths:
                       country_code: NG
                       address: "123 Street Name, Lagos"
                       postal_code: "100001"
-              external_token_sumsub:
+              external_token_with_sumsub:
                 summary: External token (SumSub)
                 value:
                   method: external_token
                   data:
                     provider: sumsub
                     token: "sumsub_external_session_id"
-              external_token_persona:
+              external_token_with_persona:
                 summary: External token (Persona)
                 value:
                   method: external_token
