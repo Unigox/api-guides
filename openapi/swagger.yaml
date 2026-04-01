@@ -656,7 +656,7 @@ paths:
       description: |
         Submit KYC (Know Your Customer) data for a partner user. Supports three methods:
         - direct_data: Partner submits PII data directly, Unigox initiates verification
-        - external_token: Partner provides external KYC provider token (e.g., SumSub)
+        - external_token: Partner provides external KYC provider credentials (SumSub token or Persona inquiry_id)
         - handoff: Unigox handles KYC verification and generates verification URL
       operationId: submitKYC
       security:
@@ -692,13 +692,20 @@ paths:
                       country_code: NG
                       address: "123 Street Name, Lagos"
                       postal_code: "100001"
-              external_token:
+              external_token_sumsub:
                 summary: External token (SumSub)
                 value:
                   method: external_token
                   data:
                     provider: sumsub
                     token: "sumsub_external_session_id"
+              external_token_persona:
+                summary: External token (Persona)
+                value:
+                  method: external_token
+                  data:
+                    provider: persona
+                    inquiry_id: "inq_CWQzc5afzD4dmF66EJqjdPC2T79C"
               handoff:
                 summary: Handoff to Unigox
                 value:
@@ -2812,15 +2819,25 @@ components:
           example: external_token
         data:
           type: object
-          required: [provider, token]
+          required: [provider]
+          description: |
+            Provider-specific fields:
+            - SumSub: requires `token` (SumSub share token)
+            - Persona: requires `inquiry_id` (Persona inquiry ID, e.g. inq_xxx)
           properties:
             provider:
               type: string
-              enum: [sumsub]
-              example: sumsub
+              enum: [sumsub, persona]
+              description: KYC provider name
+              example: persona
             token:
-                  type: string
-                  example: "sumsub_external_session_id"
+              type: string
+              description: SumSub share token (required when provider=sumsub)
+              example: "sumsub_external_session_id"
+            inquiry_id:
+              type: string
+              description: Persona inquiry ID (required when provider=persona). This is the inq_xxx identifier returned by Persona when the inquiry was created.
+              example: "inq_CWQzc5afzD4dmF66EJqjdPC2T79C"
 
     KYCSubmitHandoff:
       type: object
