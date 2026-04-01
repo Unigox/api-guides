@@ -738,16 +738,40 @@ paths:
         - User Management
       summary: Upload KYC document for a partner user
       description: |
-        Upload a document (ID, passport, proof of address, etc.) for a partner user's KYC verification.
+        Upload a KYC document for a partner user. Choose one of two upload methods:
 
-        Supports two upload methods:
-        - **File upload** (default): multipart/form-data with document file
-        - **URL upload**: JSON body with `upload_method: 'url_link'` and `url` field
+        ---
 
-        URL upload: HTTPS only, 10MB max, JPEG/PNG/GIF/PDF only.
+        ### Method 1: File Upload
+        Send the document as a file attachment.
+        ```
+        POST /api/v1/partner/users/{id}/kyc/documents
+        Content-Type: multipart/form-data
 
-        **Automatic Verification:** After uploading all required documents (selfie + identity_front),
-        verification starts automatically.
+        document: <file>
+        document_type: identity_front
+        ```
+
+        ### Method 2: URL Upload
+        Send a URL pointing to the document image.
+        ```json
+        POST /api/v1/partner/users/{id}/kyc/documents
+        Content-Type: application/json
+
+        {
+          "upload_method": "url_link",
+          "document_type": "identity_front",
+          "url": "https://example.com/id-front.jpg"
+        }
+        ```
+
+        **URL requirements:** HTTPS only, 10MB max, JPEG/PNG/GIF/PDF.
+
+        ---
+
+        **Supported document types:** `identity_front` (required), `selfie` (required), `identity_back`, `passport`, `national_id`, `driver_license`, and more.
+
+        **Automatic Verification:** After uploading all required documents (selfie + identity_front), verification starts automatically.
       operationId: uploadPartnerKYCDocument
       security:
         - ApiKeyAuth: []
@@ -755,7 +779,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          description: Public UUID of the user
           schema:
             type: string
             format: uuid
@@ -763,131 +787,58 @@ paths:
       requestBody:
         required: true
         content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [document, document_type]
-              properties:
-                document:
-                  type: string
-                  format: binary
-                  description: Document file to upload (image or PDF)
-                document_type:
-                  type: string
-                  required: true
-                  description: |
-                    Type of document being uploaded. Supported document types:
-                    
-                    **Required documents:**
-                    - `selfie` - Selfie photo for liveness verification (required)
-                    - `identity_front` - Front side of identity document (required)
-                    
-                    **Optional documents:**
-                    - `identity_back` - Back side of identity document
-                    
-                    **Generic identity document types:**
-                    - `identity_front` - Front side of any identity document
-                    - `identity_back` - Back side of any identity document
-                    
-                    **Passport:**
-                    - `passport_front` - Front page of passport
-                    - `passport` - Alias for passport_front
-                    
-                    **National ID:**
-                    - `national_id_front` - Front side of national ID
-                    - `national_id_back` - Back side of national ID
-                    - `national_id` - Alias for national_id_front
-                    
-                    **Driver License:**
-                    - `driver_license_front` - Front side of driver license
-                    - `driver_license_back` - Back side of driver license
-                    - `driver_license` - Alias for driver_license_front
-                    
-                    **Voter ID:**
-                    - `voter_id_front` - Front side of voter ID card
-                    - `voter_id_back` - Back side of voter ID card
-                    - `voter_id` - Alias for voter_id_front
-                    
-                    **Resident Card:**
-                    - `resident_card_front` - Front side of resident card
-                    - `resident_card_back` - Back side of resident card
-                    - `resident_card` - Alias for resident_card_front
-                    
-                    **ID Card:**
-                    - `id_card_front` - Front side of ID card
-                    - `id_card_back` - Back side of ID card
-                    - `id_card` - Alias for id_card_front
-                    
-                    **Country-specific documents:**
-                    - `ghana_card_front`, `ghana_card_back`, `ghana_card` - Ghana Card
-                    - `ghana_ssnit_card_front`, `ghana_ssnit_card_back`, `ghana_ssnit_card` - Ghana SSNIT Card
-                    - `kenya_alien_card_front`, `kenya_alien_card_back`, `kenya_alien_card` - Kenya Alien Card
-                    - `green_book_front`, `green_book_back`, `green_book` - Green Book (South Africa)
-                    - `tax_id_front`, `tax_id_back`, `tax_id` - Tax ID (e.g., India PAN Card)
-                    - `colombia_ppt_front`, `colombia_ppt_back`, `colombia_ppt` - Colombia PPT (Permiso por Protección Temporal)
-                    
-                    **Note:** Verification starts automatically after uploading all required documents (selfie + identity_front).
-                  enum:
-                    - identity_front
-                    - identity_back
-                    - passport_front
-                    - passport
-                    - national_id_front
-                    - national_id_back
-                    - national_id
-                    - driver_license_front
-                    - driver_license_back
-                    - driver_license
-                    - voter_id_front
-                    - voter_id_back
-                    - voter_id
-                    - resident_card_front
-                    - resident_card_back
-                    - resident_card
-                    - id_card_front
-                    - id_card_back
-                    - id_card
-                    - ghana_card_front
-                    - ghana_card_back
-                    - ghana_card
-                    - ghana_ssnit_card_front
-                    - ghana_ssnit_card_back
-                    - ghana_ssnit_card
-                    - kenya_alien_card_front
-                    - kenya_alien_card_back
-                    - kenya_alien_card
-                    - green_book_front
-                    - green_book_back
-                    - green_book
-                    - tax_id_front
-                    - tax_id_back
-                    - tax_id
-                    - colombia_ppt_front
-                    - colombia_ppt_back
-                    - colombia_ppt
-                    - selfie
-                  example: "identity_front"
-            encoding:
-              document:
-                contentType: image/jpeg, image/png, image/gif, application/pdf
           application/json:
             schema:
-              type: object
-              required: [upload_method, document_type, url]
-              properties:
-                upload_method:
-                  type: string
-                  enum: [url_link]
-                  example: url_link
-                document_type:
-                  type: string
-                  description: Type of document (same types as file upload)
-                  example: identity_front
-                url:
-                  type: string
-                  format: uri
-                  description: HTTPS URL of the document image. 10MB max, JPEG/PNG/GIF/PDF only.
-                  example: "https://example.com/id-front.jpg"
+              oneOf:
+                - title: File Upload (multipart)
+                  description: Upload document as a file attachment. Use Content-Type multipart/form-data.
+                  type: object
+                  required: [document, document_type]
+                  properties:
+                    document:
+                      type: string
+                      format: binary
+                      description: Document file (JPEG, PNG, GIF, or PDF, max 10MB)
+                    document_type:
+                      type: string
+                      description: Type of document being uploaded
+                      enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
+                      example: identity_front
+                - title: URL Upload (JSON)
+                  description: Upload document by providing an HTTPS URL to the image.
+                  type: object
+                  required: [upload_method, document_type, url]
+                  properties:
+                    upload_method:
+                      type: string
+                      enum: [url_link]
+                      description: Must be "url_link" for URL-based upload
+                      example: url_link
+                    document_type:
+                      type: string
+                      description: Type of document being uploaded
+                      enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
+                      example: identity_front
+                    url:
+                      type: string
+                      format: uri
+                      description: HTTPS URL of the document image. 10MB max, JPEG/PNG/GIF/PDF only.
+                      example: "https://example.com/id-front.jpg"
+              discriminator:
+                propertyName: upload_method
+            examples:
+              url_upload_id_front:
+                summary: Upload ID front via URL
+                value:
+                  upload_method: url_link
+                  document_type: identity_front
+                  url: "https://example.com/id-front.jpg"
+              url_upload_selfie:
+                summary: Upload selfie via URL
+                value:
+                  upload_method: url_link
+                  document_type: selfie
+                  url: "https://example.com/selfie.jpg"
       responses:
         '200':
           description: Document uploaded successfully
