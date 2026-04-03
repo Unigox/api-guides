@@ -50,8 +50,8 @@ tags:
     description: Endpoints to create and manage user accounts
     x-page-icon: user
   - name: On-Ramp
-    description: On-ramp operations (fiat to crypto) — coming soon
-    x-page-icon: hourglass-half
+    description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
+    x-page-icon: arrow-down-to-bracket
   - name: Liquidity
     description: Real-time aggregated liquidity data — available trading pairs, amount ranges, and payment methods
     x-page-icon: chart-bar
@@ -1581,6 +1581,14 @@ paths:
       description: |
         Submit the end-user's payment details for a `payment_request` on-ramp order.
         Only required when the order type is `payment_request` — regular on-ramp orders do not need this step.
+
+        **Order types:**
+        - **Regular on-ramp** — the vendor sends fiat to the end-user directly. No payer details needed.
+          The partner receives vendor payment details in the `vendor_payment_details` field of `GET /orders/:id`
+          and forwards them to the end-user to initiate the transfer.
+        - **`payment_request` on-ramp** — the vendor sends a payment request (e.g. M-Pesa push) to the end-user.
+          The end-user's account details must be submitted here first so the vendor knows where to send the request.
+          Check `payment_request: true` in the order response to identify this type.
 
         Call this endpoint after initiating the order and before calling `confirm-payment-sent`.
         The order must be in `awaiting_fiat_transfer` status.
