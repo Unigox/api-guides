@@ -1771,6 +1771,255 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
+  /api/v1/partner/orders/{order_id}/bridge-authorization-parameters:
+    get:
+      tags:
+        - On-Ramp
+      summary: Get send-out authorization parameters
+      description: |
+        After an on-ramp order reaches `completed` status (crypto on master wallet), the partner
+        can optionally initiate a cross-chain send-out to transfer the USDT to an external network
+        (e.g. Arbitrum).
+
+        This endpoint returns the EIP-712 `ForwardRequest` parameters required to authorize the
+        transfer. The partner must sign the request locally and submit the signature to
+        `POST /api/v1/partner/orders/{order_id}/authorize-bridge`.
+
+        **Prerequisites:**
+        - Order status must be `completed` (internal: `escrow_released_to_buyer`)
+        - `destination_chain` must be a supported chain slug (e.g. `arbitrum`, `ethereum`)
+        - `destination_address` must be a valid EVM address
+
+        **Response includes:**
+        - `forward_request` — pre-filled EIP-712 ForwardRequest object to sign
+        - `eip712_domain` — domain parameters for EIP-712 signing
+        - `quote_id` — Relay quote ID embedded in the transfer calldata
+        - `to_amount` — estimated USDT amount to be received on the destination chain (atomic units)
+        - `forwarder_nonce` — current on-chain nonce for the master wallet
+      operationId: getBridgeAuthorizationParameters
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+        - name: destination_chain
+          in: query
+          required: true
+          description: Destination chain slug (e.g. `arbitrum`, `ethereum`)
+          schema:
+            type: string
+          example: arbitrum
+        - name: destination_address
+          in: query
+          required: true
+          description: Recipient EVM address on the destination chain
+          schema:
+            type: string
+          example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+      responses:
+        '200':
+          description: Authorization parameters returned successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  order_id: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+                  chain_id: "660279"
+                  rpc_url: "https://xai-chain.net/rpc"
+                  token_address: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
+                  forwarder_address: "0x6fFCF38bEc8c733b096958fcd2a8E31A00530EDC"
+                  solver_address: "0x00A72adEB6542916F53dc2d78450CD436320868B"
+                  sender_address: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                  amount_atomic: "10100"
+                  amount_human: "0.010100"
+                  crypto_currency: "USDT"
+                  crypto_decimals: 6
+                  recommended_gas: "500000"
+                  recommended_ttl: 3600
+                  transfer_data: "0xa9059cbb..."
+                  forwarder_nonce: "63"
+                  quote_id: "0x9b0539b1..."
+                  to_amount: "10100"
+                  destination_chain: "arbitrum"
+                  destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+                  expires_at: "2026-04-03T17:13:12Z"
+                  authorization_path: "/api/v1/partner/orders/ce3cfd6a-1234-5678-abcd-ef1234567890/authorize-bridge"
+        '400':
+          description: Invalid destination_chain or destination_address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: Order is not in `completed` status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/authorize-bridge:
+    post:
+      tags:
+        - On-Ramp
+      summary: Authorize send-out (cross-chain transfer)
+      description: |
+        Submit the signed EIP-712 ForwardRequest to initiate a cross-chain send-out.
+        The signature is verified on-chain via the XAI forwarder contract.
+
+        Call `GET bridge-authorization-parameters` first to get the parameters to sign.
+
+        After submission the order transitions to `send_out_pending`. A background worker
+        monitors the Relay bridge and updates the status to `send_out_completed` or
+        `send_out_failed` when the transfer settles. The partner receives a webhook for
+        each transition.
+
+        When the send-out completes, the `send_out_tx_hash` field in `GET /orders/:id`
+        contains the destination-chain transaction hash.
+
+        **This endpoint is idempotent at the on-chain level** — the EIP-712 nonce prevents
+        duplicate submissions. A second call with the same nonce will be rejected.
+      operationId: authorizeBridge
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination_chain, destination_address, forward_request, signature]
+              properties:
+                destination_chain:
+                  type: string
+                  description: Destination chain slug (must match the value used in bridge-authorization-parameters)
+                  example: arbitrum
+                destination_address:
+                  type: string
+                  description: Recipient EVM address on the destination chain
+                  example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+                forward_request:
+                  type: object
+                  description: EIP-712 ForwardRequest object (values from bridge-authorization-parameters)
+                  required: [from, to, value, gas, nonce, deadline, data]
+                  properties:
+                    from:
+                      type: string
+                      example: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                    to:
+                      type: string
+                      example: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
+                    value:
+                      type: string
+                      example: "0"
+                    gas:
+                      type: string
+                      example: "500000"
+                    nonce:
+                      type: string
+                      example: "63"
+                    deadline:
+                      type: string
+                      example: "1775236548"
+                    data:
+                      type: string
+                      example: "0xa9059cbb..."
+                signature:
+                  type: string
+                  description: EIP-712 signature of the ForwardRequest (hex, with 0x prefix)
+                  example: "0xc9a69a67..."
+            example:
+              destination_chain: arbitrum
+              destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+              forward_request:
+                from: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                to: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
+                value: "0"
+                gas: "500000"
+                nonce: "63"
+                deadline: "1775236548"
+                data: "0xa9059cbb..."
+              signature: "0xc9a69a67..."
+      responses:
+        '200':
+          description: Send-out submitted successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  order_id: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+                  status: send_out_pending
+        '400':
+          description: Invalid request — bad forward_request, nonce mismatch, or invalid destination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: Order is not in `completed` status or send-out already in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: Transactor service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
   # ============================================
   # 10. OFF-RAMP OPERATIONS
   # ============================================
@@ -3928,6 +4177,43 @@ components:
           type: string
           format: date-time
           example: "2026-02-01T12:00:06Z"
+        order_type:
+          type: string
+          nullable: true
+          description: |
+            Order type. Present for on-ramp orders. Absent for off-ramp orders.
+            - `onramp` — buy crypto with fiat
+          example: onramp
+        vendor_payment_details:
+          type: object
+          nullable: true
+          description: |
+            Vendor's payment details for the end-user to send fiat to.
+            Present only for on-ramp orders at `awaiting_fiat_transfer` status and beyond.
+          properties:
+            payment_method_name:
+              type: string
+              example: "Agribank"
+            payment_network_name:
+              type: string
+              example: "Napas Vietnam"
+            details:
+              type: object
+              description: Payment method-specific fields (e.g. account_number, phone)
+        payment_request:
+          type: boolean
+          nullable: true
+          description: |
+            `true` if the vendor uses payment request flow — the partner must call
+            `submit-payer-details` before `confirm-payment-sent`.
+          example: false
+        send_out_tx_hash:
+          type: string
+          nullable: true
+          description: |
+            Destination-chain transaction hash after a send-out completes.
+            Present only for on-ramp orders with `send_out_completed` status.
+          example: "0xd413bf3b8fe3b1d86b1e6d4c40a82eb8c94824202ff9a010161301400ab1552d"
 
     PartnerOrderAmounts:
       type: object
@@ -4005,9 +4291,21 @@ components:
         - `awaiting_vendor_escrow_funding` — vendor accepted, funding escrow with crypto
         - `awaiting_fiat_transfer` — crypto locked in escrow, partner must confirm payment sent
         - `fiat_transfer_pending` — fiat payment confirmed, awaiting vendor confirmation of receipt
-        - `completed` — vendor confirmed fiat received, crypto released to end-user
+        - `completed` — vendor confirmed fiat received, crypto released to end-user wallet
         - `cancelled` — order cancelled
         - `failed` — escrow error
+
+        **On-ramp send-out statuses (optional post-trade cross-chain transfer):**
+
+        > After an on-ramp order reaches `completed`, the partner may optionally initiate a
+        > **send-out** — a cross-chain transfer of the received crypto to a destination network
+        > (e.g. XAI → Arbitrum). This is an additional flow and does not affect the core trade lifecycle.
+        > The `completed` status reflects that the trade itself is done; send-out statuses track
+        > the subsequent cross-chain transfer only.
+
+        - `send_out_pending` — send-out initiated, cross-chain transfer in progress
+        - `send_out_completed` — cross-chain transfer successfully delivered to destination
+        - `send_out_failed` — cross-chain transfer failed; the on-ramp trade itself remains completed
       enum:
         - created
         - awaiting_liquidity_provider
@@ -4025,6 +4323,9 @@ components:
         - cancelled
         - failed
         - price_changed_requote_needed
+        - send_out_pending
+        - send_out_completed
+        - send_out_failed
       example: awaiting_crypto_transfer_authorization
 
     TimelineEntry:
