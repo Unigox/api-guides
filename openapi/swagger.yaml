@@ -619,7 +619,7 @@ paths:
       tags:
         - User Management
       summary: Partner user by ID
-      description: Get user details including KYC status and payment profiles using the id (public_uuid) returned during user creation. Partners can only access their own users.
+      description: Get user details including KYC status and payment profiles using the user_uuid returned during user creation. Partners can only access their own users.
       operationId: getPartnerUser
       security:
         - ApiKeyAuth: []
@@ -3772,9 +3772,9 @@ components:
     PaymentProfile:
       type: object
       properties:
-        id:
+        payment_details_id:
           type: string
-          description: Payment profile ID
+          description: Payment details ID. Use this value in offramp/onramp quote requests.
           example: "987"
         rail:
           type: string
