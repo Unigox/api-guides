@@ -614,7 +614,7 @@ paths:
           description: Internal Server Error
 
   # Step 2: Get partner user by id
-  /api/v1/partner/users/{id}:
+  /api/v1/partner/users/{user_uuid}:
     get:
       tags:
         - User Management
@@ -624,7 +624,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: id
+        - name: user_uuid
           in: path
           required: true
           description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
@@ -648,7 +648,7 @@ paths:
   # 7. PARTNER KYC VERIFICATION FLOW
   # ============================================
   # Step 3: Submit KYC data for a partner user
-  /api/v1/partner/users/{id}/kyc-submissions:
+  /api/v1/partner/users/{user_uuid}/kyc-submissions:
     post:
       tags:
         - User Management
@@ -662,7 +662,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: id
+        - name: user_uuid
           in: path
           required: true
           description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
@@ -732,7 +732,7 @@ paths:
           description: Internal Server Error
 
   # Step 4: Upload KYC document for a partner user (for direct_data method)
-  /api/v1/partner/users/{id}/kyc/documents:
+  /api/v1/partner/users/{user_uuid}/kyc/documents:
     post:
       tags:
         - User Management
@@ -745,7 +745,7 @@ paths:
         ### Method 1: File Upload
         Send the document as a file attachment.
         ```
-        POST /api/v1/partner/users/{id}/kyc/documents
+        POST /api/v1/partner/users/{user_uuid}/kyc/documents
         Content-Type: multipart/form-data
 
         document: <file>
@@ -785,7 +785,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: id
+        - name: user_uuid
           in: path
           required: true
           description: Public UUID of the user
@@ -926,7 +926,7 @@ paths:
           description: Internal Server Error
 
   # Step 5: Get verification status for a partner user (check KYC status)
-  /api/v1/partner/users/{id}/verification-status:
+  /api/v1/partner/users/{user_uuid}/verification-status:
     get:
       tags:
         - User Management
@@ -947,7 +947,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: id
+        - name: user_uuid
           in: path
           required: true
           description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
@@ -986,7 +986,7 @@ paths:
   # 6. PARTNER PAYMENT DETAILS MANAGEMENT
   # ============================================
   # Step 6: Create payment details for a partner user (for offramp operations)
-  /api/v1/partner/users/{id}/payment-details:
+  /api/v1/partner/users/{user_uuid}/payment-details:
     post:
       tags:
         - User Management
@@ -1005,7 +1005,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: id
+        - name: user_uuid
           in: path
           required: true
           description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
@@ -1085,7 +1085,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: id
+        - name: user_uuid
           in: path
           required: true
           description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
@@ -1117,7 +1117,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: id
+        - name: user_uuid
           in: path
           required: true
           description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
