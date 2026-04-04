@@ -627,7 +627,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
           schema:
             type: string
             format: uuid
@@ -665,7 +665,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
           schema:
             type: string
             format: uuid
@@ -950,7 +950,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
           schema:
             type: string
             format: uuid
@@ -1008,7 +1008,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
           schema:
             type: string
             format: uuid
@@ -1088,7 +1088,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
           schema:
             type: string
             format: uuid
@@ -1120,7 +1120,7 @@ paths:
         - name: id
           in: path
           required: true
-          description: Public UUID token (public_uuid) returned during user creation as id field. Partners can only access their own users.
+          description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
           schema:
             type: string
             format: uuid
@@ -3433,10 +3433,10 @@ components:
             data:
               type: object
               properties:
-                id:
+                user_uuid:
                   type: string
                   format: uuid
-                  description: Public UUID token (public_uuid) shown to partner as user id
+                  description: Public UUID of the user. Use this value in all subsequent API calls.
                   example: "550e8400-e29b-41d4-a716-446655440000"
                 email:
                   type: string
@@ -3459,10 +3459,10 @@ components:
             data:
               type: object
               properties:
-                id:
+                user_uuid:
                   type: string
                   format: uuid
-                  description: Public UUID token (public_uuid) shown to partner as user id
+                  description: Public UUID of the user. Use this value in all subsequent API calls.
                   example: "550e8400-e29b-41d4-a716-446655440000"
                 email:
                   type: string
