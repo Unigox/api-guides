@@ -88,7 +88,7 @@ tags:
         "data": {
           "order_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
           "status": "crypto_received",
-          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
           "crypto_amount": "101.500000",
           "crypto_currency": "USDT",
           "fiat_amount": "152880.00",
@@ -110,7 +110,7 @@ tags:
         "event_type": "user.kyc.updated",
         "created_at": "2026-03-10T11:37:42Z",
         "data": {
-          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
           "kyc_status": "VERIFIED"
         }
       }
@@ -124,7 +124,7 @@ tags:
         "event_type": "user.kyc.updated",
         "created_at": "2026-03-10T12:00:00Z",
         "data": {
-          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
           "kyc_status": "REJECTED",
           "rejection_reasons": ["Document expired", "Photo quality low"]
         }
@@ -1357,7 +1357,7 @@ paths:
         Get a price quote for an on-ramp operation (fiat to crypto). Returns the exchange rate,
         amounts, and a quote ID that can be used to initiate the order. Quotes expire after 60 seconds.
 
-        The `user_id` is the public UUID returned by `POST /partner/users` (the `id` field).
+        The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
         `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
@@ -1375,7 +1375,7 @@ paths:
             schema:
               $ref: '#/components/schemas/PartnerOnRampQuoteRequest'
             example:
-              user_id: "23d60610-9737-43b2-a751-a2c6a7bba457"
+              user_uuid: "23d60610-9737-43b2-a751-a2c6a7bba457"
               fiat_amount: "26345"
               fiat_currency: VND
               crypto_currency: USDT
@@ -2152,7 +2152,7 @@ paths:
         Get a price quote for an off-ramp operation (crypto to fiat). Returns the exchange rate,
         amounts, and a quote ID that can be used to initiate the order. Quotes expire after 60 seconds.
 
-        The `user_id` is the internal integer user ID returned by `POST /partner/users` (in the `internal_id` field).
+        The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
         The `payment_details_id` is the ID of a previously created payment profile for the user.
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
@@ -2168,7 +2168,7 @@ paths:
             schema:
               $ref: '#/components/schemas/PartnerQuoteRequest'
             example:
-              user_id: 12345
+              user_uuid: "550e8400-e29b-41d4-a716-446655440000"
               payment_details_id: 987
               crypto_currency: USDT
               crypto_amount: "100.00"
@@ -3975,13 +3975,13 @@ components:
 
     PartnerQuoteRequest:
       type: object
-      required: [user_id, payment_details_id, crypto_currency, crypto_amount, fiat_currency]
+      required: [user_uuid, payment_details_id, crypto_currency, crypto_amount, fiat_currency]
       properties:
-        user_id:
-          type: integer
-          format: int64
-          description: Internal user ID (integer, from `POST /partner/users` response `internal_id` field)
-          example: 12345
+        user_uuid:
+          type: string
+          format: uuid
+          description: Public UUID of the end-user (returned by `POST /partner/users` as `id`)
+          example: "550e8400-e29b-41d4-a716-446655440000"
         payment_details_id:
           type: integer
           format: int64
@@ -4413,7 +4413,7 @@ components:
               example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
             status:
               $ref: '#/components/schemas/PartnerOrderStatus'
-            user_id:
+            user_uuid:
               type: string
               format: uuid
               description: Public UUID of the end-user (from user creation)
@@ -4446,16 +4446,16 @@ components:
 
     PartnerOnRampQuoteRequest:
       type: object
-      required: [user_id, fiat_currency, crypto_currency]
+      required: [user_uuid, fiat_currency, crypto_currency]
       oneOf:
         - required: [fiat_amount]
         - required: [crypto_amount]
       properties:
-        user_id:
+        user_uuid:
           type: string
           format: uuid
           description: Public UUID of the end-user (returned by `POST /partner/users` as `id`)
-          example: "23d60610-9737-43b2-a751-a2c6a7bba457"
+          example: "550e8400-e29b-41d4-a716-446655440000"
         fiat_amount:
           type: string
           description: Fiat amount the end-user will send. Provide exactly one of fiat_amount or crypto_amount.
