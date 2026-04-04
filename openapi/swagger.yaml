@@ -1107,7 +1107,8 @@ paths:
         '500':
           description: Internal Server Error
 
-    # Step 8: Delete payment details for a partner user
+  # Step 8: Delete payment details for a partner user
+  /api/v1/partner/users/{user_uuid}/payment-details/{payment_details_id}:
     delete:
       tags:
         - User Management
@@ -1128,7 +1129,7 @@ paths:
         - name: payment_details_id
           in: path
           required: true
-          description: Payment details ID to delete
+          description: The payment_details_id returned when creating payment details.
           schema:
             type: string
           example: "987"
