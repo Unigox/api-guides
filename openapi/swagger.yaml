@@ -925,6 +925,93 @@ paths:
         '500':
           description: Internal Server Error
 
+  # Step 4b: Update optional KYC fields for a partner user
+  /api/v1/partner/users/{user_uuid}/kyc:
+    patch:
+      tags:
+        - User Management
+      summary: Update KYC data for a partner user
+      description: |
+        Update optional PII fields on existing KYC data without re-running verification or AML.
+        The user stays VERIFIED. Only optional fields can be updated.
+        Required fields (first_name, last_name, country_code) cannot be changed.
+
+        For EUR/AUD/GBP offramp, provide address, city, and postal_code here.
+        These will auto-populate into payment details for Switch payouts.
+      operationId: updateKYC
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: user_uuid
+          in: path
+          required: true
+          description: The user_uuid returned by POST /partner/users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address:
+                  type: string
+                  description: Street address
+                  example: "Svitrigailos g 29"
+                city:
+                  type: string
+                  description: City
+                  example: "Vilnius"
+                postal_code:
+                  type: string
+                  example: "03229"
+                dob:
+                  type: string
+                  format: date
+                  example: "1990-01-01"
+                phone_number:
+                  type: string
+                  description: E.164 format
+                  example: "+37012345678"
+                middle_name:
+                  type: string
+                id_number:
+                  type: string
+                id_type:
+                  type: string
+                  enum: [NATIONAL_ID, DRIVER_LICENSE, PASSPORT]
+      responses:
+        '200':
+          description: KYC data updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      updated_fields:
+                        type: array
+                        items:
+                          type: string
+                        example: ["address", "city", "postal_code"]
+                      message:
+                        type: string
+                        example: "KYC data updated successfully"
+        '400':
+          description: Bad request (no valid fields, or trying to change required fields)
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+
   # Step 5: Get verification status for a partner user (check KYC status)
   /api/v1/partner/users/{user_uuid}/verification-status:
     get:
@@ -3581,10 +3668,15 @@ components:
                   example: NATIONAL_ID
                 address:
                   type: string
-                  example: "123 Street Name, Lagos"
+                  description: Street address
+                  example: "Svitrigailos g 29"
+                city:
+                  type: string
+                  description: City. Required for EUR/AUD/GBP offramp (auto-populates into payment details for Switch).
+                  example: "Vilnius"
                 postal_code:
                   type: string
-                  example: "100001"
+                  example: "03229"
 
     KYCSubmitExternalToken:
       type: object
