@@ -659,8 +659,8 @@ paths:
         - external_token: Partner provides external KYC provider credentials (SumSub token or Persona inquiry_id)
         - handoff: Unigox handles KYC verification and generates verification URL
 
-        **Important for EUR/AUD/GBP off-ramp:** The licensed offramp provider requires the user's
-        physical address for payouts. Include `address`, `city`, and `postal_code` in the PII data
+        **Important for EUR/AUD/GBP off-ramp:** EUR, AUD, and GBP payouts require the user's
+        physical address. Include `address`, `city`, and `postal_code` in the PII data
         when submitting KYC. If not provided at submission time, you can add them later with
         `PATCH /partner/users/{user_uuid}/kyc`. Without address, EUR/AUD/GBP orders will be created
         with status `pending_address` until the address is provided.
@@ -938,12 +938,12 @@ paths:
         - User Management
       summary: Update KYC data for a partner user
       description: |
-        Update optional PII fields on existing KYC data without re-running verification or AML.
-        The user stays VERIFIED. Only optional fields can be updated.
+        Update optional PII fields on existing KYC data. The user stays verified.
+        Only optional fields can be updated.
         Required fields (first_name, last_name, country_code) cannot be changed.
 
         For EUR/AUD/GBP offramp, provide address, city, and postal_code here.
-        These will auto-populate into payment details for Switch payouts.
+        These will auto-populate into payment details for EUR/AUD/GBP payouts.
       operationId: updateKYC
       security:
         - ApiKeyAuth: []
@@ -2138,7 +2138,7 @@ paths:
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote.
 
-        **Note:** For EUR, AUD, and GBP off-ramp, the licensed provider requires the user's physical
+        **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
         See `PATCH /partner/users/{user_uuid}/kyc` to update.
       operationId: getOffRampEstimate
@@ -2257,8 +2257,8 @@ paths:
         `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
         via dashboard in a future release), and `total_fee` (sum of both).
 
-        **Address requirement for EUR/AUD/GBP:** The current licensed offramp provider requires the
-        user's physical address (street, city, postal code) for EUR, AUD, and GBP payouts. If the user's
+        **Address requirement for EUR/AUD/GBP:** EUR, AUD, and GBP payouts require the
+        user's physical address (street, city, postal code). If the user's
         KYC does not include address data, the quote response will include a `beneficiary_requirements`
         field indicating which fields are needed. You can update the user's KYC with
         `PATCH /partner/users/{user_uuid}/kyc` to provide the address before or after initiating the order.
@@ -2380,7 +2380,7 @@ paths:
 
         On success, returns the created order with status `awaiting_liquidity_provider`.
 
-        **Address requirement for EUR/AUD/GBP:** If the licensed offramp provider matches and the
+        **Address requirement for EUR/AUD/GBP:** For EUR/AUD/GBP orders, if the
         user's KYC does not include a physical address, the order will be created with status
         `pending_address`. The response will include `required_fields: ["address", "city", "postal_code"]`
         and `next_action: "provide_address"`. Call `PATCH /partner/users/{user_uuid}/kyc` to add the
@@ -2532,7 +2532,6 @@ paths:
         | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
         | `completed` | — | — |
 
-        **Status mapping:** Internal trade statuses are mapped to simplified partner-facing statuses.
         See the `PartnerOrderStatus` enum for all possible values.
       operationId: getOrder
       security:
@@ -3702,7 +3701,7 @@ components:
                   example: "Svitrigailos g 29"
                 city:
                   type: string
-                  description: City. Required for EUR/AUD/GBP offramp (auto-populates into payment details for Switch).
+                  description: City. Required for EUR/AUD/GBP offramp (auto-populates into payment details).
                   example: "Vilnius"
                 postal_code:
                   type: string
@@ -4255,7 +4254,7 @@ components:
             - `authorize_crypto_transfer` — partner must authorize escrow funding
             - `confirm_fiat_received` — partner must confirm they received the fiat payment
             - `request_new_quote` — price changed, partner must request a new quote
-            - `update_kyc_address` — payout provider requires address fields; see `action_required` for the endpoint and fields to submit
+            - `update_kyc_address` — address fields are required for EUR/AUD/GBP payouts; see `action_required` for the endpoint and fields to submit
             - `null` — no required action (waiting for buyer or system)
           enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, null]
           example: authorize_crypto_transfer
@@ -4275,7 +4274,7 @@ components:
             message:
               type: string
               description: Human-readable explanation of what is needed and why
-              example: "The payout provider requires the recipient's physical address for EUR bank transfers. Update the user's KYC before the order can proceed."
+              example: "EUR/AUD/GBP bank transfers require the recipient's physical address. Update the user's KYC before the order can proceed."
             endpoint:
               type: string
               description: API endpoint to call to resolve this action
@@ -4437,7 +4436,7 @@ components:
     PartnerOrderStatus:
       type: string
       description: |
-        Partner-facing order status. Internal trade statuses are mapped to these simplified values.
+        Order status.
 
         **Off-ramp statuses (crypto → fiat):**
         - `created` — order created, quote locked
