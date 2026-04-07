@@ -4133,6 +4133,7 @@ components:
             - `authorize_crypto_transfer` — partner must authorize escrow funding
             - `confirm_fiat_received` — partner must confirm they received the fiat payment
             - `request_new_quote` — price changed, partner must request a new quote
+            - `update_kyc_address` — payout provider requires address fields; see `action_required` for the endpoint and fields to submit
             - `null` — no required action (waiting for buyer or system)
           enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, null]
           example: authorize_crypto_transfer
@@ -4143,6 +4144,7 @@ components:
             Present when the order needs partner intervention before it can proceed.
             Contains machine-readable type, human-readable message, the API endpoint to call,
             and the fields to provide. Null/omitted when no action is needed.
+          required: [type, message]
           properties:
             type:
               type: string
@@ -4161,6 +4163,7 @@ components:
               description: Fields the partner needs to provide
               items:
                 type: object
+                required: [field, label]
                 properties:
                   field:
                     type: string
