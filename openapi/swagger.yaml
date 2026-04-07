@@ -2532,7 +2532,7 @@ paths:
         | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
         | `completed` | — | — |
 
-        See the `PartnerOrderStatus` enum for all possible values.
+        **Possible statuses:** `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `awaiting_fiat_received_confirmation`, `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`.
       operationId: getOrder
       security:
         - ApiKeyAuth: []
