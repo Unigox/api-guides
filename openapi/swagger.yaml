@@ -4134,8 +4134,42 @@ components:
             - `confirm_fiat_received` — partner must confirm they received the fiat payment
             - `request_new_quote` — price changed, partner must request a new quote
             - `null` — no required action (waiting for buyer or system)
-          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, null]
+          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, null]
           example: authorize_crypto_transfer
+        action_required:
+          type: object
+          nullable: true
+          description: |
+            Present when the order needs partner intervention before it can proceed.
+            Contains machine-readable type, human-readable message, the API endpoint to call,
+            and the fields to provide. Null/omitted when no action is needed.
+          properties:
+            type:
+              type: string
+              description: Machine-readable action identifier
+              example: update_kyc_address
+            message:
+              type: string
+              description: Human-readable explanation of what is needed and why
+              example: "The payout provider requires the recipient's physical address for EUR bank transfers. Update the user's KYC before the order can proceed."
+            endpoint:
+              type: string
+              description: API endpoint to call to resolve this action
+              example: "PATCH /api/v1/partner/users/{user_uuid}/kyc"
+            fields:
+              type: array
+              description: Fields the partner needs to provide
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    description: API field name
+                    example: city
+                  label:
+                    type: string
+                    description: Human-readable description of the field
+                    example: "City of the recipient"
         allowed_actions:
           type: array
           items:
