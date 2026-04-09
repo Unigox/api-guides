@@ -2532,16 +2532,24 @@ paths:
         | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
         | `completed` | — | — |
 
-        **Auto-settlement:** Some liquidity providers confirm fiat delivery automatically.
-        When this happens, the order skips `awaiting_fiat_received_confirmation` and goes
-        straight to `completed`. The partner receives a webhook with `status=completed`
-        and does not need to call `confirm-fiat-received`.
+        **Fiat settlement and confirmation:**
 
-        **Important:** Always implement both paths. Do not hardcode a specific flow.
-        React to webhooks and the `next_action` field:
-        - If you receive `status=completed`, the order is done. No action needed.
-        - If you receive `status=awaiting_fiat_received_confirmation` with
-          `next_action=confirm_fiat_received`, you must call `confirm-fiat-received`.
+        You can call `confirm-fiat-received` at any time after crypto is in escrow.
+        You do not need to wait for a system notification. If you know through your
+        own systems that the recipient has received the fiat payment, confirm immediately.
+
+        Some liquidity providers also send automatic settlement confirmations. When this
+        happens, the order moves to `completed` on its own. If you already confirmed
+        manually, the auto-confirmation is a no-op. If the auto-confirmation arrives
+        first, your manual confirm call is also a no-op. Both paths are safe.
+
+        **How to implement:**
+        - Always implement a `confirm-fiat-received` call in your flow.
+        - Listen for webhooks. If you receive `status=completed`, no further action needed.
+        - If `next_action=confirm_fiat_received`, call `confirm-fiat-received` when you
+          know fiat has been received.
+        - Do not wait for `next_action` if you already have confirmation from your
+          own banking or payment systems.
 
         **Possible statuses:** `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `awaiting_fiat_received_confirmation`, `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`.
       operationId: getOrder
@@ -2801,13 +2809,16 @@ paths:
         - Orders
       summary: Confirm fiat received
       description: |
-        Confirm that fiat payment has been received by the user for an off-ramp order.
-        This triggers the crypto release from escrow to the buyer.
+        Confirm that the recipient has received the fiat payment for an off-ramp order.
+        This triggers the crypto release from escrow.
 
-        **Note:** Some orders auto-complete when the liquidity provider confirms fiat delivery.
-        If the order is already `completed`, calling this endpoint returns the current order
-        status with no side effects (idempotent). Check the `next_action` field on the order
-        to determine if this call is needed.
+        Call this endpoint as soon as you know fiat has been received. You do not need
+        to wait for a system prompt. If you have confirmation from your own banking or
+        payment systems, confirm immediately.
+
+        This endpoint is idempotent. If the order already completed (via automatic
+        settlement confirmation from the liquidity provider), calling this returns
+        the current order status with no side effects.
       operationId: confirmFiatReceived
       security:
         - ApiKeyAuth: []
