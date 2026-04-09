@@ -4163,6 +4163,12 @@ components:
           example: all
         slippage_tolerance:
           $ref: '#/components/schemas/SlippageTolerance'
+        has_fiat_settlement_notification:
+          type: boolean
+          description: |
+            When `true`, only match liquidity providers that send fiat settlement
+            notifications. Orders from these providers complete automatically when
+            fiat is delivered. When omitted or `false`, all providers are eligible.
 
     PartnerQuoteResponse:
       type: object
@@ -4206,6 +4212,14 @@ components:
           format: date-time
           description: Quote expiration timestamp (30 seconds from creation)
           example: "2026-02-01T12:00:30Z"
+        has_fiat_settlement_notification:
+          type: boolean
+          description: |
+            Whether the matched liquidity provider sends fiat settlement notifications.
+            When `true`, the order will complete automatically when fiat is delivered
+            to the recipient. When `false`, you must call `confirm-fiat-received`.
+            You can call `confirm-fiat-received` at any time regardless of this value.
+          example: true
 
     PartnerInitiateRequest:
       type: object
@@ -4363,6 +4377,14 @@ components:
           items:
             $ref: '#/components/schemas/TimelineEntry'
           description: Chronological list of status changes
+        has_fiat_settlement_notification:
+          type: boolean
+          description: |
+            Whether the matched liquidity provider sends fiat settlement notifications.
+            When `true`, the order will complete automatically when fiat is delivered.
+            When `false`, you must call `confirm-fiat-received`. You can call
+            `confirm-fiat-received` at any time regardless of this value.
+          example: true
         created_at:
           type: string
           format: date-time
