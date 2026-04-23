@@ -1184,8 +1184,9 @@ paths:
         **Aggregation:** Results are grouped by `(crypto_currency_code, fiat_currency_code, trade_type)`.
         Amount ranges span the minimum and maximum across all eligible offers in the group.
         Payment methods are deduplicated and sorted alphabetically.
-      security:
-        - ApiKeyAuth: []
+
+        **Authentication:** None. This is a public endpoint — no API key required.
+      security: []
       responses:
         '200':
           description: Liquidity pairs retrieved successfully
@@ -1228,8 +1229,6 @@ paths:
                       payment_methods:
                         - gtbank
                         - zenith-bank
-        '401':
-          description: Unauthorized — missing or invalid API key
         '500':
           description: Internal server error
 
