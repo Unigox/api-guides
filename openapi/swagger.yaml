@@ -513,6 +513,49 @@ paths:
                     fiat_currency_code: GHS
                     type: BUY
 
+  # Marketing snapshot — live rates + spreads vs Open Exchange Rates
+  /api/v1/marketing/supported-currencies:
+    get:
+      tags:
+        - Supported Resources
+      summary: Marketing snapshot of supported currencies with live rates
+      description: |
+        Returns every fiat currency we know about with its current onramp / offramp support flag,
+        the best rate the platform would offer at a fixed reference notional (currently 500 USDT),
+        the Open Exchange Rates market rate, and a customer-favorable spread percentage.
+
+        Powers the public business landing page. Cached for 5 minutes server-side; the response
+        also carries `Cache-Control: public, max-age=60, stale-while-revalidate=300` so CDNs and
+        Next.js ISR can piggy-back.
+
+        The reference notional is fixed (not query-configurable) to prevent cache-key thrashing on
+        a public endpoint. Offers whose effective rate diverges from the OXR market rate by more
+        than 50% are dropped before aggregation, so a fat-fingered fixed_price never publishes as
+        an outlier spread.
+
+        `spread_pct` is normalized so positive always favors the customer:
+        - **offramp** (customer sells crypto for fiat): positive when the platform pays MORE fiat per USDT than the market.
+        - **onramp** (customer buys crypto with fiat): positive when the platform charges LESS fiat per USDT than the market.
+
+        When a corridor is supported but no offer covers the reference notional, `rate` and
+        `spread_pct` are omitted and `min_notional_usdt` carries the smallest amount any active
+        offer in that direction would accept — so callers can render "min $X USDT" instead of a
+        fake rate.
+      operationId: getMarketingSupportedCurrencies
+      responses:
+        '200':
+          description: Snapshot retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketingSupportedCurrenciesResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ============================================
   # 5. ACCOUNT MANAGEMENT
   # ============================================
@@ -3312,6 +3355,83 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/FiatCurrencyCapability'
+
+    MarketingDirectionInfo:
+      type: object
+      description: |
+        Per-direction info for one fiat currency. Omitted entirely when no
+        active offer exists in that direction.
+      properties:
+        supported:
+          type: boolean
+          example: true
+        rate:
+          type: number
+          format: double
+          nullable: true
+          description: Best fiat-per-USDT rate at the reference notional. BUY picks max, SELL picks min.
+          example: 1763.76
+        market_rate:
+          type: number
+          format: double
+          nullable: true
+          description: OXR-derived USDT/USD ÷ fiat/USD reference rate.
+          example: 1351.85
+        market_rate_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-04-26T17:39:08Z'
+        spread_pct:
+          type: number
+          format: double
+          nullable: true
+          description: Customer-favorable spread (positive = better deal), rounded to 2 decimals.
+          example: 30.47
+        min_notional_usdt:
+          type: number
+          format: double
+          nullable: true
+          description: Smallest USDT amount any active offer in this direction accepts. Set when no offer covers the reference notional.
+          example: 545
+
+    MarketingSupportedCurrency:
+      type: object
+      properties:
+        code:
+          type: string
+          example: NGN
+        name:
+          type: string
+          example: Nigerian Naira
+        onramp:
+          $ref: '#/components/schemas/MarketingDirectionInfo'
+        offramp:
+          $ref: '#/components/schemas/MarketingDirectionInfo'
+
+    MarketingSupportedCurrenciesPayload:
+      type: object
+      properties:
+        notional_usdt:
+          type: number
+          format: double
+          example: 500
+        generated_at:
+          type: string
+          format: date-time
+          example: '2026-04-26T17:39:08.711Z'
+        currencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketingSupportedCurrency'
+
+    MarketingSupportedCurrenciesResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/MarketingSupportedCurrenciesPayload'
 
     PaymentField:
       type: object
