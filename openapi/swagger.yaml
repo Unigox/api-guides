@@ -513,12 +513,12 @@ paths:
                     fiat_currency_code: GHS
                     type: BUY
 
-  # Marketing snapshot — live rates + spreads vs Open Exchange Rates
-  /api/v1/marketing/supported-currencies:
+  # Currency rails snapshot — live rates + spreads vs Open Exchange Rates
+  /api/v1/supported/currency-rails:
     get:
       tags:
         - Supported Resources
-      summary: Marketing snapshot of supported currencies with live rates
+      summary: Currency rails snapshot — supported corridors with live rates
       description: |
         Returns every fiat currency we know about with its current onramp / offramp support flag,
         the best rate the platform would offer at a fixed reference notional (currently 500 USDT),
@@ -541,14 +541,14 @@ paths:
         `spread_pct` are omitted and `min_notional_usdt` carries the smallest amount any active
         offer in that direction would accept — so callers can render "min $X USDT" instead of a
         fake rate.
-      operationId: getMarketingSupportedCurrencies
+      operationId: getSupportedCurrencyRails
       responses:
         '200':
           description: Snapshot retrieved successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MarketingSupportedCurrenciesResponse'
+                $ref: '#/components/schemas/SupportedCurrencyRailsResponse'
         '500':
           description: Internal Server Error
           content:
@@ -3356,7 +3356,7 @@ components:
               items:
                 $ref: '#/components/schemas/FiatCurrencyCapability'
 
-    MarketingDirectionInfo:
+    CurrencyRailDirectionInfo:
       type: object
       description: |
         Per-direction info for one fiat currency. Omitted entirely when no
@@ -3395,7 +3395,7 @@ components:
           description: Smallest USDT amount any active offer in this direction accepts. Set when no offer covers the reference notional.
           example: 545
 
-    MarketingSupportedCurrency:
+    SupportedCurrencyRail:
       type: object
       properties:
         code:
@@ -3405,11 +3405,11 @@ components:
           type: string
           example: Nigerian Naira
         onramp:
-          $ref: '#/components/schemas/MarketingDirectionInfo'
+          $ref: '#/components/schemas/CurrencyRailDirectionInfo'
         offramp:
-          $ref: '#/components/schemas/MarketingDirectionInfo'
+          $ref: '#/components/schemas/CurrencyRailDirectionInfo'
 
-    MarketingSupportedCurrenciesPayload:
+    SupportedCurrencyRailsPayload:
       type: object
       properties:
         notional_usdt:
@@ -3423,15 +3423,15 @@ components:
         currencies:
           type: array
           items:
-            $ref: '#/components/schemas/MarketingSupportedCurrency'
+            $ref: '#/components/schemas/SupportedCurrencyRail'
 
-    MarketingSupportedCurrenciesResponse:
+    SupportedCurrencyRailsResponse:
       allOf:
         - $ref: '#/components/schemas/APIResponse'
         - type: object
           properties:
             data:
-              $ref: '#/components/schemas/MarketingSupportedCurrenciesPayload'
+              $ref: '#/components/schemas/SupportedCurrencyRailsPayload'
 
     PaymentField:
       type: object
