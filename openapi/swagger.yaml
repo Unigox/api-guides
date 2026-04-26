@@ -513,12 +513,12 @@ paths:
                     fiat_currency_code: GHS
                     type: BUY
 
-  # Currency rails snapshot — live rates + spreads vs Open Exchange Rates
-  /api/v1/supported/currency-rails:
+  # Corridors snapshot — live rates + spreads vs Open Exchange Rates
+  /api/v1/supported/corridors:
     get:
       tags:
         - Supported Resources
-      summary: Currency rails snapshot — supported corridors with live rates
+      summary: Corridors snapshot — supported fiats with live rates per direction
       description: |
         Returns every fiat currency we know about with its current onramp / offramp support flag,
         the best rate the platform would offer at a fixed reference notional (currently 500 USDT),
@@ -541,14 +541,14 @@ paths:
         `spread_pct` are omitted and `min_notional_usdt` carries the smallest amount any active
         offer in that direction would accept — so callers can render "min $X USDT" instead of a
         fake rate.
-      operationId: getSupportedCurrencyRails
+      operationId: getSupportedCorridors
       responses:
         '200':
           description: Snapshot retrieved successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SupportedCurrencyRailsResponse'
+                $ref: '#/components/schemas/SupportedCorridorsResponse'
         '500':
           description: Internal Server Error
           content:
@@ -3409,7 +3409,7 @@ components:
         offramp:
           $ref: '#/components/schemas/CurrencyRailDirectionInfo'
 
-    SupportedCurrencyRailsPayload:
+    SupportedCorridorsPayload:
       type: object
       properties:
         notional_usdt:
@@ -3425,13 +3425,13 @@ components:
           items:
             $ref: '#/components/schemas/SupportedCurrencyRail'
 
-    SupportedCurrencyRailsResponse:
+    SupportedCorridorsResponse:
       allOf:
         - $ref: '#/components/schemas/APIResponse'
         - type: object
           properties:
             data:
-              $ref: '#/components/schemas/SupportedCurrencyRailsPayload'
+              $ref: '#/components/schemas/SupportedCorridorsPayload'
 
     PaymentField:
       type: object
