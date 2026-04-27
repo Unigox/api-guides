@@ -544,6 +544,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SupportedCorridorsResponse'
+              example:
+                success: true
+                data:
+                  notional_usdt: 500
+                  generated_at: '2026-04-27T15:56:11Z'
+                  currencies:
+                    - code: NGN
+                      name: Nigerian Naira
+                      mid_market_rate: 1358.97
+                      mid_market_updated_at: '2026-04-27T15:56:11Z'
+                      unigox_fee_pct: 0.25
+                      offramp:
+                        supported: true
+                        p2p:
+                          rate: 1542.6
+                        licensed:
+                          rate: 1376.857
+                      onramp:
+                        supported: true
+                        p2p:
+                          rate: 1370
+                        licensed:
+                          rate: 1389.35
+                    - code: BRL
+                      name: Brazilian Real
+                      mid_market_rate: 4.9911
+                      mid_market_updated_at: '2026-04-27T15:56:11Z'
+                      unigox_fee_pct: 0.5
+                      offramp:
+                        supported: true
+                        p2p:
+                          rate: 4.4648
+                          min_notional_fiat: 3465
         '500':
           description: Internal Server Error
           content:
@@ -3372,12 +3405,13 @@ components:
     CorridorDirectionInfo:
       type: object
       description: |
-        Per-direction info for one fiat corridor. Omitted entirely when
-        no active offer exists in that direction. Either `p2p` or
-        `licensed` (or both) will be present when supported.
+        Per-direction info for one fiat corridor. The whole object is
+        omitted when no active offer exists in that direction. Either
+        `p2p` or `licensed` (or both) will be present.
       properties:
         supported:
           type: boolean
+          description: Always `true` when the object is present (the object is omitted otherwise). Reserved for future states where a corridor may be configured but temporarily without liquidity.
           example: true
         p2p:
           $ref: '#/components/schemas/CorridorRateQuote'
