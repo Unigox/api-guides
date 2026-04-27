@@ -513,6 +513,77 @@ paths:
                     fiat_currency_code: GHS
                     type: BUY
 
+  # Corridors snapshot — supported fiat corridors with live all-in rates
+  /api/v1/supported/corridors:
+    get:
+      tags:
+        - Supported Resources
+      summary: Corridors snapshot — supported fiats with live all-in rates per direction
+      description: |
+        Snapshot of supported fiat corridors with the all-in best rates the
+        platform would quote at a 500 USDT reference notional, split per
+        direction:
+
+        - **offramp** — customer sells crypto for fiat
+        - **onramp**  — customer buys crypto with fiat
+
+        Within each direction, rates are split by partner type:
+
+        - **licensed** — regulated business partners (e.g. Switch, CashWyre)
+        - **p2p**      — vendor offers (individual professional traders)
+
+        Every `rate` is post-fee. `unigox_fee_pct` discloses the platform fee
+        applied to that corridor; `mid_market_rate` is the Open Exchange Rates
+        reference for the same currency. The difference between `rate` and
+        `mid_market_rate` is the combined platform fee plus partner markup.
+      operationId: getSupportedCorridors
+      responses:
+        '200':
+          description: Snapshot retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportedCorridorsResponse'
+              example:
+                success: true
+                data:
+                  notional_usdt: 500
+                  generated_at: '2026-04-27T15:56:11Z'
+                  currencies:
+                    - code: NGN
+                      name: Nigerian Naira
+                      mid_market_rate: 1358.97
+                      mid_market_updated_at: '2026-04-27T15:56:11Z'
+                      unigox_fee_pct: 0.25
+                      offramp:
+                        supported: true
+                        p2p:
+                          rate: 1542.6
+                        licensed:
+                          rate: 1376.857
+                      onramp:
+                        supported: true
+                        p2p:
+                          rate: 1370
+                        licensed:
+                          rate: 1389.35
+                    - code: BRL
+                      name: Brazilian Real
+                      mid_market_rate: 4.9911
+                      mid_market_updated_at: '2026-04-27T15:56:11Z'
+                      unigox_fee_pct: 0.5
+                      offramp:
+                        supported: true
+                        p2p:
+                          rate: 4.4648
+                          min_notional_fiat: 3465
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ============================================
   # 5. ACCOUNT MANAGEMENT
   # ============================================
@@ -3311,6 +3382,95 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/FiatCurrencyCapability'
+
+    CorridorRateQuote:
+      type: object
+      description: |
+        One partner-type variant of a corridor rate (P2P or Licensed).
+      properties:
+        rate:
+          type: number
+          format: double
+          nullable: true
+          description: All-in fiat-per-USDT rate (platform fee already applied).
+          example: 1542.6
+        min_notional_fiat:
+          type: number
+          format: double
+          nullable: true
+          description: Smallest amount accepted by any active offer in this variant, in the corridor's local currency. Set only when it exceeds the reference notional in dollar terms — i.e. the customer would need to size up to use this variant.
+          example: 3465
+
+    CorridorDirectionInfo:
+      type: object
+      description: |
+        Per-direction info for one fiat corridor. The whole object is
+        omitted when no active offer exists in that direction. Either
+        `p2p` or `licensed` (or both) will be present.
+      properties:
+        supported:
+          type: boolean
+          description: Always `true` when the object is present (the object is omitted otherwise). Reserved for future states where a corridor may be configured but temporarily without liquidity.
+          example: true
+        p2p:
+          $ref: '#/components/schemas/CorridorRateQuote'
+        licensed:
+          $ref: '#/components/schemas/CorridorRateQuote'
+
+    Corridor:
+      type: object
+      properties:
+        code:
+          type: string
+          example: NGN
+        name:
+          type: string
+          example: Nigerian Naira
+        mid_market_rate:
+          type: number
+          format: double
+          nullable: true
+          description: Open Exchange Rates reference rate (fiat per USDT) for this currency. Same value applies to both directions.
+          example: 1358.97
+        mid_market_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-04-27T15:56:11Z'
+        unigox_fee_pct:
+          type: number
+          format: double
+          nullable: true
+          description: Cheapest active Unigox platform fee for this corridor, in percent. Already baked into every `rate` below.
+          example: 0.25
+        onramp:
+          $ref: '#/components/schemas/CorridorDirectionInfo'
+        offramp:
+          $ref: '#/components/schemas/CorridorDirectionInfo'
+
+    SupportedCorridorsPayload:
+      type: object
+      properties:
+        notional_usdt:
+          type: number
+          format: double
+          example: 500
+        generated_at:
+          type: string
+          format: date-time
+          example: '2026-04-27T15:56:11Z'
+        currencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Corridor'
+
+    SupportedCorridorsResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SupportedCorridorsPayload'
 
     PaymentField:
       type: object
