@@ -513,34 +513,29 @@ paths:
                     fiat_currency_code: GHS
                     type: BUY
 
-  # Corridors snapshot — live rates + spreads vs Open Exchange Rates
+  # Corridors snapshot — supported fiat corridors with live all-in rates
   /api/v1/supported/corridors:
     get:
       tags:
         - Supported Resources
-      summary: Corridors snapshot — supported fiats with live rates per direction
+      summary: Corridors snapshot — supported fiats with live all-in rates per direction
       description: |
-        Returns every fiat currency we know about with its current onramp / offramp support flag,
-        the best rate the platform would offer at a fixed reference notional (currently 500 USDT),
-        the Open Exchange Rates market rate, and a customer-favorable spread percentage.
+        Snapshot of supported fiat corridors with the all-in best rates the
+        platform would quote at a 500 USDT reference notional, split per
+        direction:
 
-        Powers the public business landing page. Cached for 5 minutes server-side; the response
-        also carries `Cache-Control: public, max-age=60, stale-while-revalidate=300` so CDNs and
-        Next.js ISR can piggy-back.
+        - **offramp** — customer sells crypto for fiat
+        - **onramp**  — customer buys crypto with fiat
 
-        The reference notional is fixed (not query-configurable) to prevent cache-key thrashing on
-        a public endpoint. Offers whose effective rate diverges from the OXR market rate by more
-        than 50% are dropped before aggregation, so a fat-fingered fixed_price never publishes as
-        an outlier spread.
+        Within each direction, rates are split by partner type:
 
-        `spread_pct` is normalized so positive always favors the customer:
-        - **offramp** (customer sells crypto for fiat): positive when the platform pays MORE fiat per USDT than the market.
-        - **onramp** (customer buys crypto with fiat): positive when the platform charges LESS fiat per USDT than the market.
+        - **licensed** — regulated business partners (e.g. Switch, CashWyre)
+        - **p2p**      — vendor offers (individual professional traders)
 
-        When a corridor is supported but no offer covers the reference notional, `rate` and
-        `spread_pct` are omitted and `min_notional_usdt` carries the smallest amount any active
-        offer in that direction would accept — so callers can render "min $X USDT" instead of a
-        fake rate.
+        Every `rate` is post-fee. `unigox_fee_pct` discloses the platform fee
+        applied to that corridor; `mid_market_rate` is the Open Exchange Rates
+        reference for the same currency. The difference between `rate` and
+        `mid_market_rate` is the combined platform fee plus partner markup.
       operationId: getSupportedCorridors
       responses:
         '200':
@@ -3356,46 +3351,40 @@ components:
               items:
                 $ref: '#/components/schemas/FiatCurrencyCapability'
 
-    CurrencyRailDirectionInfo:
+    CorridorRateQuote:
       type: object
       description: |
-        Per-direction info for one fiat currency. Omitted entirely when no
-        active offer exists in that direction.
+        One partner-type variant of a corridor rate (P2P or Licensed).
       properties:
-        supported:
-          type: boolean
-          example: true
         rate:
           type: number
           format: double
           nullable: true
-          description: Best fiat-per-USDT rate at the reference notional. BUY picks max, SELL picks min.
-          example: 1763.76
-        market_rate:
+          description: All-in fiat-per-USDT rate (platform fee already applied).
+          example: 1542.6
+        min_notional_fiat:
           type: number
           format: double
           nullable: true
-          description: OXR-derived USDT/USD ÷ fiat/USD reference rate.
-          example: 1351.85
-        market_rate_updated_at:
-          type: string
-          format: date-time
-          nullable: true
-          example: '2026-04-26T17:39:08Z'
-        spread_pct:
-          type: number
-          format: double
-          nullable: true
-          description: Customer-favorable spread (positive = better deal), rounded to 2 decimals.
-          example: 30.47
-        min_notional_usdt:
-          type: number
-          format: double
-          nullable: true
-          description: Smallest USDT amount any active offer in this direction accepts. Set when no offer covers the reference notional.
-          example: 545
+          description: Smallest amount accepted by any active offer in this variant, in the corridor's local currency. Set only when it exceeds the reference notional in dollar terms — i.e. the customer would need to size up to use this variant.
+          example: 3465
 
-    SupportedCurrencyRail:
+    CorridorDirectionInfo:
+      type: object
+      description: |
+        Per-direction info for one fiat corridor. Omitted entirely when
+        no active offer exists in that direction. Either `p2p` or
+        `licensed` (or both) will be present when supported.
+      properties:
+        supported:
+          type: boolean
+          example: true
+        p2p:
+          $ref: '#/components/schemas/CorridorRateQuote'
+        licensed:
+          $ref: '#/components/schemas/CorridorRateQuote'
+
+    Corridor:
       type: object
       properties:
         code:
@@ -3404,10 +3393,27 @@ components:
         name:
           type: string
           example: Nigerian Naira
+        mid_market_rate:
+          type: number
+          format: double
+          nullable: true
+          description: Open Exchange Rates reference rate (fiat per USDT) for this currency. Same value applies to both directions.
+          example: 1358.97
+        mid_market_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-04-27T15:56:11Z'
+        unigox_fee_pct:
+          type: number
+          format: double
+          nullable: true
+          description: Cheapest active Unigox platform fee for this corridor, in percent. Already baked into every `rate` below.
+          example: 0.25
         onramp:
-          $ref: '#/components/schemas/CurrencyRailDirectionInfo'
+          $ref: '#/components/schemas/CorridorDirectionInfo'
         offramp:
-          $ref: '#/components/schemas/CurrencyRailDirectionInfo'
+          $ref: '#/components/schemas/CorridorDirectionInfo'
 
     SupportedCorridorsPayload:
       type: object
@@ -3419,11 +3425,11 @@ components:
         generated_at:
           type: string
           format: date-time
-          example: '2026-04-26T17:39:08.711Z'
+          example: '2026-04-27T15:56:11Z'
         currencies:
           type: array
           items:
-            $ref: '#/components/schemas/SupportedCurrencyRail'
+            $ref: '#/components/schemas/Corridor'
 
     SupportedCorridorsResponse:
       allOf:
