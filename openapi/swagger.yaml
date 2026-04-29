@@ -2202,6 +2202,7 @@ paths:
       summary: Get off-ramp price estimate
       description: |
         Get indicative off-ramp pricing (crypto to fiat) without creating a quote.
+        Pricing can be driven from either side: provide `crypto_amount` to compute the fiat payout, or `fiat_amount` to compute the crypto required (exactly one of the two).
         This endpoint is lightweight and does not reserve liquidity.
 
         Use this when you need quick pricing discovery before calling `/partner/offramp/quote`.
