@@ -2346,7 +2346,7 @@ paths:
           and escrow is released automatically. Create a new quote to retry.
         - `slippage_tolerance.type=amount` in fiat-anchored mode is evaluated as crypto-side delta, not fiat-side
           (fiat is always exact by construction).
-        - Integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS): `fiat_amount` must be a whole number.
+        - Integer-minor-unit currencies (NGN, UGX, TZS): `fiat_amount` must be a whole number.
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
         `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
@@ -4394,7 +4394,7 @@ components:
             Exact fiat amount the recipient will receive (e.g., "500000" for 500,000 NGN).
             Provide exactly one of `crypto_amount` or `fiat_amount`.
             When provided, the order is **fiat-anchored** — exact fiat delivery is guaranteed, crypto cost may vary within a 1.20× safety bound.
-            For integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS), must be a whole number.
+            For integer-minor-unit currencies (NGN, UGX, TZS), must be a whole number.
           example: "500000"
         fiat_currency:
           type: string
