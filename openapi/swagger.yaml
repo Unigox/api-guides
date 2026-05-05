@@ -176,8 +176,8 @@ tags:
 
       For fiat-anchored off-ramp orders (`anchor_type: "fiat"`), if Switch quotes a crypto cost exceeding
       1.20× the expected amount at the time of settlement, the order moves to `failed` status asynchronously
-      (not during `/initiate`). The deposit is held in escrow pending manual review by Unigox support;
-      crypto is not released back automatically. Create a new quote to retry the trade flow.
+      (not during `/initiate`). The deposit is automatically refunded from escrow back to the partner wallet.
+      Create a new quote to retry the trade flow.
     x-page-icon: bell
 
 paths:
@@ -2343,7 +2343,7 @@ paths:
         **Fiat-anchored notes:**
         - Useful for exact-payout use cases (e.g. deliver exactly 500,000 NGN).
         - If Switch quotes a crypto cost exceeding 1.20× the expected amount, the order moves to `failed` status
-          and the deposit is held in escrow pending manual review (no automatic refund). Create a new quote
+          and the deposit is automatically refunded from escrow back to the partner wallet. Create a new quote
           to retry.
         - `slippage_tolerance.type=amount` in fiat-anchored mode is evaluated as crypto-side delta, not fiat-side
           (fiat is always exact by construction).
