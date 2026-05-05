@@ -2416,7 +2416,7 @@ paths:
                       anchor_type: "crypto"
                       rate: "1530.12"
                       crypto_amount: "101.50"
-                      fiat_amount: "152880.00"
+                      fiat_amount: "152880"
                       fee_breakdown:
                         platform_fee: "1.50"
                         platform_fee_pct: 1.5
@@ -2436,7 +2436,7 @@ paths:
                       anchor_type: "fiat"
                       rate: "1530.12"
                       crypto_amount: "328.10"
-                      fiat_amount: "500000.00"
+                      fiat_amount: "500000"
                       fee_breakdown:
                         platform_fee: "4.92"
                         platform_fee_pct: 1.5
@@ -4395,7 +4395,7 @@ components:
             Exact fiat amount the recipient will receive (e.g., "500000" for 500,000 NGN).
             Provide exactly one of `crypto_amount` or `fiat_amount`.
             When provided, the order is **fiat-anchored** — exact fiat delivery is guaranteed, crypto cost may vary within a 1.20× safety bound.
-            For integer-minor-unit currencies (NGN, UGX, TZS), must be a whole number.
+            For integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS), must be a whole number.
           example: "500000"
         fiat_currency:
           type: string
