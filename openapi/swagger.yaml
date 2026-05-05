@@ -169,8 +169,15 @@ tags:
       | `awaiting_fiat_received_confirmation` | Proof approved, awaiting seller confirmation |
       | `completed` | Order completed, crypto released |
       | `cancelled` | Order cancelled or payment declined |
-      | `failed` | Escrow error |
+      | `failed` | Escrow error, or fiat-anchored safety bound exceeded (see below) |
       | `dispute_started` | Dispute opened |
+
+      **Fiat-anchored safety bound failure**
+
+      For fiat-anchored off-ramp orders (`anchor_type: "fiat"`), if Switch quotes a crypto cost exceeding
+      1.20× the expected amount at the time of settlement, the order moves to `failed` status asynchronously
+      (not during `/initiate`). The deposit is automatically refunded from escrow back to the partner wallet.
+      Create a new quote to retry the trade flow.
     x-page-icon: bell
 
 paths:
@@ -2324,6 +2331,24 @@ paths:
         The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
         The `payment_details_id` is the ID of a previously created payment profile for the user.
 
+        **Anchor mode — provide exactly one of `crypto_amount` or `fiat_amount`:**
+
+        | Field | Anchor | Guarantee |
+        |---|---|---|
+        | `crypto_amount` | Crypto-anchored | Exact crypto cost; fiat payout varies by Switch rate at settlement |
+        | `fiat_amount` | Fiat-anchored | Exact fiat delivery to recipient; crypto cost may vary within a 1.20× safety bound |
+
+        The response `anchor_type` field tells you which side is guaranteed: `"crypto"` or `"fiat"`.
+
+        **Fiat-anchored notes:**
+        - Useful for exact-payout use cases (e.g. deliver exactly 500,000 NGN).
+        - If Switch quotes a crypto cost exceeding 1.20× the expected amount, the order moves to `failed` status
+          and the deposit is automatically refunded from escrow back to the partner wallet. Create a new quote
+          to retry.
+        - `slippage_tolerance.type=amount` in fiat-anchored mode is evaluated as crypto-side delta, not fiat-side
+          (fiat is always exact by construction).
+        - Integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS): `fiat_amount` must be a whole number.
+
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
         `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
         via dashboard in a future release), and `total_fee` (sum of both).
@@ -2344,18 +2369,31 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PartnerQuoteRequest'
-            example:
-              user_uuid: "550e8400-e29b-41d4-a716-446655440000"
-              payment_details_id: 987
-              crypto_currency: USDT
-              crypto_amount: "100.00"
-              fiat_currency: NGN
-              rail: Bank Transfer
-              route: Instant Transfer
-              provider_scope: all
-              slippage_tolerance:
-                type: percent
-                value: 1.5
+            examples:
+              crypto_anchored:
+                summary: Crypto-anchored (exact crypto cost)
+                value:
+                  user_uuid: "550e8400-e29b-41d4-a716-446655440000"
+                  payment_details_id: 987
+                  crypto_currency: USDT
+                  crypto_amount: "100.00"
+                  fiat_currency: NGN
+                  provider_scope: all
+                  slippage_tolerance:
+                    type: percent
+                    value: 1.5
+              fiat_anchored:
+                summary: Fiat-anchored (exact fiat delivery)
+                value:
+                  user_uuid: "550e8400-e29b-41d4-a716-446655440000"
+                  payment_details_id: 987
+                  crypto_currency: USDT
+                  fiat_amount: "500000"
+                  fiat_currency: NGN
+                  provider_scope: all
+                  slippage_tolerance:
+                    type: percent
+                    value: 1.5
       responses:
         '200':
           description: Quote retrieved successfully
@@ -2368,34 +2406,75 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/PartnerQuoteResponse'
-              example:
-                success: true
-                data:
-                  quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-                  rate: "1530.12"
-                  crypto_amount: "101.50"
-                  fiat_amount: "152880.00"
-                  fee_breakdown:
-                    platform_fee: "1.50"
-                    platform_fee_pct: 1.5
-                    partner_fee: "0.00"
-                    partner_fee_pct: 0
-                    total_fee: "1.50"
-                  payment_details_id: 987
-                  payment_method_id: 5
-                  payment_network_id: 12
-                  expires_at: "2026-02-01T12:00:30Z"
+              examples:
+                crypto_anchored:
+                  summary: Crypto-anchored quote
+                  value:
+                    success: true
+                    data:
+                      quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                      anchor_type: "crypto"
+                      rate: "1530.12"
+                      crypto_amount: "101.50"
+                      fiat_amount: "152880"
+                      fee_breakdown:
+                        platform_fee: "1.50"
+                        platform_fee_pct: 1.5
+                        partner_fee: "0.00"
+                        partner_fee_pct: 0
+                        total_fee: "1.50"
+                      payment_details_id: 987
+                      payment_method_id: 5
+                      payment_network_id: 12
+                      expires_at: "2026-02-01T12:00:30Z"
+                fiat_anchored:
+                  summary: Fiat-anchored quote
+                  value:
+                    success: true
+                    data:
+                      quote_id: "b2c3d4e5-f6a7-8901-bcde-ef1234567890"
+                      anchor_type: "fiat"
+                      rate: "1530.12"
+                      crypto_amount: "328.10"
+                      fiat_amount: "500000"
+                      fee_breakdown:
+                        platform_fee: "4.92"
+                        platform_fee_pct: 1.5
+                        partner_fee: "0.00"
+                        partner_fee_pct: 0
+                        total_fee: "4.92"
+                      payment_details_id: 987
+                      payment_method_id: 5
+                      payment_network_id: 12
+                      expires_at: "2026-02-01T12:00:30Z"
         '400':
           description: Bad request — invalid parameters or missing required fields
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: INVALID_REQUEST
-                  message: "Missing required field: crypto_currency"
+              examples:
+                missing_currency:
+                  summary: Missing required field
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "Missing required field: crypto_currency"
+                ambiguous_amount:
+                  summary: Both or neither amount fields provided
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "exactly one of crypto_amount or fiat_amount must be provided"
+                sub_minor_unit:
+                  summary: Fractional fiat for integer-minor-unit currency
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_REQUEST
+                      message: "fiat_amount must be a whole number for integer-minor-unit currencies"
         '401':
           description: Unauthorized — invalid or missing API key
           content:
@@ -4284,7 +4363,10 @@ components:
 
     PartnerQuoteRequest:
       type: object
-      required: [user_uuid, payment_details_id, crypto_currency, crypto_amount, fiat_currency]
+      required: [user_uuid, payment_details_id, crypto_currency, fiat_currency]
+      oneOf:
+        - required: [crypto_amount]
+        - required: [fiat_amount]
       properties:
         user_uuid:
           type: string
@@ -4302,8 +4384,19 @@ components:
           example: USDT
         crypto_amount:
           type: string
-          description: Amount of crypto to sell (standard units, e.g., "100.00" for 100 USDT)
+          description: |
+            Amount of crypto to sell (standard units, e.g., "100.00" for 100 USDT).
+            Provide exactly one of `crypto_amount` or `fiat_amount`.
+            When provided, the order is **crypto-anchored** — exact crypto cost is guaranteed, fiat payout varies by rate at settlement.
           example: "100.00"
+        fiat_amount:
+          type: string
+          description: |
+            Exact fiat amount the recipient will receive (e.g., "500000" for 500,000 NGN).
+            Provide exactly one of `crypto_amount` or `fiat_amount`.
+            When provided, the order is **fiat-anchored** — exact fiat delivery is guaranteed, crypto cost may vary within a 1.20× safety bound.
+            For integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS), must be a whole number.
+          example: "500000"
         fiat_currency:
           type: string
           description: Target fiat currency code (e.g., NGN, USD, EUR)
@@ -4322,7 +4415,14 @@ components:
           enum: [all, licensed_only, p2p_only]
           example: all
         slippage_tolerance:
-          $ref: '#/components/schemas/SlippageTolerance'
+          allOf:
+            - $ref: '#/components/schemas/SlippageTolerance'
+          description: |
+            Optional. Maximum tolerated price movement between `/quote` and `/initiate`,
+            and between `/initiate` and vendor acceptance. When omitted, the default is
+            `percent` / `0` — any rate movement returns `PRICE_CHANGED_REQUOTE` and the
+            partner must request a fresh quote. Set this to opt in to silent execution
+            for small market movements.
         has_fiat_settlement_notification:
           type: boolean
           description: |
@@ -4338,9 +4438,17 @@ components:
           format: uuid
           description: Unique quote identifier — use this to initiate the order
           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        anchor_type:
+          type: string
+          enum: [crypto, fiat]
+          description: |
+            Indicates which amount is guaranteed at settlement.
+            - `crypto` — `crypto_amount` is exact; `fiat_amount` may vary by Switch rate at settlement.
+            - `fiat` — `fiat_amount` is exact; `crypto_amount` may vary within a 1.20× safety bound.
+          example: "crypto"
         rate:
           type: string
-          description: Crypto-to-fiat exchange rate
+          description: Crypto-to-fiat exchange rate at quote time
           example: "1530.12"
         crypto_amount:
           type: string
@@ -4348,7 +4456,7 @@ components:
           example: "101.50"
         fiat_amount:
           type: string
-          description: Fiat amount the user receives
+          description: Fiat amount the recipient receives
           example: "152880.00"
         fee_breakdown:
           $ref: '#/components/schemas/FeeBreakdown'
