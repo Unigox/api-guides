@@ -176,8 +176,8 @@ tags:
 
       For fiat-anchored off-ramp orders (`anchor_type: "fiat"`), if Switch quotes a crypto cost exceeding
       1.20× the expected amount at the time of settlement, the order moves to `failed` status asynchronously
-      (not during `/initiate`). Escrow is automatically released and crypto returned to the user.
-      Create a new quote to retry.
+      (not during `/initiate`). The deposit is held in escrow pending manual review by Unigox support;
+      crypto is not released back automatically. Create a new quote to retry the trade flow.
     x-page-icon: bell
 
 paths:
@@ -2343,10 +2343,11 @@ paths:
         **Fiat-anchored notes:**
         - Useful for exact-payout use cases (e.g. deliver exactly 500,000 NGN).
         - If Switch quotes a crypto cost exceeding 1.20× the expected amount, the order moves to `failed` status
-          and escrow is released automatically. Create a new quote to retry.
+          and the deposit is held in escrow pending manual review (no automatic refund). Create a new quote
+          to retry.
         - `slippage_tolerance.type=amount` in fiat-anchored mode is evaluated as crypto-side delta, not fiat-side
           (fiat is always exact by construction).
-        - Integer-minor-unit currencies (NGN, UGX, TZS): `fiat_amount` must be a whole number.
+        - Integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS): `fiat_amount` must be a whole number.
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
         `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
@@ -4414,7 +4415,14 @@ components:
           enum: [all, licensed_only, p2p_only]
           example: all
         slippage_tolerance:
-          $ref: '#/components/schemas/SlippageTolerance'
+          allOf:
+            - $ref: '#/components/schemas/SlippageTolerance'
+          description: |
+            Optional. Maximum tolerated price movement between `/quote` and `/initiate`,
+            and between `/initiate` and vendor acceptance. When omitted, the default is
+            `percent` / `0` — any rate movement returns `PRICE_CHANGED_REQUOTE` and the
+            partner must request a fresh quote. Set this to opt in to silent execution
+            for small market movements.
         has_fiat_settlement_notification:
           type: boolean
           description: |
