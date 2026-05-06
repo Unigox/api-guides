@@ -460,66 +460,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  # ============================================
-  # 3. EXCHANGE PAIRS
-  # ============================================
-  /api/v1/supported-exchange-pairs:
-    get:
-      tags:
-        - Exchange Pairs
-      summary: Supported exchange pairs
-      description: Get a list of all supported cryptocurrency and fiat currency exchange pairs. Shows which currency combinations can be traded.
-      operationId: getSupportedPairs
-      responses:
-        '200':
-          description: Successfully retrieved supported pairs
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SupportedPairsResponse'
-              example:
-                success: true
-                data:
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: ARS
-                    type: BUY
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: ARS
-                    type: SELL
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: AUD
-                    type: BUY
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: AUD
-                    type: SELL
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: CAD
-                    type: BUY
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: CAD
-                    type: SELL
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: EUR
-                    type: BUY
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: EUR
-                    type: SELL
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: GBP
-                    type: BUY
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: GBP
-                    type: SELL
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: GEL
-                    type: BUY
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: GEL
-                    type: SELL
-                  - crypto_currency_code: USDC
-                    fiat_currency_code: GHS
-                    type: BUY
-
   # Corridors snapshot — supported fiat corridors with live all-in rates
   /api/v1/supported/corridors:
     get:
@@ -590,6 +530,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================
+  # 3. EXCHANGE PAIRS
+  # ============================================
+  /api/v1/supported-exchange-pairs:
+    get:
+      tags:
+        - Exchange Pairs
+      summary: Supported exchange pairs
+      description: Get a list of all supported cryptocurrency and fiat currency exchange pairs. Shows which currency combinations can be traded.
+      operationId: getSupportedPairs
+      responses:
+        '200':
+          description: Successfully retrieved supported pairs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportedPairsResponse'
+              example:
+                success: true
+                data:
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: ARS
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: ARS
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: AUD
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: AUD
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: CAD
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: CAD
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: EUR
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: EUR
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GBP
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GBP
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GEL
+                    type: BUY
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GEL
+                    type: SELL
+                  - crypto_currency_code: USDC
+                    fiat_currency_code: GHS
+                    type: BUY
 
   # ============================================
   # 5. ACCOUNT MANAGEMENT
