@@ -460,29 +460,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  # Corridors snapshot — supported fiat corridors with live all-in rates
+  # Fiat corridors snapshot - all-in rates per direction
   /api/v1/supported/corridors:
     get:
       tags:
         - Supported Resources
-      summary: Corridors snapshot - supported fiats with live all-in rates per direction
+      summary: Fiat Corridors
       description: |
-        Snapshot of supported fiat corridors with the all-in best rates the
-        platform would quote at a 500 USDT reference notional, split per
-        direction:
+        Get a snapshot of supported fiat corridors with the all-in best rates Unigox would quote at a 500 USDT reference notional, split by direction (`onramp` / `offramp`) and partner type (`licensed` / `p2p`).
 
-        - **offramp** — customer sells crypto for fiat
-        - **onramp**  — customer buys crypto with fiat
-
-        Within each direction, rates are split by partner type:
-
-        - **licensed** — regulated business partners (e.g. Switch, CashWyre)
-        - **p2p**      — vendor offers (individual professional traders)
-
-        Every `rate` is post-fee. `unigox_fee_pct` discloses the platform fee
-        applied to that corridor; `mid_market_rate` is the Open Exchange Rates
-        reference for the same currency. The difference between `rate` and
-        `mid_market_rate` is the combined platform fee plus partner markup.
+        Every `rate` is post-fee. `unigox_fee_pct` discloses the platform fee for the corridor; `mid_market_rate` is the Open Exchange Rates reference for the same currency.
       operationId: getSupportedCorridors
       responses:
         '200':
