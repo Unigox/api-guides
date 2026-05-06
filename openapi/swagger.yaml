@@ -525,7 +525,7 @@ paths:
     get:
       tags:
         - Supported Resources
-      summary: Corridors snapshot — supported fiats with live all-in rates per direction
+      summary: Corridors snapshot - supported fiats with live all-in rates per direction
       description: |
         Snapshot of supported fiat corridors with the all-in best rates the
         platform would quote at a 500 USDT reference notional, split per
