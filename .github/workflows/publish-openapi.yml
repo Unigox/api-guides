@@ -40,6 +40,7 @@ jobs:
 
       - name: Validate OpenAPI YAML
         run: |
+          python3 -m pip install --quiet pyyaml
           python3 -c "import yaml; yaml.safe_load(open('openapi/swagger.yaml')); print('swagger.yaml parsed OK')"
 
       - name: Publish spec to GitBook
