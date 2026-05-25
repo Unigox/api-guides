@@ -1302,15 +1302,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  data:
-                    $ref: '#/components/schemas/PaymentProfile'
+                $ref: '#/components/schemas/GetPaymentDetailResponse'
         '400':
           description: Bad Request - malformed payment_details_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized
         '404':
@@ -4228,6 +4226,14 @@ components:
             account_number: "0123456789"
 
     CreatePaymentDetailsResponse:
+      allOf:
+        - $ref: '#/components/schemas/APIResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PaymentProfile'
+
+    GetPaymentDetailResponse:
       allOf:
         - $ref: '#/components/schemas/APIResponse'
         - type: object
