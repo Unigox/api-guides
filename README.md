@@ -31,7 +31,6 @@ on every push to `main` that touches `openapi/swagger.yaml`. It requires:
 To publish manually (uses the official GitBook CLI, `@gitbook/cli`):
 
 ```
-npm install -g @gitbook/cli
-gitbook auth --token <token>   # token: https://app.gitbook.com/account/developer
-gitbook openapi publish --organization <org> --spec <spec> openapi/swagger.yaml
+npx @gitbook/cli auth --token <token>   # token: https://app.gitbook.com/account/developer
+npx @gitbook/cli openapi publish --organization <org> --spec <spec> openapi/swagger.yaml
 ```
