@@ -1265,8 +1265,59 @@ paths:
         '500':
           description: Internal Server Error
 
-  # Step 8: Delete payment details for a partner user
+  # Step 7b / 8: Get or delete a single payment detail for a partner user
   /api/v1/partner/users/{user_uuid}/payment-details/{payment_details_id}:
+    get:
+      tags:
+        - User Management
+      summary: Get a single payment detail for a partner user
+      description: |
+        Retrieve one payment detail (payment profile) by its `payment_details_id`, returning the same shape as one element of the list endpoint (`rail`, `currency`, `institution_name`, `institution_id`, `details`).
+
+        Use this when you already hold a `payment_details_id` instead of listing every payment detail for the user — it stays fast on accounts with many saved payment details.
+
+        Partners can only access their own users. A payment detail that belongs to a different user (or another partner) returns `404` rather than revealing that it exists.
+      operationId: getPaymentDetailById
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: user_uuid
+          in: path
+          required: true
+          description: The user_uuid returned by POST /partner/users. Partners can only access their own users.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: payment_details_id
+          in: path
+          required: true
+          description: The payment_details_id returned when creating or listing payment details.
+          schema:
+            type: string
+          example: "987"
+      responses:
+        '200':
+          description: Successfully retrieved the payment detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PaymentProfile'
+        '400':
+          description: Bad Request - malformed payment_details_id
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found, or payment detail not found / not owned by this user
+        '500':
+          description: Internal Server Error
+
     delete:
       tags:
         - User Management
