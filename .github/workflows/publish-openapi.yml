@@ -1,0 +1,57 @@
+name: Publish OpenAPI to GitBook
+
+# Why this exists:
+# GitBook does NOT render the API reference directly from this repo's
+# openapi/swagger.yaml. GitBook Git Sync only syncs the markdown pages; the
+# interactive API reference is rendered from an OpenAPI spec *published* into
+# GitBook. So merging a swagger change to main updates the file here but leaves
+# developers.unigox.com showing the previously published spec until someone
+# re-publishes it. This workflow re-publishes on every change so the live docs
+# stay in sync automatically.
+#
+# Required repo configuration (Settings -> Secrets and variables -> Actions):
+#   Secret    GITBOOK_TOKEN  - a GitBook API token (https://app.gitbook.com/account/developer)
+#   Variable  GITBOOK_ORG    - the GitBook organization id/slug to publish to
+#   Variable  GITBOOK_SPEC   - the OpenAPI specification name/slug in GitBook
+#
+# Find ORG and SPEC by running locally once after `gitbook auth`:
+#   gitbook openapi publish --organization <org> --spec <spec> openapi/swagger.yaml
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "openapi/swagger.yaml"
+  workflow_dispatch: {} # allow manual re-publish from the Actions tab
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Pinned to the version verified locally; bump deliberately.
+      - name: Install GitBook CLI
+        run: npm install -g @gitbook/cli@0.27.2
+
+      - name: Validate OpenAPI YAML
+        run: |
+          python3 -c "import yaml; yaml.safe_load(open('openapi/swagger.yaml')); print('swagger.yaml parsed OK')"
+
+      - name: Publish spec to GitBook
+        env:
+          GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+          GITBOOK_ORG: ${{ vars.GITBOOK_ORG }}
+          GITBOOK_SPEC: ${{ vars.GITBOOK_SPEC }}
+        run: |
+          if [ -z "$GITBOOK_TOKEN" ] || [ -z "$GITBOOK_ORG" ] || [ -z "$GITBOOK_SPEC" ]; then
+            echo "::error::Missing GITBOOK_TOKEN secret or GITBOOK_ORG/GITBOOK_SPEC variables. See the comment at the top of this workflow."
+            exit 1
+          fi
+          # auth + publish must run in the same job (auth state is local to the runner).
+          gitbook auth --token "$GITBOOK_TOKEN"
+          gitbook openapi publish --organization "$GITBOOK_ORG" --spec "$GITBOOK_SPEC" openapi/swagger.yaml
