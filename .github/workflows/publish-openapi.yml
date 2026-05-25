@@ -38,10 +38,9 @@ jobs:
       - name: Install GitBook CLI
         run: npm install -g @gitbook/cli@0.27.2
 
-      - name: Validate OpenAPI YAML
-        run: |
-          python3 -c "import yaml; yaml.safe_load(open('openapi/swagger.yaml')); print('swagger.yaml parsed OK')"
-
+      # No separate YAML lint step: `gitbook openapi publish` parses and
+      # validates the spec, so malformed YAML fails the publish step below.
+      # (A python+PyYAML pre-check broke on PEP 668 Ubuntu 24.04 runners.)
       - name: Publish spec to GitBook
         env:
           GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}

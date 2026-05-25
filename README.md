@@ -28,9 +28,9 @@ on every push to `main` that touches `openapi/swagger.yaml`. It requires:
 - Secret `GITBOOK_TOKEN` — a GitBook API token
 - Variables `GITBOOK_ORG` and `GITBOOK_SPEC` — the target organization and spec
 
-To publish manually:
+To publish manually (uses the official GitBook CLI, `@gitbook/cli`):
 
 ```
-gitbook auth --token <token>
-gitbook openapi publish --organization <org> --spec <spec> openapi/swagger.yaml
+npx @gitbook/cli auth --token <token>   # token: https://app.gitbook.com/account/developer
+npx @gitbook/cli openapi publish --organization <org> --spec <spec> openapi/swagger.yaml
 ```
