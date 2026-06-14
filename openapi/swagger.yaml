@@ -403,10 +403,14 @@ paths:
             example: hdfc
         - name: code
           in: query
-          description: Lookup by specific code such as IFSC or sort code
+          description: >-
+            Filter by the institution's bank code (the `code` field of an
+            institution): the 4-letter IFSC bank prefix for `imps-neft-india`
+            (e.g. `HDFC`), the NIBSS code for `nip-nigeria`, etc. Not a full
+            IFSC — use the 4-letter prefix.
           schema:
             type: string
-            example: HDFC0001234
+            example: HDFC
         - name: limit
           in: query
           description: Maximum number of results to return
@@ -435,14 +439,13 @@ paths:
                 success: true
                 data:
                   institutions:
-                    - id: wise
-                      name: Wise
+                    - id: hdfc-bank
+                      name: HDFC Bank
                       type: BANK
-                      code: ""
+                      code: HDFC
                       branch: null
                       supported_rails:
-                        - iban-sepa
-                        - wise-network
+                        - imps-neft-india
                   pagination:
                     total: 1
                     limit: 20
@@ -3759,8 +3762,8 @@ components:
       properties:
         id:
           type: string
-          description: Institution identifier
-          example: hdfc
+          description: Institution identifier (slug) — pass this as `institution_id` when creating payment details
+          example: hdfc-bank
         name:
           type: string
           description: Institution name
@@ -3771,9 +3774,11 @@ components:
           example: BANK
         code:
           type: string
-          nullable: true
-          description: Institution code for lookup (e.g., IFSC, sort code)
-          example: HDFC0001234
+          description: >-
+            Corridor-specific institution code: the 4-letter IFSC bank prefix
+            for `imps-neft-india`, the NIBSS code for `nip-nigeria`, etc.
+            Omitted when the institution has no code (e.g. SEPA banks).
+          example: HDFC
         branch:
           $ref: '#/components/schemas/InstitutionBranch'
         supported_rails:
@@ -3781,7 +3786,7 @@ components:
           items:
             type: string
           description: List of payment rail slugs this institution supports
-          example: ["imps-india", "upi-india"]
+          example: ["imps-neft-india"]
 
     Pagination:
       type: object
@@ -4141,7 +4146,7 @@ components:
           example: INR
         rail:
           type: string
-          description: Payment rail identifier (e.g., "upi-india", "iban-sepa", "imps-india")
+          description: Payment rail identifier (e.g., "upi-india", "iban-sepa", "imps-neft-india")
           example: iban-sepa
         details:
           type: object
