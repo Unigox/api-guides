@@ -178,6 +178,31 @@ tags:
       1.20× the expected amount at the time of settlement, the order moves to `failed` status asynchronously
       (not during `/initiate`). The deposit is automatically refunded from escrow back to the partner wallet.
       Create a new quote to retry the trade flow.
+
+      **Settlement notifications (recipient received the fiat)**
+
+      Some liquidity providers automatically confirm when the fiat payout reaches the
+      recipient's bank account or mobile wallet. When the provider matched to an order
+      supports this, the order moves to `completed` on its own and you receive an
+      `order.status.changed` webhook with `status=completed` — that webhook is your signal
+      that the recipient has actually received the money.
+
+      Whether the matched provider sends this is reported per order by the
+      `has_fiat_settlement_notification` field on the **quote** and **order** responses:
+
+      - `true` — the matched provider sends an automatic settlement confirmation. You will
+        receive the `completed` webhook once fiat is delivered; no manual action is needed.
+      - `false` — no automatic confirmation for this order. Confirm delivery yourself by
+        calling `confirm-fiat-received` (or rely on your own banking/payment systems).
+
+      To match **only** providers that send settlement notifications, pass
+      `has_fiat_settlement_notification: true` in the quote request — providers that can't
+      offer it are then excluded from matching.
+
+      Availability is provider- and corridor-dependent: not every currency has a provider
+      that sends settlement notifications, so always read the flag on each quote rather than
+      assuming it. Manual `confirm-fiat-received` and the automatic confirmation are mutually
+      idempotent — whichever happens first wins and the other is a safe no-op.
     x-page-icon: bell
 
 paths:
@@ -2736,10 +2761,13 @@ paths:
         You do not need to wait for a system notification. If you know through your
         own systems that the recipient has received the fiat payment, confirm immediately.
 
-        Some liquidity providers also send automatic settlement confirmations. When this
-        happens, the order moves to `completed` on its own. If you already confirmed
-        manually, the auto-confirmation is a no-op. If the auto-confirmation arrives
-        first, your manual confirm call is also a no-op. Both paths are safe.
+        Some liquidity providers also send automatic settlement confirmations when the
+        recipient receives the fiat. When the order's `has_fiat_settlement_notification`
+        is `true` (see the quote/order response), the order moves to `completed` on its own
+        and you receive the `status=completed` webhook — no manual confirm needed. If you
+        already confirmed manually, the auto-confirmation is a no-op; if the auto-confirmation
+        arrives first, your manual confirm call is also a no-op. Both paths are safe. See the
+        Webhooks page → "Settlement notifications" for details.
 
         **How to implement:**
         - Always implement a `confirm-fiat-received` call in your flow.
