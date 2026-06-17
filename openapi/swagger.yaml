@@ -2452,7 +2452,7 @@ paths:
                   crypto_amount: "100.00"
                   fiat_currency: NGN
                   provider_scope: all
-                  has_fiat_settlement_notification: true
+                  has_fiat_settlement_notification: false
                   slippage_tolerance:
                     type: percent
                     value: 1.5
@@ -2465,7 +2465,7 @@ paths:
                   fiat_amount: "500000"
                   fiat_currency: NGN
                   provider_scope: all
-                  has_fiat_settlement_notification: true
+                  has_fiat_settlement_notification: false
                   slippage_tolerance:
                     type: percent
                     value: 1.5
