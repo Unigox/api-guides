@@ -384,19 +384,19 @@ paths:
               example:
                 success: true
                 data:
-                  country: GH
-                  currency: GHS
+                  country: NG
+                  currency: NGN
                   direction: offramp
                   rails:
-                    - slug: ghipss
-                      name: GHIPSS
+                    - slug: nip-nigeria
+                      name: NIP Nigeria (NIBSS Instant Payments)
                       institution_required: false
                       institution_lookup_key: null
                       currencies:
-                        - GHS
+                        - NGN
                       settlement:
                         speed: INSTANT
-                        typical_minutes: 3600
+                        typical_minutes: 2
                         note: null
                       limits: null
                       # Backward-compatible single field-set. For a multi-format rail it is a
@@ -406,38 +406,40 @@ paths:
                           label: Account Number
                           type: text
                           required: true
-                          placeholder: "Enter your bank account number"
+                          pattern: "^\\d{10}$"
+                          placeholder: "10-digit account number"
                         - key: full_name
                           label: Full Name
                           type: text
                           required: false
+                          placeholder: "Enter full name"
                       # Present only for multi-format rails: the field set depends on the chosen
                       # institution's type. Match an institution's `institution_type` to a format's
                       # `institution_types`, then submit that format's `fields`.
                       formats:
-                        - id: mobile-money
-                          name: Mobile Money
-                          institution_types: ["mobile-money", "mobile-wallets"]
-                          has_liquidity: true
-                          fields:
-                            - key: phone_number
-                              label: Phone Number
-                              type: tel
-                              required: true
-                              placeholder: "Enter phone number (e.g., +233 24 123 4567)"
-                            - key: full_name
-                              label: Full Name
-                              type: text
-                              required: false
                         - id: banks
                           name: Bank Account
                           institution_types: ["traditional-banks", "digital-banks"]
-                          has_liquidity: false
+                          has_liquidity: true
                           fields:
                             - key: account_number
                               label: Account Number
                               type: text
                               required: true
+                            - key: full_name
+                              label: Full Name
+                              type: text
+                              required: false
+                        - id: mobile-money
+                          name: Mobile Money
+                          institution_types: ["mobile-money", "mobile-wallets"]
+                          has_liquidity: false
+                          fields:
+                            - key: phone_number
+                              label: Phone Number
+                              type: tel
+                              required: true
+                              placeholder: "Enter phone number"
                             - key: full_name
                               label: Full Name
                               type: text
