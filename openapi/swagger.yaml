@@ -313,6 +313,45 @@ paths:
         For `iban-sepa` and `nip-nigeria`, partners may omit `institution_id` and the backend resolves the generic `other-bank` payment method automatically.
 
         `imps-neft-india` returns `institution_required: false` and has **no** `institution_id` field: the IFSC code encodes both bank and branch and routes the payout on its own. Required fields are `bank_name`, `ifsc_code`, `account_number`, and `full_name`. Sending `institution_id` is accepted but ignored (it resolves to the generic `imps-or-neft-transfer` method); the receiving bank comes from `bank_name` + `ifsc_code`.
+
+        **Multi-format rails:** some rails accept more than one field-set depending on the
+        chosen institution's type, and return a `formats` array. For example GHIPSS (Ghana)
+        and EthSwitch (Ethiopia) accept a **mobile-money** format keyed on `phone_number`
+        and a **bank** format keyed on `account_number`. For these, the top-level `fields`
+        is only a backward-compatible best-effort single set; use `formats` instead:
+        1. pick an institution from `/api/v1/supported/institutions` (each carries a fine-grained `payment_method_type`),
+        2. find the format whose `payment_method_types` contains that `payment_method_type`,
+        3. submit that format's `fields`.
+        Each format also carries `has_liquidity`, indicating whether a vendor/provider can
+        currently settle it in the corridor (omitted when undetermined).
+
+        Example multi-format rail (GHIPSS):
+        ```json
+        {
+          "slug": "ghipss",
+          "name": "GHIPSS",
+          "institution_required": false,
+          "fields": [ { "key": "account_number", "required": true }, { "key": "full_name", "required": false } ],
+          "formats": [
+            {
+              "id": "mobile-money",
+              "name": "Mobile Money",
+              "payment_method_types": ["mobile-money", "mobile-wallets"],
+              "has_liquidity": true,
+              "fields": [ { "key": "phone_number", "required": true }, { "key": "full_name", "required": false } ]
+            },
+            {
+              "id": "banks",
+              "name": "Bank Account",
+              "payment_method_types": ["traditional-banks", "digital-banks"],
+              "has_liquidity": false,
+              "fields": [ { "key": "account_number", "required": true }, { "key": "full_name", "required": false } ]
+            }
+          ]
+        }
+        ```
+        Here a partner paying out to an M-Pesa/TeleBirr-style mobile wallet must use the
+        `mobile-money` format (`phone_number`), not `account_number`.
       operationId: getPaymentRails
       parameters:
         - name: country
@@ -3739,7 +3778,51 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PaymentField'
-          description: Required fields for payment details input
+          description: >
+            Required fields for payment details input. For a multi-format rail (see
+            `formats`) this is a single best-effort field set kept for backward
+            compatibility; the authoritative, institution-specific fields are in `formats`.
+        formats:
+          type: array
+          description: >
+            Present only when a rail accepts more than one field-set (e.g. GHIPSS and
+            EthSwitch accept a mobile-money format keyed on `phone_number` and a bank
+            format keyed on `account_number`). The required field set depends on the
+            chosen institution's type, so pick an institution from
+            `/api/v1/supported/institutions`, match its `payment_method_type` to a
+            format via `payment_method_types`, and submit that format's `fields`.
+          items:
+            $ref: '#/components/schemas/RailFormat'
+
+    RailFormat:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Format identifier
+          example: mobile-money
+        name:
+          type: string
+          description: Human-readable format name
+          example: Mobile Money
+        payment_method_types:
+          type: array
+          items:
+            type: string
+          description: Institution types this format applies to. Match the chosen institution's type to select the format.
+          example: ["mobile-money", "mobile-wallets"]
+        has_liquidity:
+          type: boolean
+          description: >
+            Whether a vendor/provider can currently settle this format in the corridor.
+            Omitted when liquidity could not be determined (treat as unknown, not "no").
+            This reflects configured liquidity; live availability is confirmed at quote time.
+          example: true
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentField'
+          description: Required fields for payment details input when paying out to an institution of this format's type.
 
     PaymentCapabilityResponse:
       allOf:
@@ -3809,8 +3892,16 @@ components:
           example: HDFC Bank
         type:
           type: string
-          description: Institution type (e.g., BANK, WALLET)
+          description: Broad institution category (e.g., BANK, WALLET)
           example: BANK
+        payment_method_type:
+          type: string
+          description: >-
+            Fine-grained institution type slug (e.g. `mobile-money`,
+            `mobile-wallets`, `traditional-banks`, `digital-banks`). On a
+            multi-format rail, match this to the rail's
+            `formats[].payment_method_types` to select the right field set.
+          example: mobile-wallets
         code:
           type: string
           description: >-
