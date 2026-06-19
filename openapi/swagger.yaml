@@ -319,8 +319,8 @@ paths:
         and EthSwitch (Ethiopia) accept a **mobile-money** format keyed on `phone_number`
         and a **bank** format keyed on `account_number`. For these, the top-level `fields`
         is only a backward-compatible best-effort single set; use `formats` instead:
-        1. pick an institution from `/api/v1/supported/institutions` (each carries a fine-grained `payment_method_type`),
-        2. find the format whose `payment_method_types` contains that `payment_method_type`,
+        1. pick an institution from `/api/v1/supported/institutions` (each carries a fine-grained `institution_type`),
+        2. find the format whose `institution_types` contains that `institution_type`,
         3. submit that format's `fields`.
         Each format also carries `has_liquidity`, indicating whether a vendor/provider can
         currently settle it in the corridor (omitted when undetermined).
@@ -336,14 +336,14 @@ paths:
             {
               "id": "mobile-money",
               "name": "Mobile Money",
-              "payment_method_types": ["mobile-money", "mobile-wallets"],
+              "institution_types": ["mobile-money", "mobile-wallets"],
               "has_liquidity": true,
               "fields": [ { "key": "phone_number", "required": true }, { "key": "full_name", "required": false } ]
             },
             {
               "id": "banks",
               "name": "Bank Account",
-              "payment_method_types": ["traditional-banks", "digital-banks"],
+              "institution_types": ["traditional-banks", "digital-banks"],
               "has_liquidity": false,
               "fields": [ { "key": "account_number", "required": true }, { "key": "full_name", "required": false } ]
             }
@@ -376,43 +376,72 @@ paths:
             example: offramp
       responses:
         '200':
-          description: Successfully retrieved payment capabilities
+          description: Successfully retrieved payment rails
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentCapabilityResponse'
+                $ref: '#/components/schemas/PaymentRailsResponse'
               example:
                 success: true
                 data:
-                  country: NG
-                  currency: NGN
+                  country: GH
+                  currency: GHS
                   direction: offramp
                   rails:
-                    - slug: nip-nigeria
-                      name: NIP Nigeria (NIBSS Instant Payments)
+                    - slug: ghipss
+                      name: GHIPSS
                       institution_required: false
                       institution_lookup_key: null
                       currencies:
-                        - NGN
+                        - GHS
                       settlement:
                         speed: INSTANT
-                        typical_minutes: 2
+                        typical_minutes: 3600
                         note: null
                       limits: null
+                      # Backward-compatible single field-set. For a multi-format rail it is a
+                      # best-effort guess; use `formats` for the authoritative per-institution set.
                       fields:
                         - key: account_number
                           label: Account Number
                           type: text
                           required: true
-                          pattern: "^\\d{10}$"
-                          placeholder: "10-digit account number"
-                          lookup: false
+                          placeholder: "Enter your bank account number"
                         - key: full_name
                           label: Full Name
                           type: text
                           required: false
-                          pattern: "^[a-zA-ZÀ-ÿ\\u0100-\\u017F\\u0400-\\u04FF\\s'-]{2,50}$"
-                          placeholder: "Enter full name"
+                      # Present only for multi-format rails: the field set depends on the chosen
+                      # institution's type. Match an institution's `institution_type` to a format's
+                      # `institution_types`, then submit that format's `fields`.
+                      formats:
+                        - id: mobile-money
+                          name: Mobile Money
+                          institution_types: ["mobile-money", "mobile-wallets"]
+                          has_liquidity: true
+                          fields:
+                            - key: phone_number
+                              label: Phone Number
+                              type: tel
+                              required: true
+                              placeholder: "Enter phone number (e.g., +233 24 123 4567)"
+                            - key: full_name
+                              label: Full Name
+                              type: text
+                              required: false
+                        - id: banks
+                          name: Bank Account
+                          institution_types: ["traditional-banks", "digital-banks"]
+                          has_liquidity: false
+                          fields:
+                            - key: account_number
+                              label: Account Number
+                              type: text
+                              required: true
+                            - key: full_name
+                              label: Full Name
+                              type: text
+                              required: false
                   links:
                     search_institutions: /api/v1/supported/institutions
         '400':
@@ -3789,8 +3818,8 @@ components:
             EthSwitch accept a mobile-money format keyed on `phone_number` and a bank
             format keyed on `account_number`). The required field set depends on the
             chosen institution's type, so pick an institution from
-            `/api/v1/supported/institutions`, match its `payment_method_type` to a
-            format via `payment_method_types`, and submit that format's `fields`.
+            `/api/v1/supported/institutions`, match its `institution_type` to a
+            format via `institution_types`, and submit that format's `fields`.
           items:
             $ref: '#/components/schemas/RailFormat'
 
@@ -3805,7 +3834,7 @@ components:
           type: string
           description: Human-readable format name
           example: Mobile Money
-        payment_method_types:
+        institution_types:
           type: array
           items:
             type: string
@@ -3824,7 +3853,7 @@ components:
             $ref: '#/components/schemas/PaymentField'
           description: Required fields for payment details input when paying out to an institution of this format's type.
 
-    PaymentCapabilityResponse:
+    PaymentRailsResponse:
       allOf:
         - $ref: '#/components/schemas/APIResponse'
         - type: object
@@ -3894,13 +3923,13 @@ components:
           type: string
           description: Broad institution category (e.g., BANK, WALLET)
           example: BANK
-        payment_method_type:
+        institution_type:
           type: string
           description: >-
             Fine-grained institution type slug (e.g. `mobile-money`,
             `mobile-wallets`, `traditional-banks`, `digital-banks`). On a
             multi-format rail, match this to the rail's
-            `formats[].payment_method_types` to select the right field set.
+            `formats[].institution_types` to select the right field set.
           example: mobile-wallets
         code:
           type: string
