@@ -319,8 +319,8 @@ paths:
         and EthSwitch (Ethiopia) accept a **mobile-money** format keyed on `phone_number`
         and a **bank** format keyed on `account_number`. For these, the top-level `fields`
         is only a backward-compatible best-effort single set; use `formats` instead:
-        1. pick an institution from `/api/v1/supported/institutions` (it has a `type`),
-        2. find the format whose `payment_method_types` contains that type,
+        1. pick an institution from `/api/v1/supported/institutions` (each carries a fine-grained `payment_method_type`),
+        2. find the format whose `payment_method_types` contains that `payment_method_type`,
         3. submit that format's `fields`.
         Each format also carries `has_liquidity`, indicating whether a vendor/provider can
         currently settle it in the corridor (omitted when undetermined).
@@ -3789,8 +3789,8 @@ components:
             EthSwitch accept a mobile-money format keyed on `phone_number` and a bank
             format keyed on `account_number`). The required field set depends on the
             chosen institution's type, so pick an institution from
-            `/api/v1/supported/institutions`, match its `type` to a format via
-            `payment_method_types`, and submit that format's `fields`.
+            `/api/v1/supported/institutions`, match its `payment_method_type` to a
+            format via `payment_method_types`, and submit that format's `fields`.
           items:
             $ref: '#/components/schemas/RailFormat'
 
@@ -3892,8 +3892,16 @@ components:
           example: HDFC Bank
         type:
           type: string
-          description: Institution type (e.g., BANK, WALLET)
+          description: Broad institution category (e.g., BANK, WALLET)
           example: BANK
+        payment_method_type:
+          type: string
+          description: >-
+            Fine-grained institution type slug (e.g. `mobile-money`,
+            `mobile-wallets`, `traditional-banks`, `digital-banks`). On a
+            multi-format rail, match this to the rail's
+            `formats[].payment_method_types` to select the right field set.
+          example: mobile-wallets
         code:
           type: string
           description: >-
