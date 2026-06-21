@@ -2787,6 +2787,31 @@ paths:
                         quoted_rate: 1530.12
                         current_rate: 1545.00
                         fiat_difference: 1510.38
+        '422':
+          description: >-
+            Recipient could not be verified. For payout corridors that verify the recipient
+            (e.g. Switch mobile money / bank in NG, GH, KE), the recipient is checked before the
+            order is created. If the destination account/phone can't be resolved to a registered
+            account — or the account-holder name is not a valid first + last name — the order is
+            rejected here instead of being created and stranded. Fix the recipient details and
+            re-create the order (new quote → initiate). If the verification provider is temporarily
+            unavailable the order is created and the recipient is re-checked before payout, so an
+            outage never blocks order creation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                recipient_unverifiable:
+                  summary: Recipient cannot be verified
+                  value:
+                    success: false
+                    error:
+                      code: RECIPIENT_UNVERIFIABLE
+                      message: "The payout provider could not verify the recipient. Check the recipient's account/phone number and the registered account holder name (first and last), then create a new order."
+                      details:
+                        fields:
+                          - holder_name
         '500':
           description: Internal server error
           content:
