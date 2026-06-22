@@ -1,0 +1,46 @@
+name: Publish Changelog to GitBook
+
+# Why this exists (same rationale as publish-openapi.yml):
+# The GitBook space is not git-synced, so changelog.md in this repo is not
+# automatically a GitBook page. This repo is the source of truth for the changelog;
+# this workflow republishes the GitBook "Changelog" page from changelog.md on every
+# change, so the live page always matches the file. Append an entry to changelog.md,
+# push to main, and the page updates — no manual editing in GitBook.
+#
+# Required repo configuration (Settings -> Secrets and variables -> Actions):
+#   Secret    GITBOOK_TOKEN  - a GitBook API token WITH content edit scope
+#                              (the openapi-only token may not be enough — regenerate
+#                              with content permissions if this job 403s)
+#   Variable  GITBOOK_SPACE  - the space id: the <id> in app.gitbook.com/o/<org>/s/<id>/...
+#   Variable  CHANGELOG_PAGE - (optional) the Changelog page slug; defaults to "changelog"
+#
+# The "Changelog" page must already exist in the space (create it once in GitBook).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "changelog.md"
+  workflow_dispatch: {} # allow manual re-publish from the Actions tab
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Publish changelog.md to GitBook
+        env:
+          GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+          GITBOOK_SPACE: ${{ vars.GITBOOK_SPACE }}
+          CHANGELOG_PAGE: ${{ vars.CHANGELOG_PAGE }}
+        run: |
+          if [ -z "$GITBOOK_TOKEN" ] || [ -z "$GITBOOK_SPACE" ]; then
+            echo "::error::Missing GITBOOK_TOKEN secret or GITBOOK_SPACE variable. See the comment at the top of this workflow."
+            exit 1
+          fi
+          node scripts/publish-changelog.mjs
