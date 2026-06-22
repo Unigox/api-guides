@@ -174,7 +174,7 @@ tags:
 
       **Fiat-anchored safety bound failure**
 
-      For fiat-anchored off-ramp orders (`anchor_type: "fiat"`), if Switch quotes a crypto cost exceeding
+      For fiat-anchored off-ramp orders (`anchor_type: "fiat"`), if the crypto cost we quote exceeds
       1.20× the expected amount at the time of settlement, the order moves to `failed` status asynchronously
       (not during `/initiate`). The deposit is automatically refunded from escrow back to the partner wallet.
       Create a new quote to retry the trade flow.
@@ -2478,14 +2478,14 @@ paths:
 
         | Field | Anchor | Guarantee |
         |---|---|---|
-        | `crypto_amount` | Crypto-anchored | Exact crypto cost; fiat payout varies by Switch rate at settlement |
+        | `crypto_amount` | Crypto-anchored | Exact crypto cost; fiat payout varies by the rate at settlement |
         | `fiat_amount` | Fiat-anchored | Exact fiat delivery to recipient; crypto cost may vary within a 1.20× safety bound |
 
         The response `anchor_type` field tells you which side is guaranteed: `"crypto"` or `"fiat"`.
 
         **Fiat-anchored notes:**
         - Useful for exact-payout use cases (e.g. deliver exactly 500,000 NGN).
-        - If Switch quotes a crypto cost exceeding 1.20× the expected amount, the order moves to `failed` status
+        - If the crypto cost we quote exceeds 1.20× the expected amount, the order moves to `failed` status
           and the deposit is automatically refunded from escrow back to the partner wallet. Create a new quote
           to retry.
         - `slippage_tolerance.type=amount` in fiat-anchored mode is evaluated as crypto-side delta, not fiat-side
@@ -2787,6 +2787,31 @@ paths:
                         quoted_rate: 1530.12
                         current_rate: 1545.00
                         fiat_difference: 1510.38
+        '422':
+          description: >-
+            Recipient could not be verified. For payout corridors where we verify the recipient
+            (e.g. mobile money / bank in NG, GH, KE), the recipient is checked before the
+            order is created. If the destination account/phone can't be resolved to a registered
+            account — or the account-holder name is not a valid first + last name — the order is
+            rejected here instead of being created and stranded. Fix the recipient details and
+            re-create the order (new quote → initiate). If recipient verification is temporarily
+            unavailable the order is created and the recipient is re-checked before payout, so an
+            outage never blocks order creation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                recipient_unverifiable:
+                  summary: Recipient cannot be verified
+                  value:
+                    success: false
+                    error:
+                      code: RECIPIENT_UNVERIFIABLE
+                      message: "We could not verify the recipient. Check the recipient's account/phone number and the registered account holder name (first and last), then create a new order."
+                      details:
+                        fields:
+                          - holder_name
         '500':
           description: Internal server error
           content:
@@ -4654,7 +4679,7 @@ components:
           enum: [crypto, fiat]
           description: |
             Indicates which amount is guaranteed at settlement.
-            - `crypto` — `crypto_amount` is exact; `fiat_amount` may vary by Switch rate at settlement.
+            - `crypto` — `crypto_amount` is exact; `fiat_amount` may vary by the rate at settlement.
             - `fiat` — `fiat_amount` is exact; `crypto_amount` may vary within a 1.20× safety bound.
           example: "crypto"
         rate:
