@@ -72,11 +72,10 @@ const cr = await api("POST", `/spaces/${space}/change-requests`, { subject: "Upd
 const crId = cr?.id;
 if (!crId) throw new Error(`Change request creation returned no id: ${JSON.stringify(cr).slice(0, 300)}`);
 
-// 3. Replace the page document with changelog.md (markdown import).
+// 3. Replace the page document with changelog.md (markdown import). The content
+// endpoint takes a `changes` array of operations, applied in order.
 await api("POST", `/spaces/${space}/change-requests/${crId}/content`, {
-  operation: "update_page",
-  page: pageId,
-  document: { markdown },
+  changes: [{ operation: "update_page", page: pageId, document: { markdown } }],
 });
 
 // 4. Merge the change request so the page goes live.
