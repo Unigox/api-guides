@@ -73,3 +73,28 @@ only refresh existing operations; they do not add new ones.
 This affects the generated API Reference pages (Health, Supported Resources,
 User Management, On-Ramp, Liquidity, Off-Ramp, Orders, Webhooks) in the space
 published at developers.unigox.com.
+
+## Changelog
+
+`changelog.md` is the source of truth for the public changelog page. Like the
+OpenAPI spec, the GitBook space is **not** git-synced, so the file is pushed into
+the GitBook **Changelog** page by CI (`.github/workflows/publish-changelog.yml` →
+`scripts/publish-changelog.mjs`) on every change to `changelog.md`. The script
+replaces the whole page via a change request (create → update → merge), so the
+live page always equals `changelog.md` — **edit `changelog.md`, never the GitBook
+page directly** (direct edits are overwritten on the next publish).
+
+To add an entry: prepend a dated section to `changelog.md` and merge to `main`.
+
+One-time setup (Settings → Secrets and variables → Actions):
+
+- Secret `GITBOOK_TOKEN` — a GitBook API token **with content edit scope** (the
+  openapi-publish token may be too narrow; regenerate with content permissions if
+  the job 403s).
+- Variable `GITBOOK_SPACE` — the space id (`<id>` in
+  `app.gitbook.com/o/<org>/s/<id>/...`).
+- Variable `CHANGELOG_PAGE` — optional; the page slug, defaults to `changelog`.
+- The **Changelog** page must already exist in the space (create it once).
+
+Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
+scripts/publish-changelog.mjs` resolves the page read-only and makes no changes.
