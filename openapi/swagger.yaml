@@ -2790,7 +2790,7 @@ paths:
         '422':
           description: >-
             Recipient could not be verified. For payout corridors that verify the recipient
-            (e.g. Switch mobile money / bank in NG, GH, KE), the recipient is checked before the
+            (e.g. mobile money / bank in NG, GH, KE), the recipient is checked before the
             order is created. If the destination account/phone can't be resolved to a registered
             account — or the account-holder name is not a valid first + last name — the order is
             rejected here instead of being created and stranded. Fix the recipient details and
