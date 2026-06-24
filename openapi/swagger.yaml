@@ -748,6 +748,8 @@ paths:
         Creates a new user relation or returns existing if already created. Returns user_ref (same as input) for subsequent API calls. Partners can only access their own users.
 
         Each partner user must represent one actual payout beneficiary/end customer. Create a separate partner user for each beneficiary. Do not attach payment details for unrelated people to the same `user_uuid`; third-party payouts are not supported.
+
+        A partner user can have at most 15 active payment details per payment rail. Existing payment details remain usable; if the user has reached the limit for a rail, delete an old payment detail or create a separate partner user for a different beneficiary.
       operationId: createPartnerUser
       security:
         - ApiKeyAuth: []
@@ -1297,6 +1299,8 @@ paths:
 
         Payment details must belong to the same beneficiary represented by `user_uuid`. Do not attach phone numbers, bank accounts, wallets, or other payout instruments for unrelated people to the same partner user. If you need to pay a different person, create a separate partner user for that beneficiary first.
 
+        Each partner user can have at most 15 active payment details per payment rail. If the user already has 15 active payment details for the requested rail, the request fails with `409 Conflict`. Existing payment details remain usable.
+
         Institution handling:
         - for most rails, `institution_id` must be provided from `/api/v1/supported/institutions`
         - partners may omit `institution_id` only for the explicitly supported rails below; the backend will assign the generic `other-bank` payment method automatically
@@ -1375,6 +1379,16 @@ paths:
           description: Unauthorized
         '404':
           description: User not found
+        '409':
+          description: Conflict - maximum 15 active payment details reached for this user and payment rail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                data:
+                  error_key: "payment_details_limit_exceeded"
         '422':
           description: >-
             Recipient details are incomplete or invalid for the payout corridor. The recipient fields
