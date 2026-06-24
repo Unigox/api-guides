@@ -901,7 +901,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/KYCSubmitResponse'
         '400':
-          description: Bad Request - invalid method or missing required data
+          description: >-
+            Bad Request — invalid method, missing required data, or a date of birth that
+            fails validation. The response body is `{ "success": false, "data": { "error_key": "...", "message": "..." } }`.
+            Possible `error_key` values include:
+            `underage_not_allowed` — "User must be at least 18 years old. The provided
+            date_of_birth indicates an age under 18."; and
+            `invalid_date_of_birth` — "date_of_birth is invalid. Provide a real date in
+            YYYY-MM-DD format that is in the past."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                underage:
+                  summary: Date of birth under 18
+                  value:
+                    success: false
+                    data:
+                      error_key: underage_not_allowed
+                      message: "User must be at least 18 years old. The provided date_of_birth indicates an age under 18."
+                invalid_dob:
+                  summary: Malformed or future date of birth
+                  value:
+                    success: false
+                    data:
+                      error_key: invalid_date_of_birth
+                      message: "date_of_birth is invalid. Provide a real date in YYYY-MM-DD format that is in the past."
         '401':
           description: Unauthorized
         '404':
@@ -1149,6 +1175,9 @@ paths:
                 dob:
                   type: string
                   format: date
+                  description: >-
+                    Date of birth (YYYY-MM-DD). Must be in the past and indicate an age of at
+                    least 18; a future, malformed, or under-18 date is rejected with HTTP 400.
                   example: "1990-01-01"
                 phone_number:
                   type: string
@@ -1184,7 +1213,11 @@ paths:
                         type: string
                         example: "KYC data updated successfully"
         '400':
-          description: Bad request (no valid fields, or trying to change required fields)
+          description: >-
+            Bad request — no valid fields, attempting to change a required field, or a date
+            of birth that fails validation. Body: `{ "success": false, "data": { "error_key": "...", "message": "..." } }`.
+            DOB-related `error_key` values: `underage_not_allowed` (age under 18) and
+            `invalid_date_of_birth` (malformed or future date).
         '401':
           description: Unauthorized
         '404':
@@ -4170,6 +4203,10 @@ components:
                 dob:
                   type: string
                   format: date
+                  description: >-
+                    Date of birth (YYYY-MM-DD). Optional, but when provided it must be a real
+                    date in the past and indicate an age of at least 18. A future, malformed,
+                    or under-18 date is rejected with HTTP 400 (see error responses below).
                   example: "1990-01-01"
                 middle_name:
                   type: string
