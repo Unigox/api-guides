@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-06-24
+
+**Recipient validation moved to recipient creation.** The recipient field check that previously ran when you created an offramp order now runs earlier — when you **create the recipient** (`POST /api/v1/partner/users/{user_id}/payment-details`):
+
+- If a required recipient field is missing or malformed for the payout corridor, the create is rejected with **`422 Unprocessable Entity`** and the offending fields are named in the `error` message — so you fix the recipient once, up front, before it can be used in any order.
+- `POST /api/v1/partner/offramp/initiate` **no longer returns `RECIPIENT_UNVERIFIABLE`**: a recipient you successfully created has already passed field validation. Quote and funds checks at initiate are unchanged.
+- As before, this confirms the recipient details are complete and well-formed; it does not by itself guarantee the destination account exists, and a temporary validation outage never blocks creating the recipient (the details are persisted and re-checked before payout).
+
+No action needed if you already create recipients before ordering. Corridors without recipient requirements are unchanged.
+
 ## 2026-06-22
 
 **Offramp orders now validate the recipient details before the order is created.**
