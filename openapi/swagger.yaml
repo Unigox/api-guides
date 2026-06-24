@@ -744,7 +744,10 @@ paths:
       tags:
         - User Management
       summary: Create or get partner user
-      description: Creates a new user relation or returns existing if already created. Returns user_ref (same as input) for subsequent API calls. Partners can only access their own users.
+      description: |
+        Creates a new user relation or returns existing if already created. Returns user_ref (same as input) for subsequent API calls. Partners can only access their own users.
+
+        Each partner user must represent one actual payout beneficiary/end customer. Create a separate partner user for each beneficiary. Do not attach payment details for unrelated people to the same `user_uuid`; third-party payouts are not supported.
       operationId: createPartnerUser
       security:
         - ApiKeyAuth: []
@@ -1291,6 +1294,8 @@ paths:
       summary: Create payment details for a partner user
       description: |
         Create payment details (beneficiary details) for a partner user. Used for offramp operations where crypto is converted to fiat and sent to the user's payment account. Partners can only access their own users.
+
+        Payment details must belong to the same beneficiary represented by `user_uuid`. Do not attach phone numbers, bank accounts, wallets, or other payout instruments for unrelated people to the same partner user. If you need to pay a different person, create a separate partner user for that beneficiary first.
 
         Institution handling:
         - for most rails, `institution_id` must be provided from `/api/v1/supported/institutions`
@@ -2528,6 +2533,7 @@ paths:
 
         The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
         The `payment_details_id` is the ID of a previously created payment profile for the user.
+        The payment profile must belong to the same beneficiary represented by `user_uuid`; third-party payouts are not supported.
 
         **Anchor mode — provide exactly one of `crypto_amount` or `fiat_amount`:**
 
