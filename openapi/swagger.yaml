@@ -1348,7 +1348,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    description: Human-readable message naming the missing or invalid recipient fields.
               example:
                 success: false
                 error: "recipient details are incomplete or invalid for this payout method: iban — please correct and resubmit"
