@@ -1384,11 +1384,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    description: Human-readable limit error.
               example:
                 success: false
-                data:
-                  error_key: "payment_details_limit_exceeded"
+                error: "payment_details_limit_exceeded: maximum 15 active payment details per payment rail/network"
         '422':
           description: >-
             Recipient details are incomplete or invalid for the payout corridor. The recipient fields
