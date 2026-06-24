@@ -1337,6 +1337,21 @@ paths:
           description: Unauthorized
         '404':
           description: User not found
+        '422':
+          description: >-
+            Recipient details are incomplete or invalid for the payout corridor. The recipient fields
+            you supply are validated against the provider's per-corridor requirements; if a required
+            field is missing or malformed, the recipient is not created and the offending field names
+            are listed in the error message. Fix the details and resubmit. Address fields
+            auto-populated from KYC are not part of this check (a missing address does not block
+            creation — see the KYC endpoints).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "recipient details are incomplete or invalid for this payout method: iban — please correct and resubmit"
         '500':
           description: Internal Server Error
 
@@ -2787,31 +2802,6 @@ paths:
                         quoted_rate: 1530.12
                         current_rate: 1545.00
                         fiat_difference: 1510.38
-        '422':
-          description: >-
-            Recipient could not be verified. For payout corridors where we verify the recipient
-            (e.g. mobile money / bank in NG, GH, KE), the recipient is checked before the
-            order is created. If the destination account/phone can't be resolved to a registered
-            account — or the account-holder name is not a valid first + last name — the order is
-            rejected here instead of being created and stranded. Fix the recipient details and
-            re-create the order (new quote → initiate). If recipient verification is temporarily
-            unavailable the order is created and the recipient is re-checked before payout, so an
-            outage never blocks order creation.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-              examples:
-                recipient_unverifiable:
-                  summary: Recipient cannot be verified
-                  value:
-                    success: false
-                    error:
-                      code: RECIPIENT_UNVERIFIABLE
-                      message: "We could not verify the recipient. Check the recipient's account/phone number and the registered account holder name (first and last), then create a new order."
-                      details:
-                        fields:
-                          - holder_name
         '500':
           description: Internal server error
           content:
