@@ -8,7 +8,7 @@ Notable changes to the Unigox partner API, newest first.
 
 - If a required recipient field is missing or malformed for the payout corridor, the create is rejected with **`422 Unprocessable Entity`** and the offending fields are named in the `error` message — so you fix the recipient once, up front, before it can be used in any order.
 - `POST /api/v1/partner/offramp/initiate` **no longer returns `RECIPIENT_UNVERIFIABLE`**: a recipient you successfully created has already passed field validation. Quote and funds checks at initiate are unchanged.
-- As before, this confirms the recipient details are complete and well-formed; it does not by itself guarantee the destination account exists, and a temporary validation outage never blocks creating the recipient (the details are persisted and re-checked before payout).
+- This is now the single point of recipient validation — there is no second check at order time. It confirms the recipient details are complete and well-formed for the corridor; it does not by itself guarantee the destination account exists. If the validation service is temporarily unavailable the recipient is still created (creation is never blocked by an outage), so create recipients before you need them.
 
 No action needed if you already create recipients before ordering. Corridors without recipient requirements are unchanged.
 
