@@ -1238,17 +1238,17 @@ paths:
         and other relevant information. Optionally, you can provide a verification_id to check a specific
         verification session.
 
-        Interpretation of terminal states:
-        - `VERIFIED` — verification passed and the user is approved
-        - `VERIFICATION_REJECTED` — verification completed with a rejection outcome
+        Status values:
+        - `NOT_INITIATED` — no verification started yet
+        - `PENDING_DOCUMENTS` — waiting for the customer to submit documents
+        - `IN_PROGRESS` — verification is underway (includes customers in compliance review)
+        - `VERIFIED` — verification passed; the customer is approved
         - `FAILED` — verification could not be completed due to an error
-        - `COMPLETED` — provider workflow finished processing, but partners should still treat `VERIFIED`
-          as the success state and `VERIFICATION_REJECTED` / `FAILED` as terminal non-success states
+        - `VERIFICATION_REJECTED` — verification completed with a rejection outcome
 
-        Non-terminal states (`NOT_STARTED`, `PENDING`, `IN_PROGRESS`) mean verification is still in
-        progress — keep polling. A customer undergoing additional compliance review is also reported as
-        `IN_PROGRESS`; treat `IN_PROGRESS` as "not cleared yet" rather than a distinct outcome. No
-        internal review state is ever exposed.
+        Non-terminal states (`NOT_INITIATED`, `PENDING_DOCUMENTS`, `IN_PROGRESS`) mean verification is
+        still in progress — keep polling. Treat `IN_PROGRESS` as "not cleared yet". No internal review
+        state is ever exposed.
       operationId: getVerificationStatus
       security:
         - ApiKeyAuth: []
@@ -1744,6 +1744,12 @@ paths:
 
         **Payment method:** Provide `payment_method_slug` and/or `payment_network_slug` to narrow routing.
         If omitted, the best available option for the pair is selected automatically.
+
+        **KYC requirement:** The customer must be KYC-cleared before you can quote or transact for them.
+        If the customer is not cleared, this endpoint returns `422 KYC_NOT_CLEARED` and
+        `error.details.kyc_status` carries their current partner-facing KYC status. A customer still in
+        compliance review is reported as `IN_PROGRESS` — treat `IN_PROGRESS` as "not cleared yet" and
+        keep polling `GET /api/v1/partner/users/{user_uuid}/verification-status`.
       operationId: getOnRampQuote
       security:
         - ApiKeyAuth: []
@@ -1833,6 +1839,21 @@ paths:
                 error:
                   code: NO_OFFERS_AVAILABLE
                   message: "No offers available for USDT/VND"
+        '422':
+          description: >-
+            The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
+            partner-facing KYC status. The message is generic and never reveals internal review state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: KYC_NOT_CLEARED
+                  message: "Customer is not cleared for this transaction"
+                  details:
+                    kyc_status: "IN_PROGRESS"
         '500':
           description: Internal server error
           content:
@@ -1855,6 +1876,10 @@ paths:
 
         At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order.
         If the order type is `payment_request`, call `submit-payer-details` first before confirming.
+
+        **KYC requirement:** The customer must be KYC-cleared, as described on `POST /onramp/quote`.
+        If they are not, this endpoint returns `422 KYC_NOT_CLEARED` with the customer's partner-facing
+        status in `error.details.kyc_status`. The check is re-applied as the order moves toward payout.
       operationId: initiateOnRamp
       security:
         - ApiKeyAuth: []
@@ -1945,6 +1970,21 @@ paths:
                     error:
                       code: QUOTE_ALREADY_USED
                       message: "Quote has already been used"
+        '422':
+          description: >-
+            The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
+            partner-facing KYC status. The message is generic and never reveals internal review state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: KYC_NOT_CLEARED
+                  message: "Customer is not cleared for this transaction"
+                  details:
+                    kyc_status: "IN_PROGRESS"
         '500':
           description: Internal server error
           content:
@@ -2570,18 +2610,12 @@ paths:
         If you initiate without address, the order will be created with status `pending_address` until
         the address is provided.
 
-        **KYC requirement:** The customer must be KYC-cleared before you can offramp for them. What
-        "cleared" means depends on how your account is configured:
-        - If Unigox relies on your KYC, the customer is blocked only when their verification has
-          failed, been rejected, or is under review — i.e. any non-cleared state other than
-          still-pending. A pending or in-progress verification is allowed and does not stop the order.
-        - If Unigox performs KYC for the customer, they must reach `VERIFIED` first.
-
+        **KYC requirement:** The customer must be KYC-cleared before you can quote or transact for them.
         If the customer is not cleared, this endpoint returns `422 KYC_NOT_CLEARED` and
-        `error.details.kyc_status` carries the customer's current partner-facing KYC status. The same
-        check is re-applied as the order moves toward payout, so confirm the customer is cleared before
-        quoting. A customer still in compliance review is reported as `IN_PROGRESS`; treat `IN_PROGRESS`
-        as "not cleared yet" and keep polling `GET /api/v1/partner/users/{user_uuid}/verification-status`.
+        `error.details.kyc_status` carries their current partner-facing KYC status. The same check is
+        re-applied as the order moves toward payout. A customer still in compliance review is reported as
+        `IN_PROGRESS` — treat `IN_PROGRESS` as "not cleared yet" and keep polling
+        `GET /api/v1/partner/users/{user_uuid}/verification-status`.
       operationId: getOffRampQuote
       security:
         - ApiKeyAuth: []
@@ -2734,10 +2768,8 @@ paths:
                   message: "No offers available for USDT/NGN"
         '422':
           description: >-
-            The customer is not KYC-cleared for this offramp. `error.details.kyc_status` carries the
-            customer's current partner-facing KYC status; see the endpoint description for what
-            "cleared" means for your account. The message is generic and never reveals internal review
-            state.
+            The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
+            partner-facing KYC status. The message is generic and never reveals internal review state.
           content:
             application/json:
               schema:
@@ -2890,9 +2922,8 @@ paths:
                         fiat_difference: 1510.38
         '422':
           description: >-
-            The customer is not KYC-cleared for this offramp. `error.details.kyc_status` carries the
-            customer's current partner-facing KYC status; see `POST /offramp/quote` for what "cleared"
-            means for your account. The message is generic and never reveals internal review state.
+            The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
+            partner-facing KYC status. The message is generic and never reveals internal review state.
           content:
             application/json:
               schema:
@@ -4382,16 +4413,16 @@ components:
               properties:
                 status:
                   type: string
-                  enum: [NOT_STARTED, PENDING, IN_PROGRESS, COMPLETED, VERIFIED, FAILED, VERIFICATION_REJECTED]
+                  enum: [NOT_INITIATED, PENDING_DOCUMENTS, IN_PROGRESS, VERIFIED, FAILED, VERIFICATION_REJECTED]
                   description: |
                     Current verification status.
 
-                    Recommended partner interpretation:
-                    - `NOT_STARTED`, `PENDING`, `IN_PROGRESS` — still processing
-                    - `VERIFIED` — approved / successful verification
-                    - `VERIFICATION_REJECTED` — completed with rejection
+                    - `NOT_INITIATED` — no verification started
+                    - `PENDING_DOCUMENTS` — awaiting customer document submission
+                    - `IN_PROGRESS` — verification underway (includes compliance review); treat as not cleared yet
+                    - `VERIFIED` — approved
                     - `FAILED` — terminal error
-                    - `COMPLETED` — provider workflow completed, but partners should not treat this alone as approval; wait for `VERIFIED` to consider the user approved
+                    - `VERIFICATION_REJECTED` — completed with rejection
                   example: "IN_PROGRESS"
                 verification_url:
                   type: string
@@ -5405,7 +5436,7 @@ components:
                 - `TRANSACTOR_ERROR` — on-chain transaction relay failed (e.g. simulation reverted)
                 - `INSUFFICIENT_BALANCE` — partner wallet lacks tokens to fund escrow
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
-                - `KYC_NOT_CLEARED` — the customer is not KYC-cleared to offramp; the customer's partner-facing status is in `error.details.kyc_status`
+                - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
               enum:
                 - QUOTE_EXPIRED
                 - QUOTE_NOT_FOUND

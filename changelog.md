@@ -4,12 +4,9 @@ Notable changes to the Unigox partner API, newest first.
 
 ## 2026-06-27
 
-**Offramp now requires the customer to be KYC-cleared.** A `POST /api/v1/partner/offramp/quote` or `POST /api/v1/partner/offramp/initiate` for a customer who is not KYC-cleared is rejected with **`422 KYC_NOT_CLEARED`**. The customer's current partner-facing KYC status is returned in `error.details.kyc_status`, and the same check is re-applied as the order moves toward payout.
+**Customers must be KYC-cleared before onramping or offramping.** Quote and initiate calls (`POST /onramp/quote`, `/onramp/initiate`, `/offramp/quote`, `/offramp/initiate`) return `422 KYC_NOT_CLEARED` if the customer is not cleared; `error.details.kyc_status` carries their current status. Poll `GET /partner/users/{user_uuid}/verification-status` until the customer reaches `VERIFIED`.
 
-- What "cleared" means depends on your account: if Unigox relies on your KYC, a customer is blocked only while their verification is failed, rejected, or under review; if Unigox performs KYC for you, the customer must reach `VERIFIED` first.
-- A customer still in compliance review is reported as `IN_PROGRESS` — treat `IN_PROGRESS` as "not cleared yet" and keep polling `GET /api/v1/partner/users/{user_uuid}/verification-status`. No internal review state is ever exposed.
-
-No action needed if you already wait for a customer to be cleared before transacting.
+No action needed if you already wait for `VERIFIED` before transacting.
 
 ## 2026-06-24
 
