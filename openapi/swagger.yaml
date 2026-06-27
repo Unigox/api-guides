@@ -2572,15 +2572,16 @@ paths:
 
         **KYC requirement:** The customer must be KYC-cleared before you can offramp for them. What
         "cleared" means depends on how your account is configured:
-        - If Unigox relies on your KYC, the customer is blocked only while their verification is
-          failed, rejected, or under review — any non-cleared state stops the order.
+        - If Unigox relies on your KYC, the customer is blocked only when their verification has
+          failed, been rejected, or is under review — i.e. any non-cleared state other than
+          still-pending. A pending or in-progress verification is allowed and does not stop the order.
         - If Unigox performs KYC for the customer, they must reach `VERIFIED` first.
 
         If the customer is not cleared, this endpoint returns `422 KYC_NOT_CLEARED` and
         `error.details.kyc_status` carries the customer's current partner-facing KYC status. The same
         check is re-applied as the order moves toward payout, so confirm the customer is cleared before
         quoting. A customer still in compliance review is reported as `IN_PROGRESS`; treat `IN_PROGRESS`
-        as "not cleared yet" and keep polling `GET /partner/users/{user_uuid}/verification-status`.
+        as "not cleared yet" and keep polling `GET /api/v1/partner/users/{user_uuid}/verification-status`.
       operationId: getOffRampQuote
       security:
         - ApiKeyAuth: []
