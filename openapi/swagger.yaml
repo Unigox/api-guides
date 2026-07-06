@@ -325,6 +325,17 @@ paths:
         Each format also carries `has_liquidity`, indicating whether a vendor/provider can
         currently settle it in the corridor (omitted when undetermined).
 
+        **Individual vs business beneficiary:** a format may also carry `beneficiary_type`
+        (`individual` | `business`). A business variant applies to the SAME institutions as its
+        individual sibling (it shares the same `institution_types`) but collects a company's
+        details instead of a person's. To pay a company, choose the format whose
+        `beneficiary_type` is `business` and, when creating the payment details, submit that
+        format's `fields` PLUS `"beneficiary_type": "business"` inside `details`. Omitting
+        `"beneficiary_type"` in the request details defaults to the individual variant. Example: China CNAPS (`cnaps`) returns a
+        `cnaps-bank` (individual) format and a `cnaps-bank_business` format collecting
+        `company_name` + `company_name_native`; a corporate CNY payout sends the latter's fields
+        with `"beneficiary_type": "business"`.
+
         Example multi-format rail (GHIPSS):
         ```json
         {
@@ -3997,6 +4008,16 @@ components:
             Omitted when liquidity could not be determined (treat as unknown, not "no").
             This reflects configured liquidity; live availability is confirmed at quote time.
           example: true
+        beneficiary_type:
+          type: string
+          enum: [individual, business]
+          description: >
+            Present only for rails that distinguish an individual vs a business beneficiary.
+            A `business` format shares its individual sibling's `institution_types` but collects
+            a company's details. To use it, submit this format's `fields` AND set
+            `"beneficiary_type": "business"` inside the create-payment-details `details` object.
+            Omitting `"beneficiary_type"` in the request details defaults to the individual variant.
+          example: business
         fields:
           type: array
           items:
