@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-07-13
+
+**You can now charge your end users a per-order markup.** Pass an optional `partner_fee_pct` on the quote and estimate requests for both ramps (`POST /onramp/estimate`, `/onramp/quote`, `/offramp/estimate`, `/offramp/quote`) — `1` means 1%. The markup is declared per order (no stored config), computed in crypto on the same base as the platform fee, and settled on-chain to your partner wallet when the order releases successfully. Cancelled or failed orders refund the full amount, markup included.
+
+- Every response now reports the real figures in `fee_breakdown.partner_fee` and `fee_breakdown.partner_fee_pct` (quote, estimate, initiate, GET/LIST order, and the action responses), and webhook event `data` carries `partner_fee` / `partner_fee_pct` too.
+- `crypto_amount` stays partner-fee-exclusive — the markup shows only in `fee_breakdown` (and in the offramp funding amount from transfer authorization). Apply your fee on the **same side** the platform does, or your receipts won't reconcile with our orders.
+- Offramp has no cap. Onramp rejects a quote/estimate whose withheld fee would meet or exceed the delivered amount — a formula domain bound, not a business cap.
+
+No action needed if you don't charge a markup: omit `partner_fee_pct` (or send `0`) and every fee field reads zero exactly as before.
+
 ## 2026-06-27
 
 **Customers must be KYC-cleared before onramping or offramping.** Quote and initiate calls (`POST /onramp/quote`, `/onramp/initiate`, `/offramp/quote`, `/offramp/initiate`) return `422 KYC_NOT_CLEARED` if the customer is not cleared; `error.details.kyc_status` carries their current status. Poll `GET /partner/users/{user_uuid}/verification-status` until the customer reaches `VERIFIED`.

@@ -1676,9 +1676,9 @@ paths:
                   fee_breakdown:
                     platform_fee: "0.005000"
                     platform_fee_pct: 0.5
-                    partner_fee: "0.00"
-                    partner_fee_pct: 0
-                    total_fee: "0.005000"
+                    partner_fee: "0.010000"
+                    partner_fee_pct: 1
+                    total_fee: "0.015000"
                   payment_method_slug: zalopay
                   payment_network_slug: napas-vietnam
                   provider_scope: all
@@ -1750,8 +1750,18 @@ paths:
         The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
-        `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
-        via dashboard in a future release), and `total_fee` (sum of both).
+        `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
+        by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
+        (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
+        crypto base as the platform fee (non-compounding) and is settled on-chain to your partner wallet
+        on successful release; cancelled or failed orders refund the full amount, markup included.
+
+        Apply your fee on the **same side** the platform does, or your receipts won't reconcile with our
+        orders. `crypto_amount` in responses and webhooks stays partner-fee-exclusive — the markup is
+        visible only in `fee_breakdown` (and in the funding amount returned by transfer authorization for
+        offramp). Offramp has no cap on the markup; onramp rejects a quote/estimate whose withheld fee
+        would meet or exceed the delivered amount (a formula domain bound, distinct from the absent
+        offramp business cap).
 
         **Payment method:** Provide `payment_method_slug` and/or `payment_network_slug` to narrow routing.
         If omitted, the best available option for the pair is selected automatically.
@@ -1800,9 +1810,9 @@ paths:
                   fee_breakdown:
                     platform_fee: "0.005000"
                     platform_fee_pct: 0.5
-                    partner_fee: "0.00"
-                    partner_fee_pct: 0
-                    total_fee: "0.005000"
+                    partner_fee: "0.010000"
+                    partner_fee_pct: 1
+                    total_fee: "0.015000"
                   payment_method_slug: zalopay
                   payment_network_slug: napas-vietnam
                   expires_at: "2026-03-30T19:15:50Z"
@@ -1932,9 +1942,9 @@ paths:
                   fee_breakdown:
                     platform_fee: "0.005000"
                     platform_fee_pct: 0.5
-                    partner_fee: "0.00"
-                    partner_fee_pct: 0
-                    total_fee: "0.005000"
+                    partner_fee: "0.010000"
+                    partner_fee_pct: 1
+                    total_fee: "0.015000"
                   timeline: []
                   created_at: "2026-03-30T19:00:05Z"
         '400':
@@ -2516,9 +2526,9 @@ paths:
                   fee_breakdown:
                     platform_fee: "1.50"
                     platform_fee_pct: 1.5
-                    partner_fee: "0.00"
-                    partner_fee_pct: 0
-                    total_fee: "1.50"
+                    partner_fee: "1.00"
+                    partner_fee_pct: 1
+                    total_fee: "2.50"
                   payment_method_slug: access-bank
                   payment_network_slug: nibss
                   provider_scope: all
@@ -2610,8 +2620,18 @@ paths:
         - Integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS): `fiat_amount` must be a whole number.
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
-        `platform_fee` (our fee in crypto), `partner_fee` (partner's markup, currently 0, configurable
-        via dashboard in a future release), and `total_fee` (sum of both).
+        `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
+        by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
+        (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
+        crypto base as the platform fee (non-compounding) and is settled on-chain to your partner wallet
+        on successful release; cancelled or failed orders refund the full amount, markup included.
+
+        Apply your fee on the **same side** the platform does, or your receipts won't reconcile with our
+        orders. `crypto_amount` in responses and webhooks stays partner-fee-exclusive — the markup is
+        visible only in `fee_breakdown` (and in the funding amount returned by transfer authorization for
+        offramp). Offramp has no cap on the markup; onramp rejects a quote/estimate whose withheld fee
+        would meet or exceed the delivered amount (a formula domain bound, distinct from the absent
+        offramp business cap).
 
         **Address requirement for EUR/AUD/GBP:** EUR, AUD, and GBP payouts require the
         user's physical address (street, city, postal code). If the user's
@@ -2689,9 +2709,9 @@ paths:
                       fee_breakdown:
                         platform_fee: "1.50"
                         platform_fee_pct: 1.5
-                        partner_fee: "0.00"
-                        partner_fee_pct: 0
-                        total_fee: "1.50"
+                        partner_fee: "1.00"
+                        partner_fee_pct: 1
+                        total_fee: "2.50"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
@@ -2709,9 +2729,9 @@ paths:
                       fee_breakdown:
                         platform_fee: "4.92"
                         platform_fee_pct: 1.5
-                        partner_fee: "0.00"
-                        partner_fee_pct: 0
-                        total_fee: "4.92"
+                        partner_fee: "3.28"
+                        partner_fee_pct: 1
+                        total_fee: "8.20"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
@@ -2868,9 +2888,9 @@ paths:
                   fee_breakdown:
                     platform_fee: "1.50"
                     platform_fee_pct: 1.5
-                    partner_fee: "0.00"
-                    partner_fee_pct: 0
-                    total_fee: "1.50"
+                    partner_fee: "1.00"
+                    partner_fee_pct: 1
+                    total_fee: "2.50"
                   timeline:
                     - status: awaiting_liquidity_provider
                       timestamp: "2026-02-01T12:00:05Z"
@@ -3050,9 +3070,9 @@ paths:
                   fee_breakdown:
                     platform_fee: "1.50"
                     platform_fee_pct: 1.5
-                    partner_fee: "0.00"
-                    partner_fee_pct: 0
-                    total_fee: "1.50"
+                    partner_fee: "1.00"
+                    partner_fee_pct: 1
+                    total_fee: "2.50"
                   timeline:
                     - status: created
                       timestamp: "2026-02-01T12:00:05Z"
@@ -3414,9 +3434,9 @@ paths:
                       fee_breakdown:
                         platform_fee: "1.50"
                         platform_fee_pct: 1.5
-                        partner_fee: "0.00"
-                        partner_fee_pct: 0
-                        total_fee: "1.50"
+                        partner_fee: "1.00"
+                        partner_fee_pct: 1
+                        total_fee: "2.50"
                       timeline:
                         - status: created
                           timestamp: "2026-02-01T12:00:05Z"
@@ -4710,6 +4730,17 @@ components:
           type: string
           description: Optional ISO country code (alpha-2) used for fee/routing context
           example: NG
+        partner_fee_pct:
+          type: number
+          format: double
+          description: |
+            Optional per-order markup you charge your end user, applied on the same crypto base
+            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitted or `0`
+            means no markup. Offramp has no upper cap. Onramp only: the request is rejected when the
+            withheld fee would meet or exceed the delivered amount (a formula domain bound, not a
+            business cap).
+          default: 0
+          example: 1
 
     PartnerPriceEstimateResponse:
       type: object
@@ -4813,6 +4844,17 @@ components:
             When `true`, only match liquidity providers that send fiat settlement
             notifications. Orders from these providers complete automatically when
             fiat is delivered. When omitted or `false`, all providers are eligible.
+        partner_fee_pct:
+          type: number
+          format: double
+          description: |
+            Optional per-order markup you charge your end user, applied on the same crypto base
+            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitted or `0`
+            means no markup. Offramp has no upper cap. Onramp only: the request is rejected when the
+            withheld fee would meet or exceed the delivered amount (a formula domain bound, not a
+            business cap).
+          default: 0
+          example: 1
 
     PartnerQuoteResponse:
       type: object
@@ -5114,25 +5156,27 @@ components:
         platform_fee:
           type: string
           description: Platform fee in crypto
-          example: "1.50"
+          example: "5.43"
         platform_fee_pct:
           type: number
           format: double
           description: Platform fee as a percentage
-          example: 1.5
+          example: 0.5
         partner_fee:
           type: string
-          description: Partner's fee markup in crypto (0 until partner fee dashboard is available)
-          example: "0.00"
+          description: |
+            Your markup in crypto, computed from the `partner_fee_pct` you declared on the
+            quote/estimate request, on the same base as the platform fee. `0` when no markup was declared.
+          example: "10.87"
         partner_fee_pct:
           type: number
           format: double
-          description: Partner's fee percentage (0 until partner fee dashboard is available)
-          example: 0
+          description: Your markup percentage as declared on the request (`1` means 1%); `0` when none.
+          example: 1
         total_fee:
           type: string
           description: Total fee in crypto (platform_fee + partner_fee)
-          example: "1.50"
+          example: "16.30"
 
     PartnerOrderStatus:
       type: string
@@ -5280,12 +5324,21 @@ components:
               example: "550e8400-e29b-41d4-a716-446655440000"
             crypto_amount:
               type: string
-              description: Total crypto amount including fees
+              description: Total crypto amount including the platform fee; stays partner-fee-exclusive (the markup is reported separately in `partner_fee`)
               example: "101.500000"
             crypto_currency:
               type: string
               description: Cryptocurrency code
               example: "USDT"
+            partner_fee:
+              type: string
+              description: Partner markup in crypto for this order (0 when none was declared)
+              example: "10.87"
+            partner_fee_pct:
+              type: number
+              format: double
+              description: Partner markup percentage declared for this order (`1` means 1%; 0 when none)
+              example: 1
             fiat_amount:
               type: string
               description: Fiat amount
@@ -5349,6 +5402,17 @@ components:
           type: string
           description: Optional ISO 2-letter country code for fee/routing context
           example: VN
+        partner_fee_pct:
+          type: number
+          format: double
+          description: |
+            Optional per-order markup you charge your end user, applied on the same crypto base
+            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitted or `0`
+            means no markup. Offramp has no upper cap. Onramp only: the request is rejected when the
+            withheld fee would meet or exceed the delivered amount (a formula domain bound, not a
+            business cap).
+          default: 0
+          example: 1
 
     PartnerOnRampQuoteResponse:
       type: object
