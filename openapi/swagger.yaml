@@ -91,6 +91,8 @@ tags:
           "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
           "crypto_amount": "101.500000",
           "crypto_currency": "USDT",
+          "partner_fee": "1.00",
+          "partner_fee_pct": 1,
           "fiat_amount": "152880.00",
           "fiat_currency": "NGN",
           "provider": "p2p",
@@ -1655,6 +1657,7 @@ paths:
               payment_network_slug: napas-vietnam
               country_code: VN
               provider_scope: all
+              partner_fee_pct: 1
       responses:
         '200':
           description: Estimate retrieved successfully
@@ -1788,6 +1791,7 @@ paths:
               payment_method_slug: zalopay
               payment_network_slug: napas-vietnam
               country_code: VN
+              partner_fee_pct: 1
       responses:
         '200':
           description: Quote retrieved successfully
@@ -2505,6 +2509,7 @@ paths:
               payment_network_slug: nibss
               country_code: NG
               provider_scope: all
+              partner_fee_pct: 1
       responses:
         '200':
           description: Estimate retrieved successfully
@@ -2667,6 +2672,7 @@ paths:
                   fiat_currency: NGN
                   provider_scope: all
                   has_fiat_settlement_notification: false
+                  partner_fee_pct: 1
                   slippage_tolerance:
                     type: percent
                     value: 1.5
@@ -2680,6 +2686,7 @@ paths:
                   fiat_currency: NGN
                   provider_scope: all
                   has_fiat_settlement_notification: false
+                  partner_fee_pct: 1
                   slippage_tolerance:
                     type: percent
                     value: 1.5
@@ -4733,10 +4740,12 @@ components:
         partner_fee_pct:
           type: number
           format: double
+          minimum: 0
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
-            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitted or `0`
-            means no markup. Offramp has no upper cap. Onramp only: the request is rejected when the
+            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
+            from this request payload — or sending `0` — means no markup; the markup cannot be
+            negative. Offramp has no upper cap. Onramp only: the request is rejected when the
             withheld fee would meet or exceed the delivered amount (a formula domain bound, not a
             business cap).
           default: 0
@@ -4751,7 +4760,9 @@ components:
           example: "1530.12"
         crypto_amount:
           type: string
-          description: Estimated total crypto amount (includes fees)
+          description: |
+            Estimated total crypto amount — the user's amount plus the platform fee. Partner-fee-exclusive:
+            your markup is reported separately in `fee_breakdown.partner_fee` and is not added here.
           example: "101.50"
         fiat_amount:
           type: string
@@ -4847,10 +4858,12 @@ components:
         partner_fee_pct:
           type: number
           format: double
+          minimum: 0
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
-            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitted or `0`
-            means no markup. Offramp has no upper cap. Onramp only: the request is rejected when the
+            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
+            from this request payload — or sending `0` — means no markup; the markup cannot be
+            negative. Offramp has no upper cap. Onramp only: the request is rejected when the
             withheld fee would meet or exceed the delivered amount (a formula domain bound, not a
             business cap).
           default: 0
@@ -4878,7 +4891,9 @@ components:
           example: "1530.12"
         crypto_amount:
           type: string
-          description: Total crypto amount the user sends (includes all fees)
+          description: |
+            Total crypto amount the user sends — the sell amount plus the platform fee. Partner-fee-exclusive:
+            your markup is reported separately in `fee_breakdown.partner_fee` and is not added here.
           example: "101.50"
         fiat_amount:
           type: string
@@ -5130,7 +5145,10 @@ components:
       properties:
         crypto_amount:
           type: string
-          description: Total crypto amount (standard units)
+          description: |
+            Total crypto amount (standard units) — the user's amount plus the platform fee.
+            Partner-fee-exclusive: your markup is reported separately in `fee_breakdown.partner_fee`
+            and is not added here.
           example: "101.50"
         fiat_amount:
           type: string
@@ -5333,7 +5351,7 @@ components:
             partner_fee:
               type: string
               description: Partner markup in crypto for this order (0 when none was declared)
-              example: "10.87"
+              example: "1.00"
             partner_fee_pct:
               type: number
               format: double
@@ -5405,10 +5423,12 @@ components:
         partner_fee_pct:
           type: number
           format: double
+          minimum: 0
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
-            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitted or `0`
-            means no markup. Offramp has no upper cap. Onramp only: the request is rejected when the
+            as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
+            from this request payload — or sending `0` — means no markup; the markup cannot be
+            negative. Offramp has no upper cap. Onramp only: the request is rejected when the
             withheld fee would meet or exceed the delivered amount (a formula domain bound, not a
             business cap).
           default: 0
@@ -5428,7 +5448,10 @@ components:
           example: "26345.00"
         crypto_amount:
           type: string
-          description: Total crypto amount the end-user will receive (net of fees)
+          description: |
+            Total crypto amount for the order — the end-user's amount plus the platform fee.
+            Partner-fee-exclusive: your markup is reported separately in `fee_breakdown.partner_fee`
+            and is not added here.
           example: "1.005000"
         fiat_amount:
           type: string

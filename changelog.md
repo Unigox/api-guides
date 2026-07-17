@@ -10,7 +10,7 @@ Notable changes to the Unigox partner API, newest first.
 - `crypto_amount` stays partner-fee-exclusive — the markup shows only in `fee_breakdown` (and in the offramp funding amount from transfer authorization). Apply your fee on the **same side** the platform does, or your receipts won't reconcile with our orders.
 - Offramp has no cap. Onramp rejects a quote/estimate whose withheld fee would meet or exceed the delivered amount — a formula domain bound, not a business cap.
 
-No action needed if you don't charge a markup: omit `partner_fee_pct` (or send `0`) and every fee field reads zero exactly as before.
+No action needed if you don't charge a markup: omit `partner_fee_pct` (or send `0`) and pricing behaves exactly as before — only `partner_fee` and `partner_fee_pct` read zero. The platform fee still applies, so `platform_fee` and `total_fee` keep reporting it (with `total_fee` equal to `platform_fee`).
 
 ## 2026-06-27
 
