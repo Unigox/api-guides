@@ -2,6 +2,12 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-07-21
+
+**On-ramp and off-ramp price estimates are public.** `POST /api/v1/partner/onramp/estimate` and `POST /api/v1/partner/offramp/estimate` no longer require an API key — same as `GET /api/v1/partner/liquidity`. They return indicative pricing only (no liquidity reservation, no quote or order). Executable pricing and order creation still need a key: `POST /partner/onramp/quote`, `/onramp/initiate`, `/offramp/quote`, and `/offramp/initiate`.
+
+No code changes required if you already call estimate with a key; the key is simply optional for these two endpoints.
+
 ## 2026-07-13
 
 **You can now charge your end users a per-order markup.** Pass an optional `partner_fee_pct` on the quote and estimate requests for both ramps (`POST /onramp/estimate`, `/onramp/quote`, `/offramp/estimate`, `/offramp/quote`) — `1` means 1%. The markup is declared per order (no stored config), computed in crypto on the same base as the platform fee. For off-ramp, the markup is settled on-chain to your partner wallet when the order releases successfully; cancelled or failed orders refund the full amount, markup included. For on-ramp there's no separate transfer leg: the full buyer amount lands in your partner wallet at release, and the markup is captured by withholding it when the crypto bridges out at send-out (a crypto-anchored order is sized up beforehand so the requested amount still arrives net of the withheld fee).
