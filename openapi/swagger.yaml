@@ -88,10 +88,10 @@ tags:
         "data": {
           "order_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
           "status": "crypto_received",
-          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
-          "crypto_amount": "101.500000",
+          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "crypto_amount": "101.5",
           "crypto_currency": "USDT",
-          "partner_fee": "1.00",
+          "partner_fee": "1",
           "partner_fee_pct": 1,
           "fiat_amount": "152880.00",
           "fiat_currency": "NGN",
@@ -1657,7 +1657,7 @@ paths:
               payment_network_slug: napas-vietnam
               country_code: VN
               provider_scope: all
-              partner_fee_pct: 1
+              partner_fee_pct: "1"
       responses:
         '200':
           description: Estimate retrieved successfully
@@ -1756,19 +1756,26 @@ paths:
         `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
         by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
         (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
-        crypto base as the platform fee (non-compounding) and is settled on-chain to your partner wallet
-        on successful release; cancelled or failed orders refund the full amount, markup included.
+        crypto base as the platform fee (non-compounding). There's no separate transfer leg for on-ramp:
+        at release the full buyer amount lands in your partner wallet, and the markup is captured by
+        withholding it when the crypto bridges out at send-out (for a crypto-anchored order, the trade is
+        sized up beforehand so the requested amount still arrives net of the withheld fee). What the end
+        user receives: `crypto_amount − fee_breakdown.platform_fee − fee_breakdown.partner_fee` for a
+        fiat-anchored order, or exactly the `crypto_amount` you requested for a crypto-anchored order.
 
         Apply your fee on the **same side** the platform does, or your receipts won't reconcile with our
-        orders. `crypto_amount` in responses and webhooks stays partner-fee-exclusive, with one exception:
-        a crypto-anchored onramp order (request declares `crypto_amount`) is sized up so the delivered
-        amount stays exact after the markup is withheld, so `crypto_amount` there includes the markup.
-        Every other case keeps it out, visible only in `fee_breakdown` (and in the funding amount returned
-        by transfer authorization for offramp). Fiat-anchored offramp orders have no cap on the markup —
-        the deposit grows to cover it. Every other case hits a formula domain bound, not a business cap:
-        onramp rejects a quote/estimate whose withheld or grossed-up fee would meet or exceed the
-        delivered amount; crypto-anchored offramp rejects it when the fee would consume the entire pinned
-        deposit.
+        orders. `crypto_amount` in responses and webhooks stays partner-fee-exclusive, with two
+        exceptions: a crypto-anchored onramp order (request declares `crypto_amount`) is sized up so the
+        delivered amount stays exact after the markup is withheld, so `crypto_amount` there includes the
+        markup; a crypto-anchored offramp order (request declares `crypto_amount`) carves both fees out of
+        the pinned deposit, so `crypto_amount` and `platform_fee` both shrink relative to a no-markup
+        request even though the markup itself stays out of `crypto_amount`. Every other case is unaffected
+        — the markup shows only in `fee_breakdown` (and in the funding amount returned by transfer
+        authorization for offramp). Fiat-anchored offramp orders have no cap on the markup — the deposit
+        grows to cover it. Every other case hits a formula domain bound, not a business cap: onramp
+        rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the entire buyer
+        amount, leaving nothing delivered); crypto-anchored offramp rejects it when the fee would consume
+        the entire pinned deposit.
 
         **Payment method:** Provide `payment_method_slug` and/or `payment_network_slug` to narrow routing.
         If omitted, the best available option for the pair is selected automatically.
@@ -1795,7 +1802,7 @@ paths:
               payment_method_slug: zalopay
               payment_network_slug: napas-vietnam
               country_code: VN
-              partner_fee_pct: 1
+              partner_fee_pct: "1"
       responses:
         '200':
           description: Quote retrieved successfully
@@ -2513,7 +2520,7 @@ paths:
               payment_network_slug: nibss
               country_code: NG
               provider_scope: all
-              partner_fee_pct: 1
+              partner_fee_pct: "1"
       responses:
         '200':
           description: Estimate retrieved successfully
@@ -2530,14 +2537,14 @@ paths:
                 success: true
                 data:
                   rate: "1530.12"
-                  crypto_amount: "101.50"
-                  fiat_amount: "152880.00"
+                  crypto_amount: "99.024390"
+                  fiat_amount: "151519.20"
                   fee_breakdown:
-                    platform_fee: "1.50"
+                    platform_fee: "1.463415"
                     platform_fee_pct: 1.5
-                    partner_fee: "1.00"
+                    partner_fee: "0.975610"
                     partner_fee_pct: 1
-                    total_fee: "2.50"
+                    total_fee: "2.439025"
                   payment_method_slug: access-bank
                   payment_network_slug: nibss
                   provider_scope: all
@@ -2636,15 +2643,18 @@ paths:
         on successful release; cancelled or failed orders refund the full amount, markup included.
 
         Apply your fee on the **same side** the platform does, or your receipts won't reconcile with our
-        orders. `crypto_amount` in responses and webhooks stays partner-fee-exclusive, with one exception:
-        a crypto-anchored onramp order (request declares `crypto_amount`) is sized up so the delivered
-        amount stays exact after the markup is withheld, so `crypto_amount` there includes the markup.
-        Every other case keeps it out, visible only in `fee_breakdown` (and in the funding amount returned
-        by transfer authorization for offramp). Fiat-anchored offramp orders have no cap on the markup —
-        the deposit grows to cover it. Every other case hits a formula domain bound, not a business cap:
-        onramp rejects a quote/estimate whose withheld or grossed-up fee would meet or exceed the
-        delivered amount; crypto-anchored offramp rejects it when the fee would consume the entire pinned
-        deposit.
+        orders. `crypto_amount` in responses and webhooks stays partner-fee-exclusive, with two
+        exceptions: a crypto-anchored onramp order (request declares `crypto_amount`) is sized up so the
+        delivered amount stays exact after the markup is withheld, so `crypto_amount` there includes the
+        markup; a crypto-anchored offramp order (request declares `crypto_amount`) carves both fees out of
+        the pinned deposit, so `crypto_amount` and `platform_fee` both shrink relative to a no-markup
+        request even though the markup itself stays out of `crypto_amount`. Every other case is unaffected
+        — the markup shows only in `fee_breakdown` (and in the funding amount returned by transfer
+        authorization for offramp — `crypto_amount + fee_breakdown.partner_fee` is what you actually fund).
+        Fiat-anchored offramp orders have no cap on the markup — the deposit grows to cover it. Every
+        other case hits a formula domain bound, not a business cap: onramp rejects `partner_fee_pct >= 100`
+        (the withheld or grossed-up fee would consume the entire buyer amount, leaving nothing delivered);
+        crypto-anchored offramp rejects it when the fee would consume the entire pinned deposit.
 
         **Address requirement for EUR/AUD/GBP:** EUR, AUD, and GBP payouts require the
         user's physical address (street, city, postal code). If the user's
@@ -2680,7 +2690,7 @@ paths:
                   fiat_currency: NGN
                   provider_scope: all
                   has_fiat_settlement_notification: false
-                  partner_fee_pct: 1
+                  partner_fee_pct: "1"
                   slippage_tolerance:
                     type: percent
                     value: 1.5
@@ -2694,7 +2704,7 @@ paths:
                   fiat_currency: NGN
                   provider_scope: all
                   has_fiat_settlement_notification: false
-                  partner_fee_pct: 1
+                  partner_fee_pct: "1"
                   slippage_tolerance:
                     type: percent
                     value: 1.5
@@ -2719,14 +2729,14 @@ paths:
                       quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                       anchor_type: "crypto"
                       rate: "1530.12"
-                      crypto_amount: "101.50"
-                      fiat_amount: "152880"
+                      crypto_amount: "99.024390"
+                      fiat_amount: "151519.20"
                       fee_breakdown:
-                        platform_fee: "1.50"
+                        platform_fee: "1.463415"
                         platform_fee_pct: 1.5
-                        partner_fee: "1.00"
+                        partner_fee: "0.975610"
                         partner_fee_pct: 1
-                        total_fee: "2.50"
+                        total_fee: "2.439025"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
@@ -2744,9 +2754,9 @@ paths:
                       fee_breakdown:
                         platform_fee: "4.92"
                         platform_fee_pct: 1.5
-                        partner_fee: "3.28"
+                        partner_fee: "3.23"
                         partner_fee_pct: 1
-                        total_fee: "8.20"
+                        total_fee: "8.15"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
@@ -2895,17 +2905,17 @@ paths:
                   status: awaiting_liquidity_provider
                   quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
                   amounts:
-                    crypto_amount: "101.50"
-                    fiat_amount: "152880.00"
+                    crypto_amount: "99.024390"
+                    fiat_amount: "151519.20"
                     crypto_currency: USDT
                     fiat_currency: NGN
                     rate: "1530.12"
                   fee_breakdown:
-                    platform_fee: "1.50"
+                    platform_fee: "1.463415"
                     platform_fee_pct: 1.5
-                    partner_fee: "1.00"
+                    partner_fee: "0.975610"
                     partner_fee_pct: 1
-                    total_fee: "2.50"
+                    total_fee: "2.439025"
                   timeline:
                     - status: awaiting_liquidity_provider
                       timestamp: "2026-02-01T12:00:05Z"
@@ -4754,9 +4764,23 @@ components:
             from this request payload — or sending `0` — means no markup; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
-            rejects the request when the withheld or grossed-up fee would meet or exceed the
-            delivered amount; crypto-anchored offramp rejects it when the fee would consume the
-            entire pinned deposit.
+            rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
+            entire buyer amount, leaving nothing delivered); crypto-anchored offramp rejects it
+            when the fee would consume the entire pinned deposit.
+
+            Note: you send this value as a JSON **string**, but it round-trips as a JSON **number**
+            in `fee_breakdown.partner_fee_pct` and in the webhook `data.partner_fee_pct` field —
+            don't parse those as strings.
+
+            **Rejection reference:**
+
+            | Rejection | `error.code` | HTTP status |
+            |---|---|---|
+            | `partner_fee_pct` is non-numeric, negative, `NaN`, or `Inf` | `INVALID_REQUEST` | 400 |
+            | Onramp: fee would consume the entire buyer amount (`partner_fee_pct >= 100`) | `INVALID_REQUEST` | 400 |
+            | Crypto-anchored offramp: fee would consume the entire pinned deposit | `INVALID_REQUEST` | 400 |
+            | Fiat-anchored offramp: the computed fee is not a finite amount | `INVALID_REQUEST` | 400 |
+            | Crypto-anchored offramp: the carved fee-exclusive gross falls outside the matched offer's min/max | `NO_OFFERS_AVAILABLE` | 409 |
           default: "0"
           example: "1"
 
@@ -4770,11 +4794,19 @@ components:
         crypto_amount:
           type: string
           description: |
-            Estimated total crypto amount — the user's amount plus the platform fee. Partner-fee-exclusive,
-            except for a crypto-anchored onramp estimate (request declares `crypto_amount`): there the
-            amount is sized up so the delivered amount stays exact after the partner fee is withheld, so
-            this field includes the markup. Every other case keeps the markup out — it's reported
-            separately in `fee_breakdown.partner_fee`.
+            Estimated total crypto amount — the fee-exclusive gross: the user's amount plus the platform
+            fee. Partner-fee-exclusive, except for a crypto-anchored onramp estimate (request declares
+            `crypto_amount`): there the amount is sized up so the delivered amount stays exact after the
+            partner fee is withheld, so this field includes the markup. A crypto-anchored offramp
+            estimate carves both fees out of the pinned deposit instead, so this field and
+            `fee_breakdown.platform_fee` both shrink relative to a no-markup request, even though the
+            markup itself stays out of this field. Every other case is unaffected — the markup is
+            reported separately in `fee_breakdown.partner_fee`.
+
+            On-ramp: the end user would receive `crypto_amount − fee_breakdown.platform_fee −
+            fee_breakdown.partner_fee` for a fiat-anchored estimate, or exactly this `crypto_amount` for a
+            crypto-anchored estimate. Off-ramp: the amount you would actually fund at initiation is
+            `crypto_amount + fee_breakdown.partner_fee`.
           example: "101.50"
         fiat_amount:
           type: string
@@ -4876,9 +4908,23 @@ components:
             from this request payload — or sending `0` — means no markup; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
-            rejects the request when the withheld or grossed-up fee would meet or exceed the
-            delivered amount; crypto-anchored offramp rejects it when the fee would consume the
-            entire pinned deposit.
+            rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
+            entire buyer amount, leaving nothing delivered); crypto-anchored offramp rejects it
+            when the fee would consume the entire pinned deposit.
+
+            Note: you send this value as a JSON **string**, but it round-trips as a JSON **number**
+            in `fee_breakdown.partner_fee_pct` and in the webhook `data.partner_fee_pct` field —
+            don't parse those as strings.
+
+            **Rejection reference:**
+
+            | Rejection | `error.code` | HTTP status |
+            |---|---|---|
+            | `partner_fee_pct` is non-numeric, negative, `NaN`, or `Inf` | `INVALID_REQUEST` | 400 |
+            | Onramp: fee would consume the entire buyer amount (`partner_fee_pct >= 100`) | `INVALID_REQUEST` | 400 |
+            | Crypto-anchored offramp: fee would consume the entire pinned deposit | `INVALID_REQUEST` | 400 |
+            | Fiat-anchored offramp: the computed fee is not a finite amount | `INVALID_REQUEST` | 400 |
+            | Crypto-anchored offramp: the carved fee-exclusive gross falls outside the matched offer's min/max | `NO_OFFERS_AVAILABLE` | 409 |
           default: "0"
           example: "1"
 
@@ -4905,8 +4951,10 @@ components:
         crypto_amount:
           type: string
           description: |
-            Total crypto amount the user sends — the sell amount plus the platform fee. Partner-fee-exclusive:
-            your markup is reported separately in `fee_breakdown.partner_fee` and is not added here.
+            Total crypto amount — the fee-exclusive gross: the sell amount plus the platform fee.
+            Partner-fee-exclusive: your markup is reported separately in `fee_breakdown.partner_fee` and
+            is not added here. This is not the total you fund: the amount you actually fund at initiation
+            is `crypto_amount + fee_breakdown.partner_fee` (see the transfer authorization endpoint).
           example: "101.50"
         fiat_amount:
           type: string
@@ -5159,11 +5207,20 @@ components:
         crypto_amount:
           type: string
           description: |
-            Total crypto amount (standard units) — the user's amount plus the platform fee.
-            Partner-fee-exclusive, except for a crypto-anchored onramp order (originally quoted with
-            `crypto_amount`): there the amount was sized up so the delivered amount stays exact after
-            the partner fee is withheld, so this field includes the markup. Every other case keeps the
-            markup out — it's reported separately in `fee_breakdown.partner_fee`.
+            Total crypto amount (standard units) — the fee-exclusive gross: the buy/sell amount plus the
+            platform fee. Partner-fee-exclusive, except for a crypto-anchored onramp order (originally
+            quoted with `crypto_amount`): there the amount was sized up so the delivered amount stays
+            exact after the partner fee is withheld, so this field includes the markup. A crypto-anchored
+            offramp order carves both fees out of the pinned deposit instead, so this field and
+            `fee_breakdown.platform_fee` both shrink relative to a no-markup request, even though the
+            markup itself stays out of this field. Every other case is unaffected — the markup is
+            reported separately in `fee_breakdown.partner_fee`.
+
+            On-ramp — what the end user receives: `crypto_amount − fee_breakdown.platform_fee −
+            fee_breakdown.partner_fee` for a fiat-anchored order, or exactly this `crypto_amount` for a
+            crypto-anchored order (both fees are withheld at bridge send-out without changing this
+            field). Off-ramp — what the partner funds at transfer authorization:
+            `crypto_amount + fee_breakdown.partner_fee`.
           example: "101.50"
         fiat_amount:
           type: string
@@ -5350,7 +5407,7 @@ components:
               example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
             status:
               $ref: '#/components/schemas/PartnerOrderStatus'
-            user_uuid:
+            user_id:
               type: string
               format: uuid
               description: Public UUID of the end-user (from user creation)
@@ -5362,15 +5419,21 @@ components:
                 crypto-anchored onramp order: there the amount was sized up so the delivered amount
                 stays exact after the partner fee is withheld, so this field includes the markup.
                 Every other case keeps the markup out — it's reported separately in `partner_fee`.
-              example: "101.500000"
+                Formatted with the shortest round-tripping representation (e.g. `"101.5"`, not
+                `"101.500000"`) — parse it as a decimal, don't compare strings.
+              example: "101.5"
             crypto_currency:
               type: string
               description: Cryptocurrency code
               example: "USDT"
             partner_fee:
               type: string
-              description: Partner markup in crypto for this order (0 when none was declared)
-              example: "1.00"
+              description: |
+                Partner markup in crypto for this order (`"0"` when none was declared). Unlike
+                `fee_breakdown.partner_fee` in the REST responses (which is padded to the token's
+                decimals), this field is formatted with the shortest round-tripping representation —
+                `1.0` reports as `"1"`, not `"1.00"`. Parse it as a decimal, don't compare strings.
+              example: "1"
             partner_fee_pct:
               type: number
               format: double
@@ -5448,9 +5511,23 @@ components:
             from this request payload — or sending `0` — means no markup; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
-            rejects the request when the withheld or grossed-up fee would meet or exceed the
-            delivered amount; crypto-anchored offramp rejects it when the fee would consume the
-            entire pinned deposit.
+            rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
+            entire buyer amount, leaving nothing delivered); crypto-anchored offramp rejects it
+            when the fee would consume the entire pinned deposit.
+
+            Note: you send this value as a JSON **string**, but it round-trips as a JSON **number**
+            in `fee_breakdown.partner_fee_pct` and in the webhook `data.partner_fee_pct` field —
+            don't parse those as strings.
+
+            **Rejection reference:**
+
+            | Rejection | `error.code` | HTTP status |
+            |---|---|---|
+            | `partner_fee_pct` is non-numeric, negative, `NaN`, or `Inf` | `INVALID_REQUEST` | 400 |
+            | Onramp: fee would consume the entire buyer amount (`partner_fee_pct >= 100`) | `INVALID_REQUEST` | 400 |
+            | Crypto-anchored offramp: fee would consume the entire pinned deposit | `INVALID_REQUEST` | 400 |
+            | Fiat-anchored offramp: the computed fee is not a finite amount | `INVALID_REQUEST` | 400 |
+            | Crypto-anchored offramp: the carved fee-exclusive gross falls outside the matched offer's min/max | `NO_OFFERS_AVAILABLE` | 409 |
           default: "0"
           example: "1"
 
@@ -5470,11 +5547,12 @@ components:
           type: string
           description: |
             Total crypto amount for the order — the end-user's amount plus the platform fee.
-            Partner-fee-exclusive on a fiat-anchored quote (request declared `fiat_amount`): the
-            markup is reported separately in `fee_breakdown.partner_fee` and is not added here. On a
-            crypto-anchored quote (request declared `crypto_amount`), the trade is sized up so the
-            end-user still receives exactly the requested amount after the markup is withheld at
-            settlement — this field includes the markup in that case.
+            Partner-fee-exclusive on a fiat-anchored quote (request declared `fiat_amount`): the markup
+            is reported separately in `fee_breakdown.partner_fee` and is not added here — the end user
+            receives `crypto_amount − fee_breakdown.platform_fee − fee_breakdown.partner_fee`, withheld
+            from this amount at bridge send-out. On a crypto-anchored quote (request declared
+            `crypto_amount`), the trade is sized up so this field includes the markup, and the end user
+            receives exactly the requested `crypto_amount`, unchanged by the markup.
           example: "1.005000"
         fiat_amount:
           type: string
