@@ -17,6 +17,16 @@ info:
     - support for local rails and institutions relevant in emerging markets
     - compliance flows for KYC, verification, and webhook integrity
 
+    ## Public endpoints (no API key)
+
+    A few discovery endpoints are public so you can explore liquidity and indicative
+    pricing without credentials:
+    - `GET /api/v1/partner/liquidity`
+    - `POST /api/v1/partner/onramp/estimate`
+    - `POST /api/v1/partner/offramp/estimate`
+
+    Quote, initiate, user, and order endpoints still require `X-API-Key`.
+
     ## API Reference
 
     Endpoint groups are ordered for partner integration flow:
@@ -1637,10 +1647,11 @@ paths:
 
         Use this when you need quick pricing discovery before calling `/partner/onramp/quote`.
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
-        This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote.
+        This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
+
+        **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
       operationId: getOnRampEstimate
-      security:
-        - ApiKeyAuth: []
+      security: []
       requestBody:
         required: true
         content:
@@ -1713,17 +1724,6 @@ paths:
                     error:
                       code: INVALID_REQUEST
                       message: "invalid provider_scope: must be all, licensed_only, or p2p_only"
-        '401':
-          description: Unauthorized — missing or invalid API key
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: UNAUTHORIZED
-                  message: "missing X-API-Key header"
         '409':
           description: No offers available for the requested pair/amount
           content:
@@ -2473,14 +2473,15 @@ paths:
 
         Use this when you need quick pricing discovery before calling `/partner/offramp/quote`.
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
-        This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote.
+        This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
+
+        **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
         See `PATCH /partner/users/{user_uuid}/kyc` to update.
       operationId: getOffRampEstimate
-      security:
-        - ApiKeyAuth: []
+      security: []
       requestBody:
         required: true
         content:
@@ -2553,17 +2554,6 @@ paths:
                     error:
                       code: INVALID_REQUEST
                       message: "invalid provider_scope: must be all, licensed_only, or p2p_only"
-        '401':
-          description: Unauthorized - missing or invalid API key
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: UNAUTHORIZED
-                  message: "missing X-API-Key header"
         '409':
           description: No offers available for the requested pair/amount
           content:
