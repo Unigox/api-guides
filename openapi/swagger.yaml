@@ -1029,7 +1029,16 @@ paths:
 
         **Supported document types:** `identity_front` (required), `selfie` (required), `identity_back`, `passport`, `national_id`, `driver_license`, and more.
 
-        **Automatic Verification:** After uploading all required documents (selfie + identity_front), verification starts automatically.
+        **Automatic Verification:** After all required documents are persisted (`selfie` +
+        `identity_front`), the service queues the Gemini pre-screen and AiPrise verification and
+        returns immediately. A `200` response means the documents were accepted; it is not a final
+        verification result. For example, a document rejected by the asynchronous pre-screen can
+        move the user to `VERIFICATION_REJECTED` after this response.
+
+        Obtain the eventual outcome by polling
+        `GET /api/v1/partner/users/{user_uuid}/verification-status` or consuming the
+        `user.kyc.updated` webhook. The upload response does not include an AiPrise verification
+        session ID or verification result.
       operationId: uploadPartnerKYCDocument
       security:
         - ApiKeyAuth: []
@@ -1124,7 +1133,7 @@ paths:
                   url: "https://example.com/selfie.jpg"
       responses:
         '200':
-          description: Document uploaded successfully
+          description: Documents accepted and asynchronous verification processing queued
           content:
             application/json:
               schema:
@@ -1148,23 +1157,15 @@ paths:
                         example: "passport_photo.jpg"
                       message:
                         type: string
-                        description: |
-                          Success message. If all required documents are uploaded, message indicates
-                          that verification started automatically.
-                        example: "Document uploaded successfully"
-                      verification_session_id:
+                        description: Confirms that the documents were accepted for processing.
+                        example: "Documents accepted, verification started"
+                      kyc_status:
                         type: string
                         description: |
-                          Verification session ID (only present if verification started automatically
-                          after uploading the last required document: selfie + identity_front)
-                        example: "4fd410c9-ba9b-46cf-a4f0-132204a9a564"
-                      verification_status:
-                        type: string
-                        enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED]
-                        description: |
-                          Verification status (only present if verification started automatically
-                          after uploading the last required document: selfie + identity_front)
-                        example: "IN_PROGRESS"
+                          Relation status at the moment the documents were accepted. Verification
+                          continues asynchronously, so poll the verification-status endpoint or
+                          consume `user.kyc.updated` for the eventual outcome.
+                        example: "PENDING_DOCUMENTS"
         '400':
           description: Bad Request - invalid file type, missing document, or user not ready for uploads
         '401':
