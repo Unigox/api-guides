@@ -1089,10 +1089,7 @@ paths:
                   format: binary
                   description: Document file (JPEG, PNG, GIF, or PDF, max 10MB)
                 document_type:
-                  type: string
-                  description: Type of document being uploaded
-                  enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
-                  example: identity_front
+                  $ref: '#/components/schemas/KycDocumentType'
           application/json:
             schema:
               oneOf:
@@ -1106,9 +1103,7 @@ paths:
                       enum: [url_link]
                       example: url_link
                     document_type:
-                      type: string
-                      enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
-                      example: identity_front
+                      $ref: '#/components/schemas/KycDocumentType'
                     url:
                       type: string
                       format: uri
@@ -1131,9 +1126,7 @@ paths:
                         required: [document_type, url]
                         properties:
                           document_type:
-                            type: string
-                            enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
-                            example: identity_front
+                            $ref: '#/components/schemas/KycDocumentType'
                           url:
                             type: string
                             format: uri
@@ -3851,6 +3844,12 @@ paths:
 
 components:
   schemas:
+    KycDocumentType:
+      type: string
+      description: Complete set of document types accepted by the partner KYC upload endpoint
+      enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
+      example: identity_front
+
     APIResponse:
       type: object
       required:
