@@ -1027,9 +1027,28 @@ paths:
 
         ---
 
-        **Supported document types:** an identity document — any of `identity_front`, `passport`,
-        `national_id`, `driver_license`, `voter_id`, `resident_card`, `id_card`, their `*_front`
-        variants, and country-specific types — **plus** a `selfie`. `identity_back` is optional.
+        **Supported `document_type` values** — the API accepts exactly the following; anything else is
+        rejected. **Required:** a `selfie` **and** one identity-document front (`identity_front` or any
+        equivalent ID type listed below). All other values are optional — document back sides and
+        alternative or country-specific ID types.
+
+        - Generic identity document: `identity_front`, `identity_back`
+        - Passport: `passport`, `passport_front`
+        - National ID: `national_id`, `national_id_front`, `national_id_back`
+        - Driver license: `driver_license`, `driver_license_front`, `driver_license_back`
+        - Voter ID: `voter_id`, `voter_id_front`, `voter_id_back`
+        - Resident card: `resident_card`, `resident_card_front`, `resident_card_back`
+        - ID card: `id_card`, `id_card_front`, `id_card_back`
+        - Ghana card: `ghana_card`, `ghana_card_front`, `ghana_card_back`
+        - Ghana SSNIT card: `ghana_ssnit_card`, `ghana_ssnit_card_front`, `ghana_ssnit_card_back`
+        - Kenya alien card: `kenya_alien_card`, `kenya_alien_card_front`, `kenya_alien_card_back`
+        - Green book (South Africa): `green_book`, `green_book_front`, `green_book_back`
+        - Tax ID (e.g. India PAN): `tax_id`, `tax_id_front`, `tax_id_back`
+        - Colombia PPT: `colombia_ppt`, `colombia_ppt_front`, `colombia_ppt_back`
+        - Selfie: `selfie`
+
+        Any front-side identity type above (e.g. `passport`, `national_id`, `tax_id`) satisfies the ID
+        requirement — not only the literal `identity_front`.
 
         **Automatic Verification:** After an identity document + `selfie` + KYC data are present, the
         service queues verification processing and returns immediately. The identity document can be
@@ -1072,7 +1091,7 @@ paths:
                 document_type:
                   type: string
                   description: Type of document being uploaded
-                  enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
+                  enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
                   example: identity_front
           application/json:
             schema:
@@ -1088,7 +1107,7 @@ paths:
                       example: url_link
                     document_type:
                       type: string
-                      enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
+                      enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
                       example: identity_front
                     url:
                       type: string
@@ -1113,7 +1132,7 @@ paths:
                         properties:
                           document_type:
                             type: string
-                            enum: [identity_front, identity_back, selfie, passport, national_id, driver_license]
+                            enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
                             example: identity_front
                           url:
                             type: string
