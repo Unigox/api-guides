@@ -1038,7 +1038,7 @@ paths:
         Obtain the eventual outcome by polling
         `GET /api/v1/partner/users/{user_uuid}/verification-status` or consuming the
         `user.kyc.updated` webhook. The upload response does not include a verification session ID
-        or final verification result.
+        or `kyc_status`, because asynchronous state can change immediately after acceptance.
       operationId: uploadPartnerKYCDocument
       security:
         - ApiKeyAuth: []
@@ -1145,7 +1145,7 @@ paths:
                     oneOf:
                       - title: Single document accepted
                         type: object
-                        required: [document_id, document_type, file_name, message, kyc_status]
+                        required: [document_id, document_type, file_name, message]
                         properties:
                           document_id:
                             type: string
@@ -1161,13 +1161,9 @@ paths:
                             type: string
                             description: Confirms that the document was accepted for processing.
                             example: "Documents accepted"
-                          kyc_status:
-                            type: string
-                            description: Relation status when the document was accepted.
-                            example: "PENDING_DOCUMENTS"
                       - title: Batch documents accepted
                         type: object
-                        required: [uploaded, message, kyc_status]
+                        required: [uploaded, message]
                         properties:
                           uploaded:
                             type: array
@@ -1201,10 +1197,6 @@ paths:
                           message:
                             type: string
                             example: "Documents accepted"
-                          kyc_status:
-                            type: string
-                            description: Relation status when the documents were accepted.
-                            example: "PENDING_DOCUMENTS"
         '400':
           description: Bad Request - invalid file type, missing document, or user not ready for uploads
         '401':
