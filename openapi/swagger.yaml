@@ -1027,10 +1027,10 @@ paths:
 
         ---
 
-        **Supported `document_type` values** — the API accepts exactly the following; anything else is
-        rejected. **Required:** a `selfie` **and** one identity-document front (`identity_front` or any
-        equivalent ID type listed below). All other values are optional — document back sides and
-        alternative or country-specific ID types.
+        **Supported `document_type` values** — the API accepts exactly the following (this is the
+        complete, finite list; anything else is rejected). **Required:** a `selfie` **and** one
+        identity-document front (`identity_front` or any equivalent ID type listed below). All other
+        values are optional (document back sides and alternative ID types).
 
         - Generic identity document: `identity_front`, `identity_back`
         - Passport: `passport`, `passport_front`
