@@ -1131,7 +1131,7 @@ paths:
                       url: "https://example.com/selfie.jpg"
       responses:
         '200':
-          description: Documents accepted and asynchronous verification processing queued
+          description: Documents accepted; verification starts asynchronously once all required documents are available
           content:
             application/json:
               schema:
@@ -1160,7 +1160,7 @@ paths:
                           message:
                             type: string
                             description: Confirms that the document was accepted for processing.
-                            example: "Documents accepted, verification started"
+                            example: "Documents accepted"
                           kyc_status:
                             type: string
                             description: Relation status when the document was accepted.
@@ -1200,7 +1200,7 @@ paths:
                                   example: "Failed to download or upload document"
                           message:
                             type: string
-                            example: "Documents accepted, verification started"
+                            example: "Documents accepted"
                           kyc_status:
                             type: string
                             description: Relation status when the documents were accepted.
