@@ -114,7 +114,7 @@ tags:
       **Payload shape — `user.kyc.updated`**
 
       Fired when a user's KYC status changes — to `verified`, `rejected`, or to a manual compliance
-      review hold (`under_review`). Use this event to unlock order creation for the user on your side
+      review hold (`UNDER_REVIEW`). Use this event to unlock order creation for the user on your side
       (only on `VERIFIED`; `UNDER_REVIEW` is not cleared).
 
       ```json
@@ -1902,7 +1902,9 @@ paths:
         '422':
           description: >-
             The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
-            partner-facing KYC status. The message is generic and never reveals internal review state.
+            partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
+            `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
+            review (up to 24h); keep the customer waiting and re-check. The message stays generic.
           content:
             application/json:
               schema:
@@ -2033,7 +2035,9 @@ paths:
         '422':
           description: >-
             The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
-            partner-facing KYC status. The message is generic and never reveals internal review state.
+            partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
+            `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
+            review (up to 24h); keep the customer waiting and re-check. The message stays generic.
           content:
             application/json:
               schema:
@@ -2839,7 +2843,9 @@ paths:
         '422':
           description: >-
             The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
-            partner-facing KYC status. The message is generic and never reveals internal review state.
+            partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
+            `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
+            review (up to 24h); keep the customer waiting and re-check. The message stays generic.
           content:
             application/json:
               schema:
@@ -2993,7 +2999,9 @@ paths:
         '422':
           description: >-
             The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
-            partner-facing KYC status. The message is generic and never reveals internal review state.
+            partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
+            `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
+            review (up to 24h); keep the customer waiting and re-check. The message stays generic.
           content:
             application/json:
               schema:
