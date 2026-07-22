@@ -1029,7 +1029,16 @@ paths:
 
         **Supported document types:** `identity_front` (required), `selfie` (required), `identity_back`, `passport`, `national_id`, `driver_license`, and more.
 
-        **Automatic Verification:** After uploading all required documents (selfie + identity_front), verification starts automatically.
+        **Automatic Verification:** After all required documents are persisted (`selfie` +
+        `identity_front`), the service queues the Gemini pre-screen and AiPrise verification and
+        returns immediately. A `200` response means the documents were accepted; it is not a final
+        verification result. For example, a document rejected by the asynchronous pre-screen can
+        move the user to `VERIFICATION_REJECTED` after this response.
+
+        Obtain the eventual outcome by polling
+        `GET /api/v1/partner/users/{user_uuid}/verification-status` or consuming the
+        `user.kyc.updated` webhook. The upload response does not include an AiPrise verification
+        session ID or verification result.
       operationId: uploadPartnerKYCDocument
       security:
         - ApiKeyAuth: []
@@ -1045,23 +1054,23 @@ paths:
       requestBody:
         required: true
         content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document, document_type]
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: Document file (JPEG, PNG, GIF, or PDF, max 10MB)
+                document_type:
+                  type: string
+                  description: Type of document being uploaded
+                  enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
+                  example: identity_front
           application/json:
             schema:
               oneOf:
-                - title: File Upload (multipart)
-                  description: Upload document as a file attachment. Use Content-Type multipart/form-data.
-                  type: object
-                  required: [document, document_type]
-                  properties:
-                    document:
-                      type: string
-                      format: binary
-                      description: Document file (JPEG, PNG, GIF, or PDF, max 10MB)
-                    document_type:
-                      type: string
-                      description: Type of document being uploaded
-                      enum: [identity_front, identity_back, selfie, passport, national_id, driver_license, voter_id, resident_card, id_card]
-                      example: identity_front
                 - title: Single URL Upload
                   description: Upload one document by providing an HTTPS URL.
                   type: object
@@ -1104,8 +1113,6 @@ paths:
                             type: string
                             format: uri
                             example: "https://example.com/id-front.jpg"
-              discriminator:
-                propertyName: upload_method
             examples:
               single_url:
                 summary: Single document via URL
@@ -1121,50 +1128,83 @@ paths:
                     - document_type: identity_front
                       url: "https://example.com/id-front.jpg"
                     - document_type: selfie
-                  url: "https://example.com/selfie.jpg"
+                      url: "https://example.com/selfie.jpg"
       responses:
         '200':
-          description: Document uploaded successfully
+          description: Documents accepted and asynchronous verification processing queued
           content:
             application/json:
               schema:
                 type: object
+                required: [success, data]
                 properties:
                   success:
                     type: boolean
                     example: true
                   data:
-                    type: object
-                    properties:
-                      document_id:
-                        type: string
-                        description: AiPrise document UUID
-                        example: "f1d5f922-bee2-4c7e-88ef-18022958c4c2"
-                      document_type:
-                        type: string
-                        example: "identity_front"
-                      file_name:
-                        type: string
-                        example: "passport_photo.jpg"
-                      message:
-                        type: string
-                        description: |
-                          Success message. If all required documents are uploaded, message indicates
-                          that verification started automatically.
-                        example: "Document uploaded successfully"
-                      verification_session_id:
-                        type: string
-                        description: |
-                          Verification session ID (only present if verification started automatically
-                          after uploading the last required document: selfie + identity_front)
-                        example: "4fd410c9-ba9b-46cf-a4f0-132204a9a564"
-                      verification_status:
-                        type: string
-                        enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED]
-                        description: |
-                          Verification status (only present if verification started automatically
-                          after uploading the last required document: selfie + identity_front)
-                        example: "IN_PROGRESS"
+                    oneOf:
+                      - title: Single document accepted
+                        type: object
+                        required: [document_id, document_type, file_name, message, kyc_status]
+                        properties:
+                          document_id:
+                            type: string
+                            description: AiPrise document UUID
+                            example: "f1d5f922-bee2-4c7e-88ef-18022958c4c2"
+                          document_type:
+                            type: string
+                            example: "identity_front"
+                          file_name:
+                            type: string
+                            example: "passport_photo.jpg"
+                          message:
+                            type: string
+                            description: Confirms that the document was accepted for processing.
+                            example: "Documents accepted, verification started"
+                          kyc_status:
+                            type: string
+                            description: Relation status when the document was accepted.
+                            example: "PENDING_DOCUMENTS"
+                      - title: Batch documents accepted
+                        type: object
+                        required: [uploaded, message, kyc_status]
+                        properties:
+                          uploaded:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                document_type:
+                                  type: string
+                                  example: "identity_front"
+                                document_id:
+                                  type: string
+                                  example: "f1d5f922-bee2-4c7e-88ef-18022958c4c2"
+                                file_name:
+                                  type: string
+                                  example: "id-front.jpg"
+                                status:
+                                  type: string
+                                  enum: [uploaded]
+                          errors:
+                            type: array
+                            description: Per-document failures, omitted when every document succeeds.
+                            items:
+                              type: object
+                              properties:
+                                document_type:
+                                  type: string
+                                  example: "identity_back"
+                                error:
+                                  type: string
+                                  example: "Failed to download or upload document"
+                          message:
+                            type: string
+                            example: "Documents accepted, verification started"
+                          kyc_status:
+                            type: string
+                            description: Relation status when the documents were accepted.
+                            example: "PENDING_DOCUMENTS"
         '400':
           description: Bad Request - invalid file type, missing document, or user not ready for uploads
         '401':
