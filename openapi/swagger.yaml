@@ -1027,13 +1027,19 @@ paths:
 
         ---
 
-        **Supported document types:** `identity_front` (required), `selfie` (required), `identity_back`, `passport`, `national_id`, `driver_license`, and more.
+        **Supported document types:** an identity document — any of `identity_front`, `passport`,
+        `national_id`, `driver_license`, `voter_id`, `resident_card`, `id_card`, their `*_front`
+        variants, and country-specific types — **plus** a `selfie`. `identity_back` is optional.
 
-        **Automatic Verification:** After all required documents are persisted (`selfie` +
-        `identity_front`), the service queues verification processing and returns immediately. A
-        `200` response means the documents were accepted; it is not a final verification result.
-        Asynchronous verification checks can move the user to `VERIFICATION_REJECTED` after this
-        response.
+        **Automatic Verification:** After an identity document + `selfie` + KYC data are present, the
+        service queues verification processing and returns immediately. The identity document can be
+        any accepted ID type above, not only `identity_front` (e.g. `passport` + `selfie` triggers
+        verification). A `200` response means the documents were accepted; it is not a final
+        verification result. Asynchronous verification checks can move the user to
+        `VERIFICATION_REJECTED` after this response.
+
+        To trigger verification explicitly, or to check exactly what is still missing, call
+        `POST /api/v1/partner/users/{user_uuid}/kyc/verify` (below).
 
         Obtain the eventual outcome by polling
         `GET /api/v1/partner/users/{user_uuid}/verification-status` or consuming the
@@ -1203,6 +1209,109 @@ paths:
           description: Unauthorized
         '404':
           description: User not found or no active KYC session
+        '500':
+          description: Internal Server Error
+
+  # Step 4a (optional): explicitly trigger verification and see what is still missing
+  /api/v1/partner/users/{user_uuid}/kyc/verify:
+    post:
+      tags:
+        - User Management
+      summary: Trigger KYC verification and check readiness
+      description: |
+        Explicitly start KYC verification for a partner user on the `direct_data` image flow, or check
+        what is still missing. Verification **also** starts automatically once an identity document +
+        selfie + KYC data are present (see the document upload endpoint) — this endpoint is an
+        explicit control and readiness check, not the only path. No request body.
+
+        The response tells you the state:
+
+        - **Ready, started:** `{ "ready": true, "status": "IN_PROGRESS", "message": "Verification started." }`.
+          Idempotent — if a run is already in flight, the message is `"Verification is already in progress."`
+          and no duplicate run is created.
+        - **Already verified:** `{ "ready": true, "status": "VERIFIED", "message": "User is already verified." }`.
+        - **Not ready:** `{ "ready": false, "missing": ["identity_document", "selfie"], "message": "..." }`.
+          The `missing` items are generic: `identity_document` (any accepted ID type), `selfie`, `kyc_data`.
+
+        If the user has not submitted KYC with the `direct_data` method yet, this returns `400` — submit
+        KYC via `POST /api/v1/partner/users/{user_uuid}/kyc-submissions` first.
+      operationId: runPartnerKYCVerification
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: user_uuid
+          in: path
+          required: true
+          description: Public UUID of the user
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: |
+            Readiness result. Either verification was triggered / is already running / the user is
+            already verified, or the user is not ready and `missing` lists what to provide.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      ready:
+                        type: boolean
+                        example: true
+                      status:
+                        type: string
+                        enum: [IN_PROGRESS, VERIFIED]
+                        description: Present when `ready` is true.
+                        example: "IN_PROGRESS"
+                      missing:
+                        type: array
+                        description: Present when `ready` is false — the required items still to provide.
+                        items:
+                          type: string
+                          enum: [identity_document, selfie, kyc_data]
+                        example: ["identity_document", "selfie"]
+                      message:
+                        type: string
+                        example: "Verification started."
+              examples:
+                started:
+                  summary: Ready — verification started
+                  value:
+                    success: true
+                    data:
+                      ready: true
+                      status: IN_PROGRESS
+                      message: "Verification started."
+                already_verified:
+                  summary: Already verified
+                  value:
+                    success: true
+                    data:
+                      ready: true
+                      status: VERIFIED
+                      message: "User is already verified."
+                not_ready:
+                  summary: Not ready — items missing
+                  value:
+                    success: true
+                    data:
+                      ready: false
+                      missing: [identity_document, selfie]
+                      message: "Missing required items: identity document, selfie. Upload them, then verification starts automatically (or call this endpoint again)."
+        '400':
+          description: Bad Request - the user has not submitted KYC with the direct_data method yet
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
         '500':
           description: Internal Server Error
 
