@@ -1030,15 +1030,15 @@ paths:
         **Supported document types:** `identity_front` (required), `selfie` (required), `identity_back`, `passport`, `national_id`, `driver_license`, and more.
 
         **Automatic Verification:** After all required documents are persisted (`selfie` +
-        `identity_front`), the service queues the Gemini pre-screen and AiPrise verification and
-        returns immediately. A `200` response means the documents were accepted; it is not a final
-        verification result. For example, a document rejected by the asynchronous pre-screen can
-        move the user to `VERIFICATION_REJECTED` after this response.
+        `identity_front`), the service queues verification processing and returns immediately. A
+        `200` response means the documents were accepted; it is not a final verification result.
+        Asynchronous verification checks can move the user to `VERIFICATION_REJECTED` after this
+        response.
 
         Obtain the eventual outcome by polling
         `GET /api/v1/partner/users/{user_uuid}/verification-status` or consuming the
-        `user.kyc.updated` webhook. The upload response does not include an AiPrise verification
-        session ID or verification result.
+        `user.kyc.updated` webhook. The upload response does not include a verification session ID
+        or final verification result.
       operationId: uploadPartnerKYCDocument
       security:
         - ApiKeyAuth: []
@@ -1149,7 +1149,7 @@ paths:
                         properties:
                           document_id:
                             type: string
-                            description: AiPrise document UUID
+                            description: Document identifier
                             example: "f1d5f922-bee2-4c7e-88ef-18022958c4c2"
                           document_type:
                             type: string
@@ -1315,10 +1315,9 @@ paths:
         - User Management
       summary: Verification status for a partner user
       description: |
-        Get the current verification status for a partner user. This endpoint checks the verification status
-        with the KYC provider (e.g., AiPrise) and returns the current status, verification URL (if available),
-        and other relevant information. Optionally, you can provide a verification_id to check a specific
-        verification session.
+        Get the current verification status for a partner user. This endpoint returns the current status,
+        verification URL (if available), and other relevant information. Optionally, you can provide a
+        verification_id to check a specific verification session.
 
         Status values:
         - `NOT_INITIATED` — no verification started yet
@@ -1366,7 +1365,7 @@ paths:
                 success: true
                 data:
                   status: "IN_PROGRESS"
-                  verification_url: "https://verify-sandbox.aiprise.com/?verification_session_id=abc123"
+                  verification_url: "https://verify.example.com/session/abc123"
                   verification_seconds_left: 3600
         '401':
           description: Unauthorized
@@ -4366,7 +4365,7 @@ components:
                       type: string
                       nullable: true
                       description: Reason for KYC rejection (if status is VERIFICATION_REJECTED)
-                      example: "Verification declined by AiPrise"
+                      example: "Document verification was not approved"
                     updated_at:
                       type: string
                       format: date-time
@@ -4538,7 +4537,7 @@ components:
                   format: uri
                   nullable: true
                   description: Verification URL (only returned for handoff method)
-                  example: "https://verify.aiprise.com/?verification_session_id=4fd410c9-ba9b-46cf-a4f0-132204a9a564"
+                  example: "https://verify.example.com/session/4fd410c9-ba9b-46cf-a4f0-132204a9a564"
 
     VerificationStatusResponse:
       allOf:
@@ -4567,7 +4566,7 @@ components:
                   format: uri
                   nullable: true
                   description: Verification URL (for handoff method)
-                  example: "https://verify-sandbox.aiprise.com/?verification_session_id=abc123"
+                  example: "https://verify.example.com/session/abc123"
                 verification_seconds_left:
                   type: integer
                   nullable: true
@@ -4578,7 +4577,7 @@ components:
                   items:
                     type: string
                   nullable: true
-                  description: Provider-specific messages or rejection reasons
+                  description: Status messages or rejection reasons
                   example: ["Verification in progress"]
 
     CreatePaymentDetailsRequest:
