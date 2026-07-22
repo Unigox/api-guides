@@ -113,8 +113,9 @@ tags:
 
       **Payload shape — `user.kyc.updated`**
 
-      Fired when a user's KYC status transitions to `verified` or `rejected`.
-      Use this event to unlock order creation for the user on your side.
+      Fired when a user's KYC status changes — to `verified`, `rejected`, or to a manual compliance
+      review hold (`under_review`). Use this event to unlock order creation for the user on your side
+      (only on `VERIFIED`; `UNDER_REVIEW` is not cleared).
 
       ```json
       {
@@ -143,7 +144,25 @@ tags:
       }
       ```
 
-      `kyc_status` values: `VERIFIED` | `REJECTED`
+      When a customer is placed on a manual compliance review hold, `kyc_status` is `UNDER_REVIEW`:
+
+      ```json
+      {
+        "event_id": "evt_9a1c7f20-4d3b-4e88-9f2a-1b6d0c5e7a3f",
+        "event_type": "user.kyc.updated",
+        "created_at": "2026-03-10T12:05:00Z",
+        "data": {
+          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
+          "kyc_status": "UNDER_REVIEW"
+        }
+      }
+      ```
+
+      `kyc_status` values: `VERIFIED` | `REJECTED` | `UNDER_REVIEW`
+
+      `UNDER_REVIEW` is a manual compliance review: the customer is NOT cleared and can take up to
+      24 hours (unlike an automated check of a couple of minutes). Do not unlock order creation until
+      `VERIFIED`.
 
       **Signature verification**
 
@@ -1264,14 +1283,19 @@ paths:
         Status values:
         - `NOT_INITIATED` — no verification started yet
         - `PENDING_DOCUMENTS` — waiting for the customer to submit documents
-        - `IN_PROGRESS` — verification is underway (includes customers in compliance review)
+        - `IN_PROGRESS` — automated verification is underway (usually a couple of minutes)
+        - `UNDER_REVIEW` — under manual compliance review; the customer is being reviewed by our team
+          and is NOT yet cleared. Unlike `IN_PROGRESS` (automated, usually a couple of minutes), this can
+          take up to 24 hours. Keep polling; treat as not cleared.
         - `VERIFIED` — verification passed; the customer is approved
         - `FAILED` — verification could not be completed due to an error
         - `VERIFICATION_REJECTED` — verification completed with a rejection outcome
 
-        Non-terminal states (`NOT_INITIATED`, `PENDING_DOCUMENTS`, `IN_PROGRESS`) mean verification is
-        still in progress — keep polling. Treat `IN_PROGRESS` as "not cleared yet". No internal review
-        state is ever exposed.
+        Non-terminal states (`NOT_INITIATED`, `PENDING_DOCUMENTS`, `IN_PROGRESS`, `UNDER_REVIEW`) mean the
+        customer is not cleared yet — keep polling. A manual compliance review is now surfaced as the
+        friendly `UNDER_REVIEW` (the internal review-state name is still never exposed) so you can tell a
+        long human review apart from a quick automated check and set the right expectation with your
+        customer.
       operationId: getVerificationStatus
       security:
         - ApiKeyAuth: []
@@ -4233,7 +4257,7 @@ components:
                   example: user@example.com
                 kyc_status:
                   type: string
-                  enum: [NOT_INITIATED, IN_PROGRESS, VERIFIED, VERIFICATION_REJECTED]
+                  enum: [NOT_INITIATED, IN_PROGRESS, UNDER_REVIEW, VERIFIED, VERIFICATION_REJECTED]
                   example: NOT_INITIATED
                 created_at:
                   type: string
@@ -4266,7 +4290,12 @@ components:
                   properties:
                     status:
                       type: string
-                      enum: [NOT_INITIATED, IN_PROGRESS, VERIFIED, VERIFICATION_REJECTED]
+                      enum: [NOT_INITIATED, IN_PROGRESS, UNDER_REVIEW, VERIFIED, VERIFICATION_REJECTED]
+                      description: |
+                        Current partner-facing KYC status. `UNDER_REVIEW` means the customer is under
+                        manual compliance review — not yet cleared, and unlike `IN_PROGRESS` (automated,
+                        usually a couple of minutes) it can take up to 24 hours. The internal review
+                        state name is never exposed.
                       example: IN_PROGRESS
                     kyc_method:
                       type: string
@@ -4447,7 +4476,11 @@ components:
               properties:
                 kyc_status:
                   type: string
-                  enum: [NOT_INITIATED, IN_PROGRESS, VERIFIED, VERIFICATION_REJECTED]
+                  enum: [NOT_INITIATED, IN_PROGRESS, UNDER_REVIEW, VERIFIED, VERIFICATION_REJECTED]
+                  description: |
+                    A submission may asynchronously move to `UNDER_REVIEW` (manual compliance review,
+                    up to 24 hours) via the status endpoint and the `user.kyc.updated` webhook — distinct
+                    from `IN_PROGRESS` (automated, usually a couple of minutes). Treat both as not cleared.
                   example: IN_PROGRESS
                 message:
                   type: string
@@ -4469,13 +4502,14 @@ components:
               properties:
                 status:
                   type: string
-                  enum: [NOT_INITIATED, PENDING_DOCUMENTS, IN_PROGRESS, VERIFIED, FAILED, VERIFICATION_REJECTED]
+                  enum: [NOT_INITIATED, PENDING_DOCUMENTS, IN_PROGRESS, UNDER_REVIEW, VERIFIED, FAILED, VERIFICATION_REJECTED]
                   description: |
                     Current verification status.
 
                     - `NOT_INITIATED` — no verification started
                     - `PENDING_DOCUMENTS` — awaiting customer document submission
-                    - `IN_PROGRESS` — verification underway (includes compliance review); treat as not cleared yet
+                    - `IN_PROGRESS` — automated verification underway (usually a couple of minutes); treat as not cleared yet
+                    - `UNDER_REVIEW` — under manual compliance review; the customer is being reviewed by our team and is NOT yet cleared. Unlike `IN_PROGRESS` (automated, usually a couple of minutes), this can take up to 24 hours. Keep polling; treat as not cleared.
                     - `VERIFIED` — approved
                     - `FAILED` — terminal error
                     - `VERIFICATION_REJECTED` — completed with rejection

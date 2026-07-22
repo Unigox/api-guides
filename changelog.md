@@ -2,6 +2,12 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-07-22
+
+**New KYC status `UNDER_REVIEW` for customers under manual compliance review.** When a customer's screening needs human compliance review (rather than a quick automated check), their KYC status is now surfaced as `UNDER_REVIEW` instead of `IN_PROGRESS`. It appears wherever a KYC status is reported: `GET /partner/users/{user_uuid}/verification-status`, `GET /partner/users/{user_uuid}` (`kyc.status`), the KYC submit response (`kyc_status`), and the `user.kyc.updated` webhook. A manual review can take **up to 24 hours**, unlike an automated check of a couple of minutes — so you can now tell the two apart and set the right expectation with your customer.
+
+`UNDER_REVIEW` is **not cleared**: treat it exactly like `IN_PROGRESS` for gating — keep polling and do not unlock onramp/offramp until the customer reaches `VERIFIED`. This is an additive status value; if you already wait for `VERIFIED` before transacting, no action is needed.
+
 ## 2026-07-21
 
 **On-ramp and off-ramp price estimates are public.** `POST /api/v1/partner/onramp/estimate` and `POST /api/v1/partner/offramp/estimate` no longer require an API key — same as `GET /api/v1/partner/liquidity`. They return indicative pricing only (no liquidity reservation, no quote or order). Executable pricing and order creation still need a key: `POST /partner/onramp/quote`, `/onramp/initiate`, `/offramp/quote`, and `/offramp/initiate`.
