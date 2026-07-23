@@ -4311,6 +4311,23 @@ components:
           type: string
           description: Institution identifier (slug) — pass this as `institution_id` when creating payment details
           example: hdfc-bank
+        payment_method_id:
+          type: integer
+          format: int64
+          description: >-
+            Numeric payment method id. Retail clients submit this (with
+            `payment_network_id`) when saving a payment detail or creating a
+            trade. Omitted for the `imps-neft-india` directory, which has no
+            `payment_methods` rows.
+          example: 396
+        payment_network_id:
+          type: integer
+          format: int64
+          description: >-
+            Numeric id of the queried rail (the `rail` query parameter),
+            submitted alongside `payment_method_id`. Omitted for the
+            `imps-neft-india` directory.
+          example: 3
         name:
           type: string
           description: Institution name
@@ -4331,8 +4348,10 @@ components:
           type: string
           description: >-
             Corridor-specific institution code: the 4-letter IFSC bank prefix
-            for `imps-neft-india`, the NIBSS code for `nip-nigeria`, etc.
-            Omitted when the institution has no code (e.g. SEPA banks).
+            for `imps-neft-india`, the NIBSS code for `nip-nigeria`, the
+            reference BIC for `iban-sepa`, etc. Omitted when the institution has
+            no code. For SEPA the BIC is a reference identifier and may not be
+            unique per institution — do not rely on it as a routing BIC.
           example: HDFC
         branch:
           $ref: '#/components/schemas/InstitutionBranch'
