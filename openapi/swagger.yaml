@@ -1032,23 +1032,32 @@ paths:
         identity-document front (`identity_front` or any equivalent ID type listed below). All other
         values are optional (document back sides and alternative ID types).
 
-        - Generic identity document: `identity_front`, `identity_back`
-        - Passport: `passport`, `passport_front`
-        - National ID: `national_id`, `national_id_front`, `national_id_back`
-        - Driver license: `driver_license`, `driver_license_front`, `driver_license_back`
-        - Voter ID: `voter_id`, `voter_id_front`, `voter_id_back`
-        - Resident card: `resident_card`, `resident_card_front`, `resident_card_back`
-        - ID card: `id_card`, `id_card_front`, `id_card_back`
-        - Ghana card: `ghana_card`, `ghana_card_front`, `ghana_card_back`
-        - Ghana SSNIT card: `ghana_ssnit_card`, `ghana_ssnit_card_front`, `ghana_ssnit_card_back`
-        - Kenya alien card: `kenya_alien_card`, `kenya_alien_card_front`, `kenya_alien_card_back`
-        - Green book (South Africa): `green_book`, `green_book_front`, `green_book_back`
-        - Tax ID (e.g. India PAN): `tax_id`, `tax_id_front`, `tax_id_back`
-        - Colombia PPT: `colombia_ppt`, `colombia_ppt_front`, `colombia_ppt_back`
-        - Selfie: `selfie`
+        `document_type` only selects which slot (front / back / selfie) an image occupies. It is **not**
+        used as a document-category and it does **not** set the country: our verification system detects
+        the actual document type from the image, and the country is taken from the customer's KYC profile
+        (their identity/address country), independent of this value. The country names below are naming
+        hints to help you choose — they are not enforced, so a country-specific value is never required.
+
+        - Generic identity document — **general** (any country): `identity_front`, `identity_back`
+        - Passport — **general** (any country): `passport`, `passport_front`
+        - National ID — **general** (any country; covers e.g. Nigeria's NIN card, Kenya national ID,
+          India Aadhaar): `national_id`, `national_id_front`, `national_id_back`
+        - Driver license — **general** (any country): `driver_license`, `driver_license_front`, `driver_license_back`
+        - Voter ID — **general** (any country): `voter_id`, `voter_id_front`, `voter_id_back`
+        - Resident card — **general** (any country): `resident_card`, `resident_card_front`, `resident_card_back`
+        - ID card — **general** (any country; catch-all for local cards without their own type below,
+          e.g. Indonesia KTP, Pakistan Nadra Card): `id_card`, `id_card_front`, `id_card_back`
+        - Ghana card — **Ghana** (NIA biometric national ID): `ghana_card`, `ghana_card_front`, `ghana_card_back`
+        - Ghana SSNIT card — **Ghana** (social-security card): `ghana_ssnit_card`, `ghana_ssnit_card_front`, `ghana_ssnit_card_back`
+        - Kenya alien card — **Kenya** (non-citizen resident ID): `kenya_alien_card`, `kenya_alien_card_front`, `kenya_alien_card_back`
+        - Green book — **South Africa** (legacy green barcoded ID book): `green_book`, `green_book_front`, `green_book_back`
+        - Tax ID — **general** label (primary example: India PAN card): `tax_id`, `tax_id_front`, `tax_id_back`
+        - Colombia PPT — **Colombia** (Permiso por Protección Temporal): `colombia_ppt`, `colombia_ppt_front`, `colombia_ppt_back`
+        - Selfie — **general** (any country): `selfie`
 
         Any front-side identity type above (e.g. `passport`, `national_id`, `tax_id`) satisfies the ID
-        requirement — not only the literal `identity_front`.
+        requirement — not only the literal `identity_front`. **Nigeria's NIN** is submitted as
+        `national_id` (with the customer's country set to Nigeria); there is no separate `nin` value.
 
         **Automatic Verification:** After an identity document + `selfie` + KYC data are present, the
         service queues verification processing and returns immediately. The identity document can be
@@ -3846,7 +3855,15 @@ components:
   schemas:
     KycDocumentType:
       type: string
-      description: Complete set of document types accepted by the partner KYC upload endpoint
+      description: >-
+        Complete set of document types accepted by the partner KYC upload endpoint. `document_type`
+        only selects the upload slot (front/back/selfie); it is not a document-category and does not set
+        the country — our verification system detects the document type from the image, and the country
+        comes from the customer's KYC profile. Values named after a country (`ghana_card`,
+        `ghana_ssnit_card`, `kenya_alien_card`, `green_book`, `colombia_ppt`) are country-specific hints;
+        all others (`passport`, `national_id`, `driver_license`, `voter_id`, `resident_card`, `id_card`,
+        `tax_id`, `identity_front`/`identity_back`, `selfie`) are general — any country. Nigeria's NIN is
+        submitted as `national_id`.
       enum: [identity_front, identity_back, selfie, passport, passport_front, national_id, national_id_front, national_id_back, driver_license, driver_license_front, driver_license_back, voter_id, voter_id_front, voter_id_back, resident_card, resident_card_front, resident_card_back, id_card, id_card_front, id_card_back, ghana_card, ghana_card_front, ghana_card_back, ghana_ssnit_card, ghana_ssnit_card_front, ghana_ssnit_card_back, kenya_alien_card, kenya_alien_card_front, kenya_alien_card_back, green_book, green_book_front, green_book_back, tax_id, tax_id_front, tax_id_back, colombia_ppt, colombia_ppt_front, colombia_ppt_back]
       example: identity_front
 
