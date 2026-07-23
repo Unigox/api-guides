@@ -1053,9 +1053,20 @@ paths:
         identity-document front (`identity_front` or any equivalent ID type listed below). All other
         values are optional (document back sides and alternative ID types).
 
-        **NIN/BVN + selfie option:** if the KYC submission supplied a registry `id_number` + `id_type`
-        (see the submit-KYC endpoint), the identity requirement is met by that number, so uploading
-        **only a `selfie`** — with no ID-document image — starts verification automatically.
+        **NIN/BVN + selfie option (verify with a registry number instead of an ID image).** This is a
+        **two-step flow across two endpoints** — the registry number is submitted as **text**, never
+        uploaded as a file:
+
+          1. On the **submit-KYC** endpoint (`POST .../kyc-submissions`, method `direct_data`), send the
+             customer's data **plus** `id_number` (the registry number, as a string) and `id_type`
+             (e.g. `NIN`, `BVN`). No image is uploaded in this step.
+          2. On **this** documents endpoint, upload **only a `selfie`** (`document_type: selfie`) — **no
+             ID-document image**. The registry number from step 1 satisfies the identity requirement, so
+             verification starts automatically (national-registry lookup + selfie face-match against the
+             registry photo).
+
+        The three upload methods below (multipart / single URL / batch URL) are for **image files** only
+        — they are not how the registry number is sent (that is the `id_number` text field in step 1).
 
         `document_type` only selects which slot (front / back / selfie) an image occupies. It is **not**
         used as a document-category and it does **not** set the country: our verification system detects
@@ -4628,8 +4639,8 @@ components:
                     this number plus a live selfie (no ID photo). AiPrise validates the number against the
                     national registry (NIN->NIMC, BVN->NIBSS) and face-matches the selfie against the
                     registry photo. After this submission, upload only a `selfie` (document_type=selfie)
-                    to the documents endpoint - verification starts automatically. Requires the feature
-                    to be enabled by Unigox for the partner.
+                    to the documents endpoint - verification starts automatically. Supported for the
+                    registry number types listed under `id_type`, in the countries those registries cover.
                   example: "12345678901"
                 id_type:
                   type: string
