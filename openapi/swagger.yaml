@@ -915,6 +915,18 @@ paths:
                       country_code: NG
                       address: "123 Street Name, Lagos"
                       postal_code: "100001"
+              direct_data_nin_bvn:
+                summary: Direct data submission (NIN/BVN + selfie, no ID image)
+                value:
+                  method: direct_data
+                  data:
+                    pii:
+                      first_name: Chidi
+                      last_name: Okafor
+                      dob: "1990-05-05"
+                      country_code: NG
+                      id_number: "12345678901"
+                      id_type: NIN
               external_token_with_sumsub:
                 summary: External token (SumSub)
                 value:
@@ -954,6 +966,8 @@ paths:
             date_of_birth indicates an age under 18."; and
             `invalid_date_of_birth` — "date_of_birth is invalid. Provide a real date in
             YYYY-MM-DD format that is in the past."
+            `invalid_identity_number_type` — "id_type is required for NIN/BVN + selfie
+            verification and must be one of the supported identity number types (e.g. NIN, BVN)."
           content:
             application/json:
               schema:
@@ -973,6 +987,13 @@ paths:
                     data:
                       error_key: invalid_date_of_birth
                       message: "date_of_birth is invalid. Provide a real date in YYYY-MM-DD format that is in the past."
+                invalid_identity_number_type:
+                  summary: Unsupported id_type for NIN/BVN + selfie
+                  value:
+                    success: false
+                    data:
+                      error_key: invalid_identity_number_type
+                      message: "id_type is required for NIN/BVN + selfie verification and must be one of the supported identity number types (e.g. NIN, BVN)."
         '401':
           description: Unauthorized
         '404':
@@ -1031,6 +1052,10 @@ paths:
         complete, finite list; anything else is rejected). **Required:** a `selfie` **and** one
         identity-document front (`identity_front` or any equivalent ID type listed below). All other
         values are optional (document back sides and alternative ID types).
+
+        **NIN/BVN + selfie option:** if the KYC submission supplied a registry `id_number` + `id_type`
+        (see the submit-KYC endpoint), the identity requirement is met by that number, so uploading
+        **only a `selfie`** — with no ID-document image — starts verification automatically.
 
         `document_type` only selects which slot (front / back / selfie) an image occupies. It is **not**
         used as a document-category and it does **not** set the country: our verification system detects
@@ -4597,11 +4622,24 @@ components:
                   example: "+2348012345678"
                 id_number:
                   type: string
-                  example: "A12345678"
+                  description: >-
+                    Government identity/registry number. Enables the **NIN/BVN + selfie** verification
+                    option: instead of uploading an ID-document image, the customer proves identity with
+                    this number plus a live selfie (no ID photo). AiPrise validates the number against the
+                    national registry (NIN->NIMC, BVN->NIBSS) and face-matches the selfie against the
+                    registry photo. After this submission, upload only a `selfie` (document_type=selfie)
+                    to the documents endpoint - verification starts automatically. Requires the feature
+                    to be enabled by Unigox for the partner.
+                  example: "12345678901"
                 id_type:
                   type: string
-                  enum: [NATIONAL_ID, DRIVER_LICENSE, PASSPORT]
-                  example: NATIONAL_ID
+                  description: >-
+                    Registry type for `id_number`. For the NIN/BVN + selfie option it must be one of the
+                    listed registry types (image-only IDs such as passport/driver licence are NOT
+                    accepted - those use the ID-image flow). An unsupported/missing value returns
+                    `400 { "error_key": "invalid_identity_number_type" }`.
+                  enum: [NIN, NIN_SLIP, BVN, NATIONAL_ID, VOTER_ID, TAX_ID, KENYA_KRA_PIN]
+                  example: NIN
                 address:
                   type: string
                   description: Street address
