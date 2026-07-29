@@ -2,6 +2,18 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-07-29
+
+**Third-party recipients are now first-class Partner API resources.** A KYC-verified sender can pay a separately registered recipient without representing that recipient as one of the sender's own payment methods.
+
+- Register and manage recipients under `/api/v1/partner/recipients`, including a versioned payout destination.
+- Bind `sender_recipient_relationship` and `purpose_of_payment` for each payment.
+- Quote an off-ramp with `sender_id`, `recipient_id`, and `recipient_destination_id`; omit `payment_details_id` for this ownership mode.
+- Quote and order responses expose the immutable `recipient_context`. Initiation creates a durable `compliance` case visible in the same Unigox Compliance queue used for portal-created payouts.
+- Sensitive identity and account values are write-only or masked on reads. Vendor-specific beneficiary terminology is not exposed by the Partner API.
+
+The KYC user identified by `sender_id` must be the real party funding the payout. Partners must not route multiple real customers through a shared shell sender.
+
 ## 2026-07-22
 
 **New KYC status `UNDER_REVIEW` for customers under manual compliance review.** When a customer's screening needs human compliance review (rather than a quick automated check), their KYC status is now surfaced as `UNDER_REVIEW` instead of `IN_PROGRESS`. It appears wherever a KYC status is reported: `GET /partner/users/{user_uuid}/verification-status`, `GET /partner/users/{user_uuid}` (`kyc.status`), the KYC submit response (`kyc_status`), and the `user.kyc.updated` webhook. A manual review can take **up to 24 hours**, unlike an automated check of a couple of minutes — so you can now tell the two apart and set the right expectation with your customer.
