@@ -1788,66 +1788,6 @@ paths:
           description: Internal Server Error
 
   # ============================================
-  /api/v1/partner/wallet:
-    get:
-      tags:
-        - Off-Ramp
-      summary: Get the funding wallet
-      description: |
-        Returns the wallet a partner tops up with crypto, and the tokens it accepts.
-
-        `address` is the same value that later appears as `sender_address` on an order's
-        transfer-authorization parameters.
-
-        Every off-ramp order is funded by transferring crypto from this wallet into the order's
-        escrow (`/orders/{order_id}/transfer-authorization-parameters` then
-        `/orders/{order_id}/authorize-crypto-transfer`). The wallet must therefore already hold the
-        crypto before you initiate — this endpoint is how you learn where to send it.
-
-        Send only the tokens listed in `accepted_tokens`, on the chain identified by `chain_id`.
-        A transfer of anything else, or on another chain, is not swept and cannot fund an order.
-      operationId: getPartnerFundingWallet
-      security:
-        - ApiKeyAuth: []
-      responses:
-        '200':
-          description: Funding wallet returned
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/APIResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/PartnerFundingWallet'
-              example:
-                success: true
-                data:
-                  address: "0x748De8Af75f919707Ee29004e68DA3cb708788B1"
-                  chain_id: "660279"
-                  chain_name: XAI
-                  rpc_url: "https://rpc.xai-chain.net"
-                  accepted_tokens:
-                    - crypto_currency: USDT
-                      token_address: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
-                      decimals: 6
-                    - crypto_currency: USDC
-                      token_address: "0x37BF70ee0dC89a408De31B79cCCC3152F0C8AF43"
-                      decimals: 6
-        '401':
-          description: Partner not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '500':
-          description: No funding wallet is provisioned for this partner yet
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-
   # 8. LIQUIDITY
   # ============================================
   /api/v1/partner/liquidity:
@@ -5461,42 +5401,6 @@ components:
           type: boolean
           description: True when response is an estimate and not a reserving quote
           example: true
-
-    PartnerFundingWallet:
-      type: object
-      required: [address, chain_id, chain_name, accepted_tokens]
-      properties:
-        address:
-          type: string
-          description: The wallet that funds this partner's order escrows.
-          example: "0x748De8Af75f919707Ee29004e68DA3cb708788B1"
-        chain_id:
-          type: string
-          example: "660279"
-        chain_name:
-          type: string
-          example: XAI
-        rpc_url:
-          type: string
-          description: Public RPC for the settlement chain.
-        accepted_tokens:
-          type: array
-          description: >-
-            The only tokens that can fund an order. A transfer of anything else, or on another
-            chain, is not swept.
-          items:
-            type: object
-            required: [crypto_currency, token_address, decimals]
-            properties:
-              crypto_currency:
-                type: string
-                example: USDT
-              token_address:
-                type: string
-                example: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
-              decimals:
-                type: integer
-                example: 6
 
     PartnerRecipientDestinationInput:
       type: object

@@ -9,11 +9,27 @@ customers through a shared shell user. Unigox evaluates recipient fan-out,
 payment value and velocity, relationship/purpose coherence, and screening
 results for every sender.
 
+## Funding: you pre-fund, we debit
+
+Payouts are funded from **your own crypto balance**, not from your customer's.
+
+Your Unigox partner account is itself an account with a wallet. You top that
+wallet up with crypto in advance, and every payout your customers make draws
+down that balance: the wallet signs the transfer into each order's escrow. Your
+customer never sends crypto to you through Unigox — how they pay you, if at all,
+is outside this API.
+
+The practical consequence: **an empty balance stops every payout**, not just the
+next one. Keep the wallet funded ahead of demand.
+
+The address is the one on your Unigox wallet page — it does not change, and it
+is the same address that appears as `sender_address` on any order's transfer
+authorization parameters. Send only the token and chain shown there; a transfer
+on another chain cannot fund an order and is not recoverable.
+
 ## End-to-end flow
 
-0. Fund your wallet. `GET /api/v1/partner/wallet` returns the address every
-   order's escrow is funded from, and the tokens and chain it accepts. Crypto
-   must be there before you initiate.
+0. Pre-fund your wallet (above). Crypto must be there before you initiate.
 1. Create one partner user for the real sender and complete KYC.
 2. Register a partner-scoped recipient identity.
 3. Add a validated payout destination to the recipient.
@@ -26,17 +42,13 @@ results for every sender.
    `transfer-authorization-parameters` answers `409 INVALID_STATUS` ("no
    liquidity provider has accepted it"). Poll `GET /orders/{order_id}` — or take
    a webhook — until `next_action` becomes `authorize_crypto_transfer`.
-7. Fund the order's escrow from your wallet:
+7. Fund the order's escrow from your balance:
    `GET /api/v1/partner/orders/{order_id}/transfer-authorization-parameters`,
    sign the returned ForwardRequest, then
    `POST /api/v1/partner/orders/{order_id}/authorize-crypto-transfer`.
-   `sender_address` in that response is the same wallet step 0 returned, and
-   `recipient_address` is the escrow deployed for this order.
+   `sender_address` is your wallet; `recipient_address` is the escrow deployed
+   for this order.
 8. Read the order and compliance state.
-
-The wallet is the partner's, not the end user's. Unigox does not currently issue
-a per-end-user deposit address on the partner API, so an end user topping up in
-your product pays into your treasury and you fund the payout from it.
 
 Recipient identity and destination values are versioned. The quote freezes the
 exact execution values it validated. Later edits never alter an existing quote
