@@ -11,6 +11,9 @@ results for every sender.
 
 ## End-to-end flow
 
+0. Fund your wallet. `GET /api/v1/partner/wallet` returns the address every
+   order's escrow is funded from, and the tokens and chain it accepts. Crypto
+   must be there before you initiate.
 1. Create one partner user for the real sender and complete KYC.
 2. Register a partner-scoped recipient identity.
 3. Add a validated payout destination to the recipient.
@@ -18,7 +21,15 @@ results for every sender.
    relationship, and purpose.
 5. Initiate the quote. Unigox creates the order and applies the same compliance
    controls used by Portal payouts.
-6. Read the order and compliance state.
+6. Fund the order's escrow from your wallet:
+   `GET /api/v1/partner/orders/{order_id}/transfer-authorization-parameters`,
+   sign the returned ForwardRequest, then
+   `POST /api/v1/partner/orders/{order_id}/authorize-crypto-transfer`.
+7. Read the order and compliance state.
+
+The wallet is the partner's, not the end user's. Unigox does not currently issue
+a per-end-user deposit address on the partner API, so an end user topping up in
+your product pays into your treasury and you fund the payout from it.
 
 Recipient identity and destination values are versioned. The quote freezes the
 exact execution values it validated. Later edits never alter an existing quote
@@ -60,6 +71,7 @@ Content-Type: application/json
   "rail": "cnaps",
   "institution_id": "china-construction-bank",
   "details": {
+    "beneficiary_type": "business",
     "bank_name": "China Construction Bank",
     "account_number": "6222021234567890123",
     "company_name": "Shenzhen Example Trading Co Ltd",
@@ -82,26 +94,72 @@ are that rail's own field names — the same ones
 `/api/v1/supported/payment-rails` advertises for the format you are using. Do
 not invent generic names such as `account_holder_name`: they are rejected.
 
-For `rail: "cnaps"` the formats are:
+**Pick the format from the institution, not from a table.** A rail can carry
+several formats, and the one your `details` is validated against is decided by
+the institution you chose:
 
-| Paying | Required `details` |
-| --- | --- |
-| a company | `bank_name`, `account_number`, `company_name`, `company_name_native`, `mobile_number` |
-| a person | `bank_name`, `account_number`, `id_number`, `first_name`, `last_name`, `native_first_name`, `native_last_name`, `mobile_number` |
-| an e-wallet (Alipay / WeChat Pay) | `full_name`, `account_number` |
+1. take the institution from `/api/v1/supported/institutions` — each carries an
+   `institution_type`;
+2. find the rail format whose `institution_types` contains that type;
+3. send that format's `fields`.
+
+Formats also carry `has_liquidity`. A format with `has_liquidity: false` cannot
+currently be settled in that corridor — do not build against it. On `cnaps`/CNY
+today the two bank formats are liquid and the `ewallet` format is not: no
+`mobile-wallets` institution is active on this corridor, so Alipay and WeChat Pay
+destinations cannot be created. Check the endpoint rather than this sentence.
+
+### Paying a company: `beneficiary_type`
+
+A format may have a business sibling (`cnaps-bank` ↔ `cnaps-bank_business`) that
+applies to the **same** institutions but collects a company's details instead of
+a person's. The sibling is not selected by the institution — it is selected by a
+reserved routing key inside `details`:
+
+```json
+"beneficiary_type": "business"
+```
+
+Omit it, or send `"individual"`, and the individual format is used.
+
+Send it whenever you send company fields. Without it, `company_name` is
+validated against the individual format and rejected with `unknown field
+'company_name' is not allowed for this payment network`.
+
+For `rail: "cnaps"`, institutions of type `traditional-banks`:
+
+| Paying | `beneficiary_type` | Required `details` |
+| --- | --- | --- |
+| a company | `business` | `bank_name`, `account_number`, `company_name`, `company_name_native`, `mobile_number` |
+| a person | `individual` (or omit) | `bank_name`, `account_number`, `id_number`, `first_name`, `last_name`, `native_first_name`, `native_last_name`, `mobile_number` |
 
 `mobile_number` must be an 11-digit Chinese mobile number (`13800138000`) —
 an international prefix such as `+8613800138000` is rejected.
 
-A missing or malformed field returns `400` with
-`code: "INVALID_REQUEST"`. Store the returned `destination.id`.
+A missing or malformed field returns `400` with `code: "INVALID_REQUEST"`, and
+the message names the offending field. Store the returned `data.id`.
 
-Sensitive values are masked or omitted on reads.
+### What reads return
+
+Reads mask the values that identify an account or a person, and return the rest
+in full so you can tell two destinations apart:
+
+- masked to last-4 (`•••• 1234`): `recipient_id_number`,
+  `recipient_business_registration_number`, and inside `details`
+  `account_number`, `bank_account_number`, `iban`, `card_number`, `id_number`,
+  `national_id`, `tax_id`, `mobile_number`, `phone_number`, `msisdn`;
+- returned in full: names, `bank_name`, `province`, `branch`, routing codes,
+  `beneficiary_type`, and every identifier we issued (`id`,
+  `payment_method_id`, `payment_network_id`, `created_at`).
+
+`kind` comes back lowercase (`individual` | `business`), matching the
+`recipient_kind` you send.
 
 ## 3. Request a quote
 
-For a third-party payout, omit `payment_details_id` and provide the full
-payment-specific context on the quote:
+A third-party payout is routed by `recipient_destination_id`, so
+`payment_details_id` must be **omitted**. Sending both is rejected with `400
+INVALID_REQUEST` rather than one silently winning.
 
 ```http
 POST /api/v1/partner/offramp/quote
@@ -118,12 +176,18 @@ Content-Type: application/json
   "sender_recipient_relationship": "supplier",
   "purpose_of_payment": "goods_and_services",
   "purpose_details": "Invoice INV-2026-0042",
-  "crypto_currency": "USDC",
+  "crypto_currency": "USDT",
   "fiat_currency": "CNY",
-  "fiat_amount": "250000",
+  "fiat_amount": "5000",
   "rail": "cnaps"
 }
 ```
+
+`crypto_currency` and the amount are not decoration: a pair with no vendor
+liquidity, or an amount above what the corridor can currently serve, returns
+`409 NO_OFFERS_AVAILABLE`. Call `/api/v1/partner/liquidity` or
+`/api/v1/partner/offramp/estimate` first — both are public — instead of
+discovering the ceiling from a failed quote.
 
 `user_uuid` and `sender_id` must identify the same real, KYC-verified sender.
 The destination currency must exactly equal `fiat_currency`; this flow does not
@@ -150,6 +214,10 @@ The response includes:
 - `compliance.risk_decision`: `allow` in v1;
 - `compliance.requires_review`: `false` in v1.
 
+The same two blocks are returned by `GET /api/v1/partner/orders/{order_id}` for
+the life of the order, so you do not have to persist the initiate response to
+show a payout's compliance state later.
+
 API-created and Portal-created payouts produce the same record through the same
 path.
 
@@ -163,8 +231,17 @@ order — the request is rejected, and you act on the error:
 | --- | --- | ---: | --- |
 | `KYC_NOT_CLEARED` | 422 | The sender's KYC is not cleared for this partner. | Complete the sender's KYC; do not substitute another user. |
 | `THIRD_PARTY_CONTEXT_INVALID` | 422 | The recipient/destination is not usable: not found for this partner, archived, screening not `cleared`, incomplete route, or `sender_id` ≠ `user_uuid`. | Read the message; re-check the recipient, or wait for screening. |
-| `INVALID_REQUEST` | 400 | The payload is wrong — e.g. the destination currency does not equal `fiat_currency`, a required third-party field is missing, or the corridor is not CNY/CNAPS. | Fix the request. |
+| `INVALID_REQUEST` | 400 | The payload is wrong — a `details` field the rail does not accept, a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a destination currency that is not `fiat_currency`, or a corridor that is not CNY/CNAPS. The message names what to fix. | Fix the request. |
+| `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
+| `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | The recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
 | `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later or use a different amount. |
+| `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
+| `RAIL_ROUTE_MISMATCH` | 400 | The rail you asked for does not match the route the destination resolves to. | Send the `rail` the destination was created with, or omit it. |
+
+`THIRD_PARTY_PAYOUT_AGENT_NOT_READY` is a deliberate stop, not a fault: the
+relationship and purpose carried per payment on this corridor are only mapped
+correctly by an agent that has confirmed the capability, and an order created
+before that would be settled against hardcoded values.
 
 Operator review happens on the Unigox side, over the same records, in the
 compliance queue. Value/velocity and fan-out holds surfaced to partners as
@@ -174,7 +251,11 @@ earlier drafts of this page.
 ## Updates and deletion
 
 - Reuse an active recipient instead of creating duplicates.
-- Update identity with `PATCH /api/v1/partner/recipients/{recipient_id}`.
+- Update identity with `PATCH /api/v1/partner/recipients/{recipient_id}`. This
+  bumps `version` and resets `screening_status` to `pending`, because the
+  identity that was screened is no longer the identity on file. A quote for that
+  recipient returns `THIRD_PARTY_CONTEXT_INVALID` until screening clears again,
+  so do not PATCH immediately before quoting.
 - List destinations with
   `GET /api/v1/partner/recipients/{recipient_id}/destinations`.
 - Archive a recipient with

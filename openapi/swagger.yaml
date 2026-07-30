@@ -792,7 +792,9 @@ paths:
       description: |
         Creates a new user relation or returns existing if already created. Returns user_ref (same as input) for subsequent API calls. Partners can only access their own users.
 
-        Each partner user must represent one actual payout beneficiary/end customer. Create a separate partner user for each beneficiary. Do not attach payment details for unrelated people to the same `user_uuid`; third-party payouts are not supported.
+        Each partner user must represent one actual payout beneficiary/end customer. Create a separate partner user for each beneficiary. Do not attach payment details for unrelated people to the same `user_uuid`.
+
+        A partner user is the SENDER. To pay someone else, do not create a shell user for the payee — register a recipient (`/api/v1/partner/recipients`) and quote against it. See the Third-party payouts guide.
       operationId: createPartnerUser
       security:
         - ApiKeyAuth: []
@@ -1786,6 +1788,66 @@ paths:
           description: Internal Server Error
 
   # ============================================
+  /api/v1/partner/wallet:
+    get:
+      tags:
+        - Off-Ramp
+      summary: Get the funding wallet
+      description: |
+        Returns the wallet a partner tops up with crypto, and the tokens it accepts.
+
+        Every off-ramp order is funded by transferring crypto from this wallet into the order's
+        escrow (`/orders/{order_id}/transfer-authorization-parameters` then
+        `/orders/{order_id}/authorize-crypto-transfer`). The wallet must therefore already hold the
+        crypto before you initiate — this endpoint is how you learn where to send it.
+
+        `address` is the same value that later appears as `sender_address` on an order's transfer
+        authorization parameters.
+
+        Send only the tokens listed in `accepted_tokens`, on the chain identified by `chain_id`.
+        A transfer of anything else, or on another chain, is not swept and cannot fund an order.
+      operationId: getPartnerFundingWallet
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Funding wallet returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerFundingWallet'
+              example:
+                success: true
+                data:
+                  address: "0x748De8Af75f919707Ee29004e68DA3cb708788B1"
+                  chain_id: "660279"
+                  chain_name: XAI
+                  rpc_url: "https://rpc.xai-chain.net"
+                  accepted_tokens:
+                    - crypto_currency: USDT
+                      token_address: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
+                      decimals: 6
+                    - crypto_currency: USDC
+                      token_address: "0x37BF70ee0dC89a408De31B79cCCC3152F0C8AF43"
+                      decimals: 6
+        '401':
+          description: Partner not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '500':
+          description: No funding wallet is provisioned for this partner yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
   # 8. LIQUIDITY
   # ============================================
   /api/v1/partner/liquidity:
@@ -2901,13 +2963,15 @@ paths:
                       data:
                         $ref: '#/components/schemas/PartnerRecipientResponse'
         '400':
-          description: Invalid recipient
+          description: |
+            Invalid recipient. `error.message` names what to fix; `error.details.reason` carries a
+            stable machine slug. Screening runs asynchronously AFTER creation, so it never rejects
+            here — a recipient is created with `screening_status: pending` and becomes usable for a
+            quote only once it reaches `cleared`.
         '401':
           description: Partner not authenticated
-        '409':
-          description: Recipient conflicts with an existing record
-        '422':
-          description: Recipient screening blocked registration
+        '503':
+          description: Recipient directory unreachable. The request was not wrong; retry with backoff.
         '500':
           description: Internal Server Error
 
@@ -3042,11 +3106,15 @@ paths:
                       data:
                         $ref: '#/components/schemas/PartnerRecipientDestination'
         '400':
-          description: Invalid or unsupported destination
+          description: |
+            The destination was rejected. `error.message` is the validator's own diagnostic and
+            names the offending field — e.g. `unknown field 'company_name' is not allowed for this
+            payment network` when `details.beneficiary_type` was omitted for a company, or
+            `field 'mobile_number' does not match required pattern`.
         '404':
           description: Recipient not found for this partner
-        '422':
-          description: Destination details do not satisfy the rail configuration
+        '503':
+          description: Recipient directory unreachable. The request was not wrong; retry with backoff.
 
   /api/v1/partner/offramp/quote:
     post:
@@ -3071,8 +3139,12 @@ paths:
         request a new quote to use changed details.
 
         On `/initiate`, Unigox revalidates the quote snapshot and creates a durable compliance case.
-        The order may proceed, be held for review, or be blocked. API-created third-party payouts use
-        the same Compliance queue as portal-created payouts.
+        In v1 there is no partner-visible review state machine: every control is enforced BEFORE the
+        order exists, so a payout that fails one is rejected with an error code rather than returned
+        as a held order. An order that was created was authorized (`compliance.status: authorized`,
+        `risk_decision: allow`, `requires_review: false`). Operator review happens on the Unigox side
+        over the same records; API-created third-party payouts use the same Compliance queue as
+        portal-created payouts.
 
         **Anchor mode — provide exactly one of `crypto_amount` or `fiat_amount`:**
 
@@ -3418,12 +3490,22 @@ paths:
                   code: QUOTE_NOT_FOUND
                   message: "Quote not found"
         '409':
-          description: Quote expired, already used, or slippage exceeded
+          description: >-
+            Quote expired, already used, slippage exceeded, or — for a third-party payout — the
+            payout agent has not confirmed recipient-context support, in which case no order is
+            created and the quote is left untouched.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
               examples:
+                agent_not_ready:
+                  summary: Third-party payout capability not enabled
+                  value:
+                    success: false
+                    error:
+                      code: THIRD_PARTY_PAYOUT_AGENT_NOT_READY
+                      message: "third-party CNY payout is temporarily unavailable: the payout agent has not confirmed recipient-context support"
                 quote_expired:
                   summary: Quote has expired
                   value:
@@ -3451,7 +3533,10 @@ paths:
                         fiat_difference: 1510.38
         '422':
           description: >-
-            The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
+            The customer is not KYC-cleared (`KYC_NOT_CLEARED`), or the frozen third-party recipient
+            context is no longer usable (`THIRD_PARTY_CONTEXT_INVALID` — archived recipient, screening
+            no longer `cleared`, or a destination that stopped resolving).
+            `error.details.kyc_status` carries the customer's current
             partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
             `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
             review (up to 24h); keep the customer waiting and re-check. The message stays generic.
@@ -5362,6 +5447,42 @@ components:
           description: True when response is an estimate and not a reserving quote
           example: true
 
+    PartnerFundingWallet:
+      type: object
+      required: [address, chain_id, chain_name, accepted_tokens]
+      properties:
+        address:
+          type: string
+          description: The wallet that funds this partner's order escrows.
+          example: "0x748De8Af75f919707Ee29004e68DA3cb708788B1"
+        chain_id:
+          type: string
+          example: "660279"
+        chain_name:
+          type: string
+          example: XAI
+        rpc_url:
+          type: string
+          description: Public RPC for the settlement chain.
+        accepted_tokens:
+          type: array
+          description: >-
+            The only tokens that can fund an order. A transfer of anything else, or on another
+            chain, is not swept.
+          items:
+            type: object
+            required: [crypto_currency, token_address, decimals]
+            properties:
+              crypto_currency:
+                type: string
+                example: USDT
+              token_address:
+                type: string
+                example: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
+              decimals:
+                type: integer
+                example: 6
+
     PartnerRecipientDestinationInput:
       type: object
       required: [country_code, currency, rail, institution_id, details]
@@ -5477,7 +5598,12 @@ components:
         details:
           type: object
           additionalProperties: true
-          description: Partner-visible destination details returned according to the Account service masking policy.
+          description: >-
+            The rail's own fields, as submitted. On reads, values that identify an account or a
+            person are masked to last-4 (`account_number`, `bank_account_number`, `iban`,
+            `card_number`, `id_number`, `national_id`, `tax_id`, `mobile_number`, `phone_number`,
+            `msisdn`); everything else — names, `bank_name`, `province`, `branch`, routing codes,
+            `beneficiary_type` — is returned in full so destinations stay distinguishable.
         version: { type: integer, minimum: 1 }
         lifecycle: { type: string, enum: [active, archived] }
         created_at: { type: string, format: date-time }
@@ -5582,7 +5708,10 @@ components:
         payment_details_id:
           type: integer
           format: int64
-          description: Required for self-payout and omitted for third-party payout.
+          description: >-
+            Required for a self-payout. MUST be omitted for a third-party payout, which is routed by
+            `recipient_destination_id`. Sending both is rejected with `400 INVALID_REQUEST` — the
+            two modes are mutually exclusive and neither silently wins.
           example: 987
         sender_id:
           type: string
