@@ -2874,14 +2874,11 @@ paths:
           description: Internal Server Error
     post:
       tags: [Recipients]
-      summary: Register a recipient and destination
+      summary: Register a recipient
       description: |
-        Registers a third party and its first payout destination for one real KYC-verified sender.
-        `sender_id` must be the canonical public UUID of that real sender. Do not reuse one shell
-        sender for multiple underlying customers.
-
-        The recipient and destination are screened and versioned by Unigox. Vendor-specific terms
-        such as beneficiary or receiver are intentionally absent from this API.
+        Registers a partner-scoped third-party recipient identity. Add payout destinations
+        separately with `POST /recipients/{recipient_id}/destinations`.
+        Vendor-specific terms such as beneficiary or receiver are intentionally absent.
       operationId: createPartnerRecipient
       security:
         - ApiKeyAuth: []
@@ -2893,7 +2890,7 @@ paths:
               $ref: '#/components/schemas/PartnerCreateRecipientRequest'
       responses:
         '200':
-          description: Recipient and destination registered
+          description: Recipient registered
           content:
             application/json:
               schema:
@@ -2904,13 +2901,13 @@ paths:
                       data:
                         $ref: '#/components/schemas/PartnerRecipientResponse'
         '400':
-          description: Invalid recipient or destination
+          description: Invalid recipient
         '401':
           description: Partner not authenticated
         '409':
           description: Recipient conflicts with an existing record
         '422':
-          description: Sender is not eligible or recipient screening blocked registration
+          description: Recipient screening blocked registration
         '500':
           description: Internal Server Error
 
@@ -3011,16 +3008,14 @@ paths:
                         $ref: '#/components/schemas/PartnerRecipientDestinationsResponse'
         '404':
           description: Recipient not found for this partner
-
-  /api/v1/partner/recipients/{recipient_id}/payment-context:
     post:
       tags: [Recipients]
-      summary: Bind payment-level relationship and purpose
+      summary: Add a recipient destination
       description: |
-        Creates an immutable sender-to-recipient payment context. Relationship and purpose belong
-        to this payment, not to the recipient. The returned `payment_context.id` is audit evidence;
-        the quote endpoint independently validates and snapshots the same canonical facts.
-      operationId: createPartnerRecipientPaymentContext
+        Adds a payout route for this recipient. `rail` and `institution_id` are resolved to
+        the platform payment-network and payment-method IDs. `details` is validated against
+        the selected rail configuration. Relationship and purpose are supplied later on the quote.
+      operationId: createPartnerRecipientDestination
       security:
         - ApiKeyAuth: []
       parameters:
@@ -3033,10 +3028,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PartnerCreatePaymentContextRequest'
+              $ref: '#/components/schemas/PartnerRecipientDestinationInput'
       responses:
         '200':
-          description: Immutable payment context created
+          description: Destination created
           content:
             application/json:
               schema:
@@ -3045,13 +3040,13 @@ paths:
                   - type: object
                     properties:
                       data:
-                        $ref: '#/components/schemas/PartnerPaymentContextResponse'
+                        $ref: '#/components/schemas/PartnerRecipientDestination'
         '400':
-          description: Invalid relationship, purpose, or destination
+          description: Invalid or unsupported destination
         '404':
-          description: Recipient or destination not found for this partner
+          description: Recipient not found for this partner
         '422':
-          description: Screening or sender eligibility prevents use
+          description: Destination details do not satisfy the rail configuration
 
   /api/v1/partner/offramp/quote:
     post:
@@ -5369,8 +5364,13 @@ components:
 
     PartnerRecipientDestinationInput:
       type: object
-      required: [currency, rail, account_holder_name, account_number]
+      required: [country_code, currency, rail, institution_id, details]
       properties:
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+          example: CN
         currency:
           type: string
           minLength: 3
@@ -5379,43 +5379,20 @@ components:
         rail:
           type: string
           example: cnaps
-        account_holder_name:
+        institution_id:
           type: string
-          example: Shanghai Supplier Co Ltd
-        account_holder_native_name:
-          type: string
-          example: 上海供应商有限公司
-        bank_name:
-          type: string
-          example: Bank of China Shanghai Branch
-        bank_code:
-          type: string
-          description: Rail-specific bank code, for example a CNAPS bank code.
-        account_number:
-          type: string
-          writeOnly: true
-          description: Full account number accepted only on write; read responses return a masked value.
-        province:
-          type: string
-        branch:
-          type: string
-        extra:
+          description: Institution identifier returned by the supported-institutions endpoint.
+        details:
           type: object
           additionalProperties: true
-          description: Rail-specific values. Canonical fields above take precedence at execution.
+          description: Rail-specific fields validated using the selected payment network configuration.
 
     PartnerCreateRecipientRequest:
       type: object
       required:
-        - sender_id
         - recipient_name
         - recipient_country
-        - recipient_destination
       properties:
-        sender_id:
-          type: string
-          format: uuid
-          description: Public UUID of the real KYC-verified sender who owns this recipient relationship.
         recipient_kind:
           type: string
           enum: [individual, business]
@@ -5438,9 +5415,6 @@ components:
         recipient_business_registration_number:
           type: string
           writeOnly: true
-        recipient_destination:
-          $ref: '#/components/schemas/PartnerRecipientDestinationInput'
-
     PartnerUpdateRecipientRequest:
       type: object
       minProperties: 1
@@ -5451,36 +5425,6 @@ components:
         recipient_id_type: { type: string }
         recipient_id_number: { type: string, writeOnly: true }
         recipient_business_registration_number: { type: string, writeOnly: true }
-
-    PartnerCreatePaymentContextRequest:
-      type: object
-      required:
-        - sender_id
-        - recipient_destination_id
-        - sender_recipient_relationship
-        - purpose_of_payment
-      properties:
-        sender_id:
-          type: string
-          format: uuid
-        recipient_destination_id:
-          type: string
-          format: uuid
-        sender_recipient_relationship:
-          type: string
-          example: supplier
-        purpose_of_payment:
-          type: string
-          example: goods_and_services
-        purpose_details:
-          type: string
-          example: "Invoice INV-2026-0042"
-        invoice_reference:
-          type: string
-          example: INV-2026-0042
-        corridor:
-          type: string
-          example: CNY-CNAPS
 
     PartnerRecipient:
       type: object
@@ -5500,11 +5444,11 @@ components:
           type: string
           nullable: true
           description: Masked when returned.
-        lifecycle: { type: string, enum: [active, archived] }
+        lifecycle: { type: string, enum: [draft, active, archived] }
         version: { type: integer, minimum: 1 }
         screening_status:
           type: string
-          enum: [pending, clear, review, blocked]
+          enum: [pending, cleared, hit, manual_review]
         screened_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
 
@@ -5513,57 +5457,29 @@ components:
       required:
         - id
         - recipient_id
+        - payment_method_id
+        - payment_network_id
+        - country_code
         - currency
-        - rail
-        - account_holder_name
-        - account_number_masked
         - version
         - lifecycle
         - created_at
       properties:
         id: { type: string, format: uuid }
         recipient_id: { type: string, format: uuid }
+        payment_method_id: { type: integer, format: int64 }
+        payment_network_id: { type: integer, format: int64 }
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
         currency: { type: string }
-        rail: { type: string }
-        account_holder_name: { type: string }
-        account_holder_native_name: { type: string, nullable: true }
-        bank_name: { type: string, nullable: true }
-        bank_code: { type: string, nullable: true }
-        account_number_masked: { type: string, example: "******6789" }
-        province: { type: string, nullable: true }
-        branch: { type: string, nullable: true }
+        details:
+          type: object
+          additionalProperties: true
+          description: Partner-visible destination details returned according to the Account service masking policy.
         version: { type: integer, minimum: 1 }
         lifecycle: { type: string, enum: [active, archived] }
-        created_at: { type: string, format: date-time }
-
-    PartnerRecipientPaymentContext:
-      type: object
-      required:
-        - id
-        - sender_id
-        - recipient_id
-        - recipient_version
-        - recipient_destination_id
-        - recipient_destination_version
-        - sender_recipient_relationship
-        - purpose_of_payment
-        - screening_status_at_bind
-        - risk_decision
-        - created_at
-      properties:
-        id: { type: string, format: uuid }
-        sender_id: { type: string, format: uuid }
-        recipient_id: { type: string, format: uuid }
-        recipient_version: { type: integer, minimum: 1 }
-        recipient_destination_id: { type: string, format: uuid }
-        recipient_destination_version: { type: integer, minimum: 1 }
-        sender_recipient_relationship: { type: string }
-        purpose_of_payment: { type: string }
-        purpose_details: { type: string, nullable: true }
-        invoice_reference: { type: string, nullable: true }
-        screening_status_at_bind: { type: string }
-        risk_decision: { type: string }
-        corridor: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
 
     PartnerRecipientContext:
@@ -5574,8 +5490,6 @@ components:
         - recipient_destination_id
         - sender_recipient_relationship
         - purpose_of_payment
-        - context_id
-        - context_version
         - screening_status
       properties:
         sender_id: { type: string, format: uuid }
@@ -5584,23 +5498,33 @@ components:
         sender_recipient_relationship: { type: string }
         purpose_of_payment: { type: string }
         purpose_details: { type: string }
-        context_id: { type: string, format: uuid }
-        context_version: { type: integer, minimum: 1 }
         screening_status: { type: string }
 
     PartnerComplianceCase:
       type: object
       required: [case_id, status, risk_decision, requires_review]
+      description: |
+        The compliance record for a third-party payout. In v1 the controls run BEFORE the order is
+        created, so a payout that fails one is rejected with an error rather than returned as a held
+        order — see the error codes in the Third-party payouts guide.
       properties:
         case_id:
           type: string
           format: uuid
-          description: Durable case identifier visible to Unigox Compliance.
+          description: |
+            Identifier of the compliance record — the payout's `quote_id`, so a partner and a Unigox
+            operator refer to the same record.
         status:
           type: string
-          enum: [vendor_ready, under_review, blocked, approved, rejected]
-        risk_decision: { type: string }
-        requires_review: { type: boolean }
+          enum: [authorized]
+          description: v1 emits `authorized`; a rejected payout returns an error instead.
+        risk_decision:
+          type: string
+          enum: [allow]
+          description: v1 emits `allow`; a blocking decision surfaces as an error, not a status.
+        requires_review:
+          type: boolean
+          description: Always false in v1. Operator review happens Unigox-side over the same record.
 
     PartnerRecipientResponse:
       type: object
@@ -5633,13 +5557,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PartnerRecipientDestination'
-
-    PartnerPaymentContextResponse:
-      type: object
-      required: [payment_context]
-      properties:
-        payment_context:
-          $ref: '#/components/schemas/PartnerRecipientPaymentContext'
 
     PartnerQuoteRequest:
       type: object
