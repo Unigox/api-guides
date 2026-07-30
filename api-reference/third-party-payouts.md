@@ -21,11 +21,18 @@ results for every sender.
    relationship, and purpose.
 5. Initiate the quote. Unigox creates the order and applies the same compliance
    controls used by Portal payouts.
-6. Fund the order's escrow from your wallet:
+6. Wait for a liquidity provider to accept. A new order starts at
+   `awaiting_liquidity_provider` and has no escrow yet, so
+   `transfer-authorization-parameters` answers `409 INVALID_STATUS` ("no
+   liquidity provider has accepted it"). Poll `GET /orders/{order_id}` — or take
+   a webhook — until `next_action` becomes `authorize_crypto_transfer`.
+7. Fund the order's escrow from your wallet:
    `GET /api/v1/partner/orders/{order_id}/transfer-authorization-parameters`,
    sign the returned ForwardRequest, then
    `POST /api/v1/partner/orders/{order_id}/authorize-crypto-transfer`.
-7. Read the order and compliance state.
+   `sender_address` in that response is the same wallet step 0 returned, and
+   `recipient_address` is the escrow deployed for this order.
+8. Read the order and compliance state.
 
 The wallet is the partner's, not the end user's. Unigox does not currently issue
 a per-end-user deposit address on the partner API, so an end user topping up in
