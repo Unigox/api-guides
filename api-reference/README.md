@@ -10,6 +10,7 @@ Reference groups:
 - [User Management](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/user-management)
 - [On-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/on-ramp)
 - [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp)
+- [Third-party payouts](./third-party-payouts.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
 - [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
 

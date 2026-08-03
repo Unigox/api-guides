@@ -68,6 +68,9 @@ tags:
   - name: Off-Ramp
     description: Off-ramp operations (crypto to fiat) — sell crypto and receive fiat
     x-page-icon: arrow-right-arrow-left
+  - name: Recipients
+    description: Register and manage third parties paid by KYC-verified senders
+    x-page-icon: users
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
     x-page-icon: receipt
@@ -789,7 +792,9 @@ paths:
       description: |
         Creates a new user relation or returns existing if already created. Returns user_ref (same as input) for subsequent API calls. Partners can only access their own users.
 
-        Each partner user must represent one actual payout beneficiary/end customer. Create a separate partner user for each beneficiary. Do not attach payment details for unrelated people to the same `user_uuid`; third-party payouts are not supported.
+        Each partner user must represent one actual payout beneficiary/end customer. Create a separate partner user for each beneficiary. Do not attach payment details for unrelated people to the same `user_uuid`.
+
+        A partner user is the SENDER. To pay someone else, do not create a shell user for the payee — register a recipient (`/api/v1/partner/recipients`) and quote against it. See the Third-party payouts guide.
       operationId: createPartnerUser
       security:
         - ApiKeyAuth: []
@@ -2819,6 +2824,238 @@ paths:
         '500':
           description: Internal Server Error
 
+  /api/v1/partner/recipients:
+    get:
+      tags: [Recipients]
+      summary: List recipients
+      description: |
+        Lists third parties registered by the authenticated partner. A recipient is the person or
+        business a KYC-verified sender pays; it is not the sender's own payment profile.
+        Results are tenant-scoped and never expose an unmasked account number.
+      operationId: listPartnerRecipients
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+          description: Search by recipient name or partner-visible identifier.
+        - in: query
+          name: screening_status
+          schema: { type: string }
+        - in: query
+          name: recipient_country
+          schema: { type: string, minLength: 2, maxLength: 2 }
+        - in: query
+          name: currency
+          schema: { type: string, minLength: 3, maxLength: 3 }
+        - in: query
+          name: rail
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: Recipients returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerRecipientListResponse'
+        '401':
+          description: Partner not authenticated
+        '500':
+          description: Internal Server Error
+    post:
+      tags: [Recipients]
+      summary: Register a recipient
+      description: |
+        Registers a partner-scoped third-party recipient identity. Add payout destinations
+        separately with `POST /recipients/{recipient_id}/destinations`.
+        Vendor-specific terms such as beneficiary or receiver are intentionally absent.
+      operationId: createPartnerRecipient
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerCreateRecipientRequest'
+      responses:
+        '200':
+          description: Recipient registered
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerRecipientResponse'
+        '400':
+          description: |
+            Invalid recipient. `error.message` names what to fix; `error.details.reason` carries a
+            stable machine slug. Screening runs asynchronously AFTER creation, so it never rejects
+            here — a recipient is created with `screening_status: pending` and becomes usable for a
+            quote only once it reaches `cleared`.
+        '401':
+          description: Partner not authenticated
+        '503':
+          description: Recipient directory unreachable. The request was not wrong; retry with backoff.
+        '500':
+          description: Internal Server Error
+
+  /api/v1/partner/recipients/{recipient_id}:
+    parameters:
+      - in: path
+        name: recipient_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Recipients]
+      summary: Get recipient
+      operationId: getPartnerRecipient
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Recipient returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerRecipientResponse'
+        '404':
+          description: Recipient not found for this partner
+    patch:
+      tags: [Recipients]
+      summary: Update recipient identity
+      description: |
+        Updates recipient identity by creating a new immutable version. Existing quotes and orders
+        keep their original snapshot; request a new quote to use the updated data.
+      operationId: updatePartnerRecipient
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerUpdateRecipientRequest'
+      responses:
+        '200':
+          description: Updated recipient returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerRecipientResponse'
+        '400':
+          description: Invalid update
+        '404':
+          description: Recipient not found for this partner
+    delete:
+      tags: [Recipients]
+      summary: Archive recipient
+      description: Archives the recipient for future use. Existing immutable order snapshots remain auditable.
+      operationId: archivePartnerRecipient
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Recipient archived
+        '404':
+          description: Recipient not found for this partner
+
+  /api/v1/partner/recipients/{recipient_id}/destinations:
+    get:
+      tags: [Recipients]
+      summary: List recipient destinations
+      description: Returns masked payout destinations belonging to this recipient and partner.
+      operationId: listPartnerRecipientDestinations
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: recipient_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Masked destinations returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerRecipientDestinationsResponse'
+        '404':
+          description: Recipient not found for this partner
+    post:
+      tags: [Recipients]
+      summary: Add a recipient destination
+      description: |
+        Adds a payout route for this recipient. `rail` and `institution_id` are resolved to
+        the platform payment-network and payment-method IDs. `details` is validated against
+        the selected rail configuration. Relationship and purpose are supplied later on the quote.
+      operationId: createPartnerRecipientDestination
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: recipient_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerRecipientDestinationInput'
+      responses:
+        '200':
+          description: Destination created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerRecipientDestination'
+        '400':
+          description: |
+            The destination was rejected. `error.message` is the validator's own diagnostic and
+            names the offending field — e.g. `unknown field 'company_name' is not allowed for this
+            payment network` when `details.beneficiary_type` was omitted for a company, or
+            `field 'mobile_number' does not match required pattern`.
+        '404':
+          description: Recipient not found for this partner
+        '503':
+          description: Recipient directory unreachable. The request was not wrong; retry with backoff.
+
   /api/v1/partner/offramp/quote:
     post:
       tags:
@@ -2829,8 +3066,25 @@ paths:
         amounts, and a quote ID that can be used to initiate the order. Quotes expire after 60 seconds.
 
         The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
-        The `payment_details_id` is the ID of a previously created payment profile for the user.
-        The payment profile must belong to the same beneficiary represented by `user_uuid`; third-party payouts are not supported.
+
+        **Choose exactly one payout ownership mode:**
+        - Self-payout: provide `payment_details_id` for an account owned by `user_uuid`.
+        - Third-party payout: omit `payment_details_id` and provide `sender_id`, `recipient_id`,
+          `recipient_destination_id`, `sender_recipient_relationship`, and `purpose_of_payment`.
+
+        For a third-party payout, `sender_id` must identify the same real KYC subject as `user_uuid`.
+        At quote time Unigox validates tenant ownership, sender eligibility, destination currency/rail,
+        recipient screening, relationship, and purpose. It persists an immutable canonical recipient
+        snapshot on the quote. Updating or archiving the recipient afterwards does not mutate the quote;
+        request a new quote to use changed details.
+
+        On `/initiate`, Unigox revalidates the quote snapshot and creates a durable compliance case.
+        In v1 there is no partner-visible review state machine: every control is enforced BEFORE the
+        order exists, so a payout that fails one is rejected with an error code rather than returned
+        as a held order. An order that was created was authorized (`compliance.status: authorized`,
+        `risk_decision: allow`, `requires_review: false`). Operator review happens on the Unigox side
+        over the same records; API-created third-party payouts use the same Compliance queue as
+        portal-created payouts.
 
         **Anchor mode — provide exactly one of `crypto_amount` or `fiat_amount`:**
 
@@ -2923,6 +3177,20 @@ paths:
                   slippage_tolerance:
                     type: percent
                     value: 1.5
+              third_party_cny:
+                summary: Third-party CNY payout to a registered recipient
+                value:
+                  user_uuid: "550e8400-e29b-41d4-a716-446655440000"
+                  sender_id: "550e8400-e29b-41d4-a716-446655440000"
+                  recipient_id: "6a973b80-6f66-4fd4-a48d-b81e544790e5"
+                  recipient_destination_id: "bbfa34e7-1dce-47d9-95bf-cbf71c9fbc0d"
+                  sender_recipient_relationship: supplier
+                  purpose_of_payment: goods_and_services
+                  purpose_details: "Invoice INV-2026-0042"
+                  crypto_currency: USDT
+                  fiat_amount: "500000"
+                  fiat_currency: CNY
+                  rail: cnaps
       responses:
         '200':
           description: Quote retrieved successfully
@@ -3162,12 +3430,22 @@ paths:
                   code: QUOTE_NOT_FOUND
                   message: "Quote not found"
         '409':
-          description: Quote expired, already used, or slippage exceeded
+          description: >-
+            Quote expired, already used, slippage exceeded, or — for a third-party payout — the
+            payout agent has not confirmed recipient-context support, in which case no order is
+            created and the quote is left untouched.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
               examples:
+                agent_not_ready:
+                  summary: Third-party payout capability not enabled
+                  value:
+                    success: false
+                    error:
+                      code: THIRD_PARTY_PAYOUT_AGENT_NOT_READY
+                      message: "third-party CNY payout is temporarily unavailable: the payout agent has not confirmed recipient-context support"
                 quote_expired:
                   summary: Quote has expired
                   value:
@@ -3195,7 +3473,10 @@ paths:
                         fiat_difference: 1510.38
         '422':
           description: >-
-            The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
+            The customer is not KYC-cleared (`KYC_NOT_CLEARED`), or the frozen third-party recipient
+            context is no longer usable (`THIRD_PARTY_CONTEXT_INVALID` — archived recipient, screening
+            no longer `cleared`, or a destination that stopped resolving).
+            `error.details.kyc_status` carries the customer's current
             partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
             `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
             review (up to 24h); keep the customer waiting and re-check. The message stays generic.
@@ -3427,7 +3708,22 @@ paths:
         '401':
           description: Unauthorized
         '404':
-          description: Order not found
+          description: No order with this id belongs to your partner account.
+        '409':
+          description: >-
+            The order exists but is not at a stage where it can be funded. A new order starts at
+            `awaiting_liquidity_provider` with no escrow yet, so this is the normal answer until a
+            provider accepts — poll `GET /orders/{order_id}` until `next_action` becomes
+            `authorize_crypto_transfer`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "order is not ready for this action yet: no liquidity provider has accepted it"
 
   /api/v1/partner/orders/{order_id}/authorize-crypto-transfer:
     post:
@@ -5106,12 +5402,222 @@ components:
           description: True when response is an estimate and not a reserving quote
           example: true
 
+    PartnerRecipientDestinationInput:
+      type: object
+      required: [country_code, currency, rail, institution_id, details]
+      properties:
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+          example: CN
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          example: CNY
+        rail:
+          type: string
+          example: cnaps
+        institution_id:
+          type: string
+          description: Institution identifier returned by the supported-institutions endpoint.
+        details:
+          type: object
+          additionalProperties: true
+          description: Rail-specific fields validated using the selected payment network configuration.
+
+    PartnerCreateRecipientRequest:
+      type: object
+      required:
+        - recipient_name
+        - recipient_country
+      properties:
+        recipient_kind:
+          type: string
+          enum: [individual, business]
+          default: individual
+        recipient_name:
+          type: string
+        recipient_native_name:
+          type: string
+        recipient_country:
+          type: string
+          minLength: 2
+          maxLength: 2
+          example: CN
+        recipient_id_type:
+          type: string
+          example: national_id
+        recipient_id_number:
+          type: string
+          writeOnly: true
+        recipient_business_registration_number:
+          type: string
+          writeOnly: true
+    PartnerUpdateRecipientRequest:
+      type: object
+      minProperties: 1
+      properties:
+        recipient_name: { type: string }
+        recipient_native_name: { type: string }
+        recipient_country: { type: string, minLength: 2, maxLength: 2 }
+        recipient_id_type: { type: string }
+        recipient_id_number: { type: string, writeOnly: true }
+        recipient_business_registration_number: { type: string, writeOnly: true }
+
+    PartnerRecipient:
+      type: object
+      required: [id, kind, recipient_name, recipient_country, lifecycle, version, screening_status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [individual, business] }
+        recipient_name: { type: string }
+        recipient_native_name: { type: string, nullable: true }
+        recipient_country: { type: string }
+        recipient_id_type: { type: string, nullable: true }
+        recipient_id_number:
+          type: string
+          nullable: true
+          description: Masked partner-visible identity value; full value is never returned.
+        recipient_business_registration_number:
+          type: string
+          nullable: true
+          description: Masked when returned.
+        lifecycle: { type: string, enum: [draft, active, archived] }
+        version: { type: integer, minimum: 1 }
+        screening_status:
+          type: string
+          enum: [pending, cleared, hit, manual_review]
+        screened_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    PartnerRecipientDestination:
+      type: object
+      required:
+        - id
+        - recipient_id
+        - payment_method_id
+        - payment_network_id
+        - country_code
+        - currency
+        - version
+        - lifecycle
+        - created_at
+      properties:
+        id: { type: string, format: uuid }
+        recipient_id: { type: string, format: uuid }
+        payment_method_id: { type: integer, format: int64 }
+        payment_network_id: { type: integer, format: int64 }
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+        currency: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+          description: >-
+            The rail's own fields, as submitted. On reads, values that identify an account or a
+            person are masked to last-4 (`account_number`, `bank_account_number`, `iban`,
+            `card_number`, `id_number`, `national_id`, `tax_id`, `mobile_number`, `phone_number`,
+            `msisdn`); everything else — names, `bank_name`, `province`, `branch`, routing codes,
+            `beneficiary_type` — is returned in full so destinations stay distinguishable.
+        version: { type: integer, minimum: 1 }
+        lifecycle: { type: string, enum: [active, archived] }
+        created_at: { type: string, format: date-time }
+
+    PartnerRecipientContext:
+      type: object
+      required:
+        - sender_id
+        - recipient_id
+        - recipient_destination_id
+        - sender_recipient_relationship
+        - purpose_of_payment
+        - screening_status
+      properties:
+        sender_id: { type: string, format: uuid }
+        recipient_id: { type: string, format: uuid }
+        recipient_destination_id: { type: string, format: uuid }
+        sender_recipient_relationship: { type: string }
+        purpose_of_payment: { type: string }
+        purpose_details: { type: string }
+        screening_status: { type: string }
+
+    PartnerComplianceCase:
+      type: object
+      required: [case_id, status, risk_decision, requires_review]
+      description: |
+        The compliance record for a third-party payout. In v1 the controls run BEFORE the order is
+        created, so a payout that fails one is rejected with an error rather than returned as a held
+        order — see the error codes in the Third-party payouts guide.
+      properties:
+        case_id:
+          type: string
+          format: uuid
+          description: |
+            Identifier of the compliance record — the payout's `quote_id`, so a partner and a Unigox
+            operator refer to the same record.
+        status:
+          type: string
+          enum: [authorized]
+          description: v1 emits `authorized`; a rejected payout returns an error instead.
+        risk_decision:
+          type: string
+          enum: [allow]
+          description: v1 emits `allow`; a blocking decision surfaces as an error, not a status.
+        requires_review:
+          type: boolean
+          description: Always false in v1. Operator review happens Unigox-side over the same record.
+
+    PartnerRecipientResponse:
+      type: object
+      required: [recipient]
+      properties:
+        recipient:
+          $ref: '#/components/schemas/PartnerRecipient'
+        recipient_destination:
+          allOf:
+            - $ref: '#/components/schemas/PartnerRecipientDestination'
+          nullable: true
+
+    PartnerRecipientListResponse:
+      type: object
+      required: [recipients, total, limit, offset]
+      properties:
+        recipients:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartnerRecipient'
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1 }
+        offset: { type: integer, minimum: 0 }
+
+    PartnerRecipientDestinationsResponse:
+      type: object
+      required: [recipient_destinations]
+      properties:
+        recipient_destinations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartnerRecipientDestination'
+
     PartnerQuoteRequest:
       type: object
-      required: [user_uuid, payment_details_id, crypto_currency, fiat_currency]
-      oneOf:
-        - required: [crypto_amount]
-        - required: [fiat_amount]
+      required: [user_uuid, crypto_currency, fiat_currency]
+      allOf:
+        - oneOf:
+            - required: [crypto_amount]
+            - required: [fiat_amount]
+        - oneOf:
+            - required: [payment_details_id]
+            - required:
+                - sender_id
+                - recipient_id
+                - recipient_destination_id
+                - sender_recipient_relationship
+                - purpose_of_payment
       properties:
         user_uuid:
           type: string
@@ -5121,8 +5627,39 @@ components:
         payment_details_id:
           type: integer
           format: int64
-          description: ID of a previously created payment profile for the user
+          description: >-
+            Required for a self-payout. MUST be omitted for a third-party payout, which is routed by
+            `recipient_destination_id`. Sending both is rejected with `400 INVALID_REQUEST` — the
+            two modes are mutually exclusive and neither silently wins.
           example: 987
+        sender_id:
+          type: string
+          format: uuid
+          description: |
+            Canonical KYC subject who is funding the third-party payout. Required for third-party
+            payout and must equal the real sender represented by `user_uuid`.
+        recipient_id:
+          type: string
+          format: uuid
+          description: Partner-owned recipient returned by `POST /partner/recipients`.
+        recipient_destination_id:
+          type: string
+          format: uuid
+          description: Active destination owned by `recipient_id`; replaces `payment_details_id` for third-party payout.
+        sender_recipient_relationship:
+          type: string
+          minLength: 1
+          description: Payment-level relationship between the real sender and recipient, for example `supplier` or `family`.
+          example: supplier
+        purpose_of_payment:
+          type: string
+          minLength: 1
+          description: Canonical payment purpose used for compliance and translated only at the vendor boundary.
+          example: goods_and_services
+        purpose_details:
+          type: string
+          description: Optional invoice or free-text clarification of the payment purpose.
+          example: "Invoice INV-2026-0042"
         crypto_currency:
           type: string
           description: Cryptocurrency code (e.g., USDT, USDC)
@@ -5265,6 +5802,11 @@ components:
             to the recipient. When `false`, you must call `confirm-fiat-received`.
             You can call `confirm-fiat-received` at any time regardless of this value.
           example: true
+        recipient_context:
+          allOf:
+            - $ref: '#/components/schemas/PartnerRecipientContext'
+          nullable: true
+          description: Immutable canonical recipient snapshot for a third-party quote; absent for self-payout.
 
     PartnerInitiateRequest:
       type: object
@@ -5317,6 +5859,15 @@ components:
           type: string
           format: date-time
           example: "2026-02-01T12:00:05Z"
+        recipient_context:
+          allOf:
+            - $ref: '#/components/schemas/PartnerRecipientContext'
+          nullable: true
+        compliance:
+          allOf:
+            - $ref: '#/components/schemas/PartnerComplianceCase'
+          nullable: true
+          description: Durable case shown in Compliance admin for third-party payout.
 
     PartnerOrderResponse:
       type: object
@@ -5475,6 +6026,16 @@ components:
             Destination-chain transaction hash after a send-out completes.
             Present only for on-ramp orders with `send_out_completed` status.
           example: "0xd413bf3b8fe3b1d86b1e6d4c40a82eb8c94824202ff9a010161301400ab1552d"
+        recipient_context:
+          allOf:
+            - $ref: '#/components/schemas/PartnerRecipientContext'
+          nullable: true
+          description: Immutable third-party recipient context; absent for self-payout and on-ramp.
+        compliance:
+          allOf:
+            - $ref: '#/components/schemas/PartnerComplianceCase'
+          nullable: true
+          description: Current durable compliance-case state for a third-party payout.
 
     PartnerOrderAmounts:
       type: object
