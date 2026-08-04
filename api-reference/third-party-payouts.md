@@ -106,6 +106,16 @@ Content-Type: application/json
 payment network and payment method IDs and stores those, so the route is a real
 reference rather than a string.
 
+`/api/v1/supported/institutions` is **paginated**: `limit` defaults to `20` and
+caps at `100` (a larger value is a `400`, not a silent clamp), and `offset`
+defaults to `0` — read `pagination.total` to know how far to page. On a corridor
+like CNY/CNAPS, which lists hundreds of banks, do not conclude a bank is missing
+from the first page: filter with `search` (matches name or slug, case-insensitive
+partial), `code` (the institution's own bank code), or `institution_id` (exact
+slug) instead of paging through everything. Only institutions that are live on
+the queried rail are listed, so an institution absent from the response cannot be
+paid — creating a destination on it is refused.
+
 ### `details` field names come from the rail
 
 `details` is validated against the selected rail's configuration, and its keys
@@ -250,12 +260,14 @@ order — the request is rejected, and you act on the error:
 | --- | --- | ---: | --- |
 | `KYC_NOT_CLEARED` | 422 | The sender's KYC is not cleared for this partner. | Complete the sender's KYC; do not substitute another user. |
 | `THIRD_PARTY_CONTEXT_INVALID` | 422 | The recipient/destination is not usable: not found for this partner, archived, screening not `cleared`, incomplete route, or `sender_id` ≠ `user_uuid`. | Read the message; re-check the recipient, or wait for screening. |
-| `INVALID_REQUEST` | 400 | The payload is wrong — a `details` field the rail does not accept, a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a destination currency that is not `fiat_currency`, or a corridor that is not CNY/CNAPS. The message names what to fix. | Fix the request. |
+| `INVALID_REQUEST` | 400 | The payload is wrong — a `details` field the rail does not accept, a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a destination currency that is not `fiat_currency`, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). The message names what to fix. | Fix the request. |
 | `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
 | `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | The recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
 | `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later or use a different amount. |
 | `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
 | `RAIL_ROUTE_MISMATCH` | 400 | The rail you asked for does not match the route the destination resolves to. | Send the `rail` the destination was created with, or omit it. |
+| `THIRD_PARTY_PAYOUT_UNDER_REVIEW` | 422 | Returned on initiate. Compliance put this payout in review — someone looks at it on our side. | Do not retry the same payout; wait for the outcome. |
+| `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it outright, with nothing pending: a breached sender limit, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |
 
 `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` is a deliberate stop, not a fault: the
 relationship and purpose carried per payment on this corridor are only mapped
