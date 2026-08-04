@@ -517,6 +517,12 @@ paths:
         filter. For `imps-neft-india` this is the embedded India bank directory
         (~1,510 banks); selecting one is optional, since the bank is identified
         at payment-detail creation by `bank_name` + `ifsc_code`.
+
+
+        Only institutions that are currently live on the queried rail (and, when
+        given, in the queried country/currency) are returned. An institution
+        missing from the response cannot be paid, and creating a payment detail
+        or payout destination on it is refused.
       operationId: getInstitutions
       parameters:
         - name: rail
