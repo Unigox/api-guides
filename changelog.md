@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-07
+
+**Consumer-to-consumer payout rails now require the sender's own identity.** Chinese mobile wallets (Alipay, WeChat Pay — the `ewallet` format on `cnaps`) settle person to person: the remitter shown on the receiving wallet must be your paying customer, not Unigox and not your company. When the customer's KYC record cannot name them, `POST /api/v1/partner/offramp/initiate` returns `422 SENDER_IDENTITY_REQUIRED`. No order is created and the quote is reverted.
+
+- `error.details.missing_fields` is what the rail needs; `error.details.kyc_fields` is the subset you can supply, as the request body of `PATCH /api/v1/partner/users/{user_uuid}/kyc`. Send them, then retry with a fresh quote.
+- That endpoint gains four fields for this: `gender` (`M`/`F`), `nationality` and `id_issue_country` (ISO 3166-1 alpha-2), and `source_of_funds` (a fixed vocabulary — see the endpoint). `id_type` also accepts `RESIDENCE_PERMIT`. An unacceptable value is a `400` with `invalid_gender`, `invalid_country_code` or `invalid_source_of_funds`, and nothing is written.
+- When `kyc_fields` is shorter than `missing_fields`, the remainder (the name on the document, the country of residence) can only come from verification itself — the customer has to complete or redo KYC.
+
+Nothing changes for bank-format payouts, on-ramp, or any corridor other than the wallet formats. Send the customer's own details: substituting anyone else's is what the rail's identity check exists to catch.
+
 ## 2026-07-29
 
 **Third-party recipients are now first-class Partner API resources.** A KYC-verified sender can pay a separately registered recipient without representing that recipient as one of the sender's own payment methods.

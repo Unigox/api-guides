@@ -1396,6 +1396,23 @@ paths:
 
         For EUR/AUD/GBP offramp, provide address, city, and postal_code here.
         These will auto-populate into payment details for EUR/AUD/GBP payouts.
+
+        **Sender identity (consumer-to-consumer payout rails).** Chinese mobile wallets
+        (Alipay, WeChat Pay) settle person to person: the receiving wallet must show the
+        paying customer as the remitter, not Unigox. `POST /offramp/initiate` returns
+        `422 SENDER_IDENTITY_REQUIRED` when the customer's record cannot name them, listing
+        the fields to send here in `error.details.kyc_fields`. `gender`, `nationality`,
+        `id_issue_country` and `source_of_funds` exist for that flow, alongside `dob`,
+        `phone_number`, `id_number`, `id_type` and the address fields the same rails need.
+        Send them once, then retry the order.
+
+        The values are normalized before they are stored, and a value the rail would reject
+        is a `400` here rather than a failed payout later: `gender` accepts `M`/`F`
+        (`MALE`/`FEMALE` are folded in), `nationality` and `id_issue_country` take an ISO
+        3166-1 alpha-2 code, and `source_of_funds` takes one of the listed slugs.
+
+        The record belongs to the customer, not to a payout destination — never send another
+        person's details here to satisfy a payout.
       operationId: updateKYC
       security:
         - ApiKeyAuth: []
@@ -1441,9 +1458,49 @@ paths:
                   type: string
                 id_number:
                   type: string
+                  description: >-
+                    Document number, as printed on the document named by `id_type`.
+                  example: "AK9931245"
                 id_type:
                   type: string
-                  enum: [NATIONAL_ID, DRIVER_LICENSE, PASSPORT]
+                  enum: [NATIONAL_ID, DRIVER_LICENSE, PASSPORT, RESIDENCE_PERMIT]
+                gender:
+                  type: string
+                  enum: [M, F]
+                  description: >-
+                    Sender identity. As it appears on the identity document — payout rails match it
+                    against the document, so this is not a self-description field. `MALE`/`FEMALE`
+                    are accepted and normalized to `M`/`F`.
+                  example: "F"
+                nationality:
+                  type: string
+                  description: >-
+                    Sender identity. Nationality as an ISO 3166-1 alpha-2 code.
+                  example: "LT"
+                id_issue_country:
+                  type: string
+                  description: >-
+                    Sender identity. Country that issued the document, ISO 3166-1 alpha-2. Often but
+                    not always the same as `nationality`.
+                  example: "LT"
+                source_of_funds:
+                  type: string
+                  enum:
+                    - salary
+                    - business_income
+                    - savings
+                    - investment
+                    - gift
+                    - family_support
+                    - loan
+                    - sale_of_property
+                    - inheritance
+                    - other
+                  description: >-
+                    Sender identity. Where the money being sent comes from. Each payout rail maps
+                    this onto its own catalogue and refuses a payout it cannot map, so send the
+                    closest listed value rather than `other` when one applies.
+                  example: "salary"
       responses:
         '200':
           description: KYC data updated successfully
@@ -1468,10 +1525,13 @@ paths:
                         example: "KYC data updated successfully"
         '400':
           description: >-
-            Bad request — no valid fields, attempting to change a required field, or a date
-            of birth that fails validation. Body: `{ "success": false, "data": { "error_key": "...", "message": "..." } }`.
+            Bad request — no valid fields, attempting to change a required field, or a value
+            that fails validation. Body: `{ "success": false, "data": { "error_key": "...", "message": "..." } }`.
             DOB-related `error_key` values: `underage_not_allowed` (age under 18) and
-            `invalid_date_of_birth` (malformed or future date).
+            `invalid_date_of_birth` (malformed or future date). Sender-identity values:
+            `invalid_gender`, `invalid_country_code` (`nationality` / `id_issue_country` is not
+            an alpha-2 code) and `invalid_source_of_funds`. Nothing is written when one field
+            is rejected — fix it and resend the whole patch.
         '401':
           description: Unauthorized
         '404':
@@ -3479,24 +3539,52 @@ paths:
                         fiat_difference: 1510.38
         '422':
           description: >-
-            The customer is not KYC-cleared (`KYC_NOT_CLEARED`), or the frozen third-party recipient
-            context is no longer usable (`THIRD_PARTY_CONTEXT_INVALID` — archived recipient, screening
-            no longer `cleared`, or a destination that stopped resolving).
-            `error.details.kyc_status` carries the customer's current
-            partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
+            The request is well-formed but the party is not payable yet. No order is created and the
+            quote is reverted, so the same customer can retry once the cause is fixed.
+
+            `KYC_NOT_CLEARED` — the customer is not KYC-cleared. `error.details.kyc_status` carries
+            their current partner-facing status: `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
             `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
             review (up to 24h); keep the customer waiting and re-check. The message stays generic.
+
+            `THIRD_PARTY_CONTEXT_INVALID` — the frozen third-party recipient context is no longer
+            usable (archived recipient, screening no longer `cleared`, or a destination that stopped
+            resolving).
+
+            `SENDER_IDENTITY_REQUIRED` — the corridor settles consumer-to-consumer (Chinese mobile
+            wallets: the remitter shown on the receiving wallet has to be the paying customer, not
+            Unigox) and their record cannot name them. `error.details.missing_fields` is what the
+            rail needs; `error.details.kyc_fields` is the subset you can supply yourself, as the
+            request body of `PATCH /partner/users/{user_uuid}/kyc`. When `kyc_fields` is shorter than
+            `missing_fields`, the remainder (the name on the document, the country of residence) can
+            only come from verification itself — the customer has to complete or redo KYC. Send the
+            customer's own details: substituting anyone else's is what the rail's identity check
+            exists to catch.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: KYC_NOT_CLEARED
-                  message: "Customer is not cleared for this transaction"
-                  details:
-                    kyc_status: "IN_PROGRESS"
+              examples:
+                kyc_not_cleared:
+                  summary: Customer not KYC-cleared
+                  value:
+                    success: false
+                    error:
+                      code: KYC_NOT_CLEARED
+                      message: "Customer is not cleared for this transaction"
+                      details:
+                        kyc_status: "IN_PROGRESS"
+                sender_identity_required:
+                  summary: C2C corridor cannot name the sender
+                  value:
+                    success: false
+                    error:
+                      code: SENDER_IDENTITY_REQUIRED
+                      message: "payout corridor requires the sender's own identity details; missing: date_of_birth, id_number, source_of_funds"
+                      details:
+                        corridor: cn_wallet
+                        missing_fields: ["date_of_birth", "id_number", "source_of_funds"]
+                        kyc_fields: ["dob", "id_number", "source_of_funds"]
         '500':
           description: Internal server error
           content:
@@ -6488,6 +6576,7 @@ components:
                 - `INSUFFICIENT_BALANCE` — partner wallet lacks tokens to fund escrow
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
+                - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`
               enum:
                 - QUOTE_EXPIRED
                 - QUOTE_NOT_FOUND
@@ -6505,6 +6594,7 @@ components:
                 - INSUFFICIENT_BALANCE
                 - OPERATION_NOT_ALLOWED
                 - KYC_NOT_CLEARED
+                - SENDER_IDENTITY_REQUIRED
               example: QUOTE_EXPIRED
             message:
               type: string
