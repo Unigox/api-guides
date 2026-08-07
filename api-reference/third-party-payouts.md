@@ -135,8 +135,18 @@ the institution you chose:
 Formats also carry `has_liquidity`. A format with `has_liquidity: false` cannot
 currently be settled in that corridor — do not build against it. On `cnaps`/CNY
 today the two bank formats are liquid and the `ewallet` format is not: no
-`mobile-wallets` institution is active on this corridor, so Alipay and WeChat Pay
-destinations cannot be created. Check the endpoint rather than this sentence.
+`mobile-wallets` institution is quoted on this corridor yet, so an Alipay or
+WeChat Pay destination is accepted and stored but its quote comes back with no
+liquidity. Check the endpoint rather than this sentence.
+
+For `rail: "cnaps"`, institutions of type `mobile-wallets` (`alipay`,
+`wechat-pay`), the `ewallet` format collects far less than a bank transfer — the
+wallet is identified by the institution, so there is no Chinese name and no
+national ID:
+
+| Required `details` |
+| --- |
+| `full_name`, `account_number` (the wallet id, i.e. the same 11-digit Chinese mobile), `mobile_number` |
 
 ### Paying a company: `beneficiary_type`
 
@@ -259,6 +269,7 @@ order — the request is rejected, and you act on the error:
 | Error code | HTTP | Meaning | Partner action |
 | --- | --- | ---: | --- |
 | `KYC_NOT_CLEARED` | 422 | The sender's KYC is not cleared for this partner. | Complete the sender's KYC; do not substitute another user. |
+| `SENDER_IDENTITY_REQUIRED` | 422 | The corridor settles consumer-to-consumer and the sender's record cannot name them on the wire. `details.kyc_fields` is what you can supply. | `PATCH /api/v1/partner/users/{user_uuid}/kyc` with those fields, then retry. See below. |
 | `THIRD_PARTY_CONTEXT_INVALID` | 422 | The recipient/destination is not usable: not found for this partner, archived, screening not `cleared`, incomplete route, or `sender_id` ≠ `user_uuid`. | Read the message; re-check the recipient, or wait for screening. |
 | `INVALID_REQUEST` | 400 | The payload is wrong — a `details` field the rail does not accept, a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a destination currency that is not `fiat_currency`, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). The message names what to fix. | Fix the request. |
 | `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
@@ -278,6 +289,57 @@ Operator review happens on the Unigox side, over the same records, in the
 compliance queue. Value/velocity and fan-out holds surfaced to partners as
 order states are not part of v1 — do not build against the states listed in
 earlier drafts of this page.
+
+### The sender on consumer-to-consumer rails
+
+Chinese mobile wallets (Alipay, WeChat Pay — the `ewallet` format on `cnaps`)
+settle person to person. The receiving wallet shows a remitter, and on those
+rails it has to be **your customer**, with their own document, address and phone.
+It cannot be Unigox and it cannot be your company: a payout whose remitter does
+not match the person behind it is what the rail's identity check exists to catch.
+
+Everything else on this page is about the recipient. This is the one control that
+looks at the sender, and it is a property of the corridor, not of the recipient —
+the same recipient paid over a bank format does not trigger it.
+
+`POST /api/v1/partner/offramp/initiate` refuses with `422 SENDER_IDENTITY_REQUIRED`
+when the sender's KYC record cannot name them. No order is created and the quote
+is reverted, so the same customer can retry:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SENDER_IDENTITY_REQUIRED",
+    "message": "payout corridor requires the sender's own identity details; missing: date_of_birth, id_number, source_of_funds",
+    "details": {
+      "corridor": "cn_wallet",
+      "missing_fields": ["date_of_birth", "id_number", "source_of_funds"],
+      "kyc_fields": ["dob", "id_number", "source_of_funds"]
+    }
+  }
+}
+```
+
+`details.kyc_fields` is the request body of
+`PATCH /api/v1/partner/users/{user_uuid}/kyc` — send those keys, then retry the
+initiate with a fresh quote. The full set a wallet payout can ask for is `dob`,
+`phone_number`, `address`, `city`, `postal_code`, `id_type`, `id_number`,
+`id_issue_country`, `gender`, `nationality` and `source_of_funds`.
+
+That patch is all-or-nothing: one rejected value writes none of the others, and
+the `error_key` names which one — `invalid_gender`, `invalid_country_code`,
+`invalid_source_of_funds`, `invalid_date_of_birth`, `underage_not_allowed`, or
+`invalid_field_value` when a value arrives as an object or an array instead of a
+string. A recognised field sent blank is not an error and not a write: the
+response is `200` with that field absent from `updated_fields`, so a patch whose
+recognised fields are all blank answers `{"updated_fields": []}` and the payout
+still refuses. Read `updated_fields` before retrying the initiate.
+
+When `kyc_fields` is shorter than `missing_fields`, the difference is what only
+verification can supply — the name as printed on the document, the country of
+residence. Those are not editable over the KYC update plane by design, so the
+customer has to complete or redo KYC before that payout can go out.
 
 ## Updates and deletion
 
