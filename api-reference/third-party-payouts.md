@@ -135,8 +135,18 @@ the institution you chose:
 Formats also carry `has_liquidity`. A format with `has_liquidity: false` cannot
 currently be settled in that corridor — do not build against it. On `cnaps`/CNY
 today the two bank formats are liquid and the `ewallet` format is not: no
-`mobile-wallets` institution is active on this corridor, so Alipay and WeChat Pay
-destinations cannot be created. Check the endpoint rather than this sentence.
+`mobile-wallets` institution is quoted on this corridor yet, so an Alipay or
+WeChat Pay destination is accepted and stored but its quote comes back with no
+liquidity. Check the endpoint rather than this sentence.
+
+For `rail: "cnaps"`, institutions of type `mobile-wallets` (`alipay`,
+`wechat-pay`), the `ewallet` format collects far less than a bank transfer — the
+wallet is identified by the institution, so there is no Chinese name and no
+national ID:
+
+| Required `details` |
+| --- |
+| `full_name`, `account_number` (the wallet id, i.e. the same 11-digit Chinese mobile), `mobile_number` |
 
 ### Paying a company: `beneficiary_type`
 
