@@ -317,6 +317,15 @@ initiate with a fresh quote. The full set a wallet payout can ask for is `dob`,
 `phone_number`, `address`, `city`, `postal_code`, `id_type`, `id_number`,
 `id_issue_country`, `gender`, `nationality` and `source_of_funds`.
 
+That patch is all-or-nothing: one rejected value writes none of the others, and
+the `error_key` names which one — `invalid_gender`, `invalid_country_code`,
+`invalid_source_of_funds`, `invalid_date_of_birth`, `underage_not_allowed`, or
+`invalid_field_value` when a value arrives as an object or an array instead of a
+string. A recognised field sent blank is not an error and not a write: the
+response is `200` with that field absent from `updated_fields`, so a patch whose
+recognised fields are all blank answers `{"updated_fields": []}` and the payout
+still refuses. Read `updated_fields` before retrying the initiate.
+
 When `kyc_fields` is shorter than `missing_fields`, the difference is what only
 verification can supply — the name as printed on the document, the country of
 residence. Those are not editable over the KYC update plane by design, so the

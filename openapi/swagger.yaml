@@ -1503,7 +1503,11 @@ paths:
                   example: "salary"
       responses:
         '200':
-          description: KYC data updated successfully
+          description: >-
+            KYC data updated successfully. `updated_fields` names only the fields that actually
+            reached the record. A recognised field sent blank is a no-op rather than an error, so
+            a patch whose recognised fields are all blank answers `200` with `updated_fields: []`
+            and nothing is written — this endpoint does not clear a stored value.
           content:
             application/json:
               schema:
@@ -1519,6 +1523,9 @@ paths:
                         type: array
                         items:
                           type: string
+                        description: >-
+                          Fields written by this patch. Empty when every recognised field in the
+                          body was blank.
                         example: ["address", "city", "postal_code"]
                       message:
                         type: string
@@ -1530,8 +1537,10 @@ paths:
             DOB-related `error_key` values: `underage_not_allowed` (age under 18) and
             `invalid_date_of_birth` (malformed or future date). Sender-identity values:
             `invalid_gender`, `invalid_country_code` (`nationality` / `id_issue_country` is not
-            an alpha-2 code) and `invalid_source_of_funds`. Nothing is written when one field
-            is rejected — fix it and resend the whole patch.
+            an alpha-2 code) and `invalid_source_of_funds`. `invalid_field_value` means a value
+            was sent as an object or an array where a string or a number is expected.
+            `no_valid_kyc_fields` means the body carried no updatable field at all. Nothing is
+            written when one field is rejected — fix it and resend the whole patch.
         '401':
           description: Unauthorized
         '404':
