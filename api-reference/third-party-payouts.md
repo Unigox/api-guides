@@ -164,7 +164,10 @@ The two wallets also differ in what the payment may be:
 
 `sender_recipient_relationship` on the quote is what states which of those this
 payment is, so a `wechat-pay` destination sent as `supplier`, `employee` or
-`friend` cannot settle and is refused before any money moves. And because the
+`friend` cannot settle. The quote and the order are accepted, and the payout is
+then refused and the order cancelled — nothing reaches the beneficiary, but the
+order does not complete either. Send those beneficiaries to `alipay` or to a bank
+format. And because the
 remitter has to be your own paying customer (see *The sender on
 consumer-to-consumer rails*), a payment to the sender themselves is only possible
 when that customer is Chinese.
