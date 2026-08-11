@@ -148,6 +148,37 @@ national ID:
 | --- |
 | `full_name`, `account_number` (the wallet id, i.e. the same 11-digit Chinese mobile), `mobile_number` |
 
+### Who may be paid on a Chinese wallet
+
+Both wallets verify the account holder against a Chinese national ID, so the
+beneficiary must be a **Chinese national**. A foreign resident's Alipay or WeChat
+account cannot be paid over this rail, whatever name the account shows. Pay a
+foreign resident in China over a bank format instead.
+
+The two wallets also differ in what the payment may be:
+
+| Institution | Relationships it settles |
+| --- | --- |
+| `alipay` | the sender themselves, family, or a third party |
+| `wechat-pay` | the sender themselves or family only |
+
+`sender_recipient_relationship` on the quote is what states which of those this
+payment is, so a `wechat-pay` destination sent as `supplier`, `employee` or
+`friend` cannot settle and is refused before any money moves. And because the
+remitter has to be your own paying customer (see *The sender on
+consumer-to-consumer rails*), a payment to the sender themselves is only possible
+when that customer is Chinese.
+
+The receiving wallet may additionally ask the beneficiary to evidence the
+relationship that was declared before it credits the funds: proof of income when
+the payment is to the sender themselves, proof of the relationship when it is to
+family. A relationship the beneficiary cannot evidence is what leaves a payment
+sitting inside the wallet, so declare the one that is true rather than the one
+that is easiest.
+
+Paying a Chinese company from your company (B2C) is not available on this rail
+yet.
+
 ### Paying a company: `beneficiary_type`
 
 A format may have a business sibling (`cnaps-bank` ↔ `cnaps-bank_business`) that

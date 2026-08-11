@@ -2,6 +2,17 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-11
+
+**Chinese mobile wallets pay Chinese nationals only, and WeChat pays fewer of them than Alipay.** Both wallets verify the account holder against a Chinese national ID, so a foreign resident's Alipay or WeChat account cannot receive on the `ewallet` format — use a bank format for those beneficiaries.
+
+- `alipay` settles to the sender themselves, to family, or to a third party.
+- `wechat-pay` settles to the sender themselves or to family only. A `wechat-pay` destination quoted as `supplier`, `employee` or `friend` is refused before any money moves.
+- The receiving wallet may ask the beneficiary to evidence the declared relationship (proof of income for a payment to the sender themselves, proof of the relationship for family). A relationship the beneficiary cannot evidence is what leaves a payment held inside the wallet.
+- Paying a Chinese company from your company (B2C) is not available on this rail yet.
+
+Nothing changes for the bank formats on `cnaps`, which carry no such restriction.
+
 ## 2026-08-07
 
 **Consumer-to-consumer payout rails now require the sender's own identity.** Chinese mobile wallets (Alipay, WeChat Pay — the `ewallet` format on `cnaps`) settle person to person: the remitter shown on the receiving wallet must be your paying customer, not Unigox and not your company. When the customer's KYC record cannot name them, `POST /api/v1/partner/offramp/initiate` returns `422 SENDER_IDENTITY_REQUIRED`. No order is created and the quote is reverted.
