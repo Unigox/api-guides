@@ -11,6 +11,7 @@ Reference groups:
 - [On-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/on-ramp)
 - [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp)
 - [Third-party payouts](./third-party-payouts.md)
+- [Scheduled settlement (Settlement T+1)](./settlement-t1.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
 - [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
 

@@ -2,6 +2,304 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-23 (scheduled settlement: what the reference got wrong)
+
+**No API change. Eight things the scheduled-settlement reference told you that the API does not do.**
+Each was found by reading the implementation back against the page, and each is the kind of mistake you
+only pay for once you are live, so we are naming them rather than quietly editing.
+
+- **The compliance window used to fire no webhooks at all — it does now.** For a period, the page
+  described events that were never sent. `fiat_payment_review_started` and `settlement_in_progress` were
+  wired to the five stages between order creation and the custody release, and the code that emitted them
+  could not be reached from any caller: a settlement stage only notified you when it moved the underlying
+  trade's status, and none of those five do. If you built an integration that waited for
+  `fiat_payment_review_started`, it was waiting for an event that was never sent.
+
+  **This is fixed.** `fiat_payment_review_started` now arrives when the escrow is confirmed and review
+  begins, and `settlement_in_progress` when the approval passes into pre-clearance and again when the
+  release becomes due. The rest is unchanged: `settlement_in_progress` at `custody_release`, then
+  `completed`, `returned`, `cancelled` (`refund_processing` and `refunded`) or `failed`
+  (`manual_recovery`), plus a second `settlement_in_progress` if a returned payout is retried.
+
+  **A re-quote still has no notification of its own.** It has a 30-minute window and is reachable only by
+  polling `GET /partner/settlement/orders/{order_id}`. Poll it.
+- **`storage_key` on a declaration's `documents` is not a pointer into your own storage.** It is the
+  `document_id` returned by `POST /partner/settlement/orders/{order_id}/documents` — a file this
+  evidence store already holds for this order. There is no object-store client in this service, so
+  `s3://your-bucket/statement.pdf` is refused with **422**. Earlier entries on this page described the
+  by-reference route as reading storage of your own; that has not been true since the upload endpoint
+  shipped. Documents also cannot be attached on the create call: the compliance case they hang off does
+  not exist until that call creates it.
+- **Fund the escrow before you convert, not after.** Conversion is allowed from exactly one trade state
+  — escrow funded, no fiat leg begun. Converting earlier is **409** `this trade's escrow does not hold
+  the customer's crypto, so there is nothing to settle`. The create response nevertheless comes back at
+  `stage: awaiting_escrow_funding` with `required_action: fund_escrow`; the next read of the order
+  returns `compliance_review`. Do not drive a funding screen off the create response.
+- **A written explanation is required for every source of funds**, not just `other` and
+  `family_support`, and it must be at least 20 characters. All twelve catalogue categories require one.
+  The requirements response does not tell you this — the flag that carries it is not published — so ask
+  for it always.
+- **`crypto_assets` needs an EVM address and a supported network.** `source_wallet_address` must parse
+  as an EVM address, and `source_wallet_network` must be `ethereum`, `xai`, `bsc`, `arbitrum` or
+  `polygon`. Anything else is refused rather than producing an order that becomes unfundable later.
+- **Omitting `minimum_fiat_amount` no longer means "no floor".** One is derived for you at 75% of the
+  quote. A floor you send that is more than 25% below the quote is refused with **422**: that is not a
+  slippage tolerance, it is a waiver, and it would switch off both the re-quote gate and the completion
+  check.
+- **`additional_sources` is replaced on every declaration.** Omitting it, or sending `[]`, **removes**
+  the secondary categories — unlike the text fields, which keep their previous value when omitted.
+  Always send the complete list.
+- **`estimated_completion_at` now uses the window your customer was promised.** It is written once, when
+  pre-clearance passes, as that moment plus `promised_settlement_sla_hours` — the figure frozen on the
+  order at acceptance. It previously used the corridor's *current* SLA hours, falling back to a literal
+  24, and an accepted re-quote hard-coded 24 regardless: so a corridor retuned from 12 to 72 hours while
+  a case sat in review silently moved the deadline of an order whose customer had agreed to 12. Orders
+  opened before the promise was recorded still fall back to the corridor, which is the best answer
+  available for them.
+
+Two smaller notes on the same page. The capacity response carries **`revision`** — that is the value you
+send back as `capacity_revision`, and the earlier example did not show it. And the source-of-funds
+catalogue is now at **revision 4**: `salary` and `inheritance` are at 4, the other ten at 3, and the
+top-level `revision` is the highest among the categories in the response you asked for.
+
+One behaviour worth planning around rather than a correction: **a single settlement transition can
+enqueue the same `order.status.changed` twice**, within a second, with two distinct `event_id`s.
+Deduplicate on `(order_id, status)`; `event_id` alone will not catch it.
+
+The reference has been rewritten around the two axes the feature actually turns on — `stage` and
+`financial_location` — with the point of no return, the full transition table, and a worked integration.
+See [Scheduled settlement](./api-reference/settlement-t1.md).
+
+## 2026-08-22 (immutable settlement contract)
+
+**Breaking: scheduled-settlement creation now binds the corridor and full terms provenance.** Send
+`capacity_id`, `capacity_revision` and `promised_settlement_sla_hours` from the capacity response, plus
+`terms_locale`, `terms_content_revision: 3` and the exact localized `terms_content` with
+`terms_version: "t1-2026-08-22-v3"`. A corridor edit after consent returns 409 instead of silently
+changing the customer's promised window.
+
+**New mandatory pre-funding step:** show the exact quote returned by order creation and call
+`POST /partner/settlement/orders/{order_id}/quote-acceptance`, echoing its id, version, amount, floor,
+capacity row ID, revision and promised SLA. Funding remains closed and its short countdown remains dormant
+until that atomic acceptance/audit write succeeds.
+
+## 2026-08-21 (corrections to what we told you)
+
+**No API change. Four things the scheduled-settlement reference said that the
+API does not do.** Each one is the kind of mistake you only find by writing the
+integration, so we are naming them rather than quietly editing the page.
+
+- **A repeated `POST /partner/settlement/orders` returns 201, not 200.** The
+  behaviour is right — the existing order comes back and no second capacity hold
+  is taken — but the status code does not distinguish it from a first create.
+  If you branched on 200-versus-201 to decide whether you had just created
+  something, that branch has always been wrong. Compare `created_at`.
+- **Submitting the declaration does not move `stage`.** The reference said the
+  response comes back at `compliance_review`. On the partner flow the order is
+  usually still at `awaiting_escrow_funding` when you declare, and it stays
+  there — the declaration updates the compliance case, not the order. The
+  response is identical to the read before the call, `updated_at` included. The
+  200 is the confirmation.
+- **The re-quote amounts are not cleared when a re-quote is declined.**
+  `requote_fiat_amount` and `requote_expires_at` stay populated on the refunding
+  order. Detect a pending re-quote with `stage == "requote_required"` or
+  `required_action == "accept_requote"`, never with the presence of those
+  fields.
+- **`expected_document_types` is a union, not a checklist.** It flattens every
+  key the declared categories mention, including all members of a `one_of`
+  group. A customer declaring salary and crypto assets needs four documents and
+  the list names six. Use it to check a key; use
+  `GET /settlement/requirements` to decide what to ask for.
+
+The reference now also documents what the order webhooks actually cover, which
+is less than the stage machine: `fiat_payment_review_started` fires for
+compliance review, for an information request **and** for a re-quote, so fetch
+the settlement order and read `required_action` on every one. Three stage
+changes between the escrow emptying and the payout fire nothing at all. See
+[What to poll for](./api-reference/settlement-t1.md#8-what-to-poll-for-and-what-actually-fires).
+
+## 2026-08-21 (opening an order)
+
+**Breaking, on one endpoint: `POST /partner/settlement/orders` now requires `terms_accepted`.**
+
+Creating a scheduled-settlement order commits your customer to waiting until the next day for their
+money. Send `"terms_accepted": true` and `"terms_version"` naming the wording you showed them; we store
+both, with the fact that it was **you** who asserted it rather than the customer themselves. Without it
+the call returns **422**. There is no default: a record of consent that we invented is not a record.
+
+**You can now open the order and submit the declaration in one call.** Pass the whole declaration —
+including `documents` by reference — as `declaration` on the create body:
+
+```json
+{
+  "order_id": "3022332b-…",
+  "minimum_fiat_amount": "330000.00",
+  "terms_accepted": true,
+  "terms_version": "t1-2026-08",
+  "declaration": {
+    "source_of_funds": "salary",
+    "explanation": "…",
+    "funds_flow_description": "…",
+    "catalogue_revision": 2
+  }
+}
+```
+
+The order is created, the capacity hold taken and the compliance case opened **already answered** — one
+round trip instead of three, and your customer is asked once. The separate
+`POST .../declaration` endpoint still works exactly as before, for the case where the answers arrive
+later or need correcting.
+
+If the declaration is rejected the order is still created: you get the validation error, the hold
+stands, and the case waits for answers. That pair of facts is the honest one — losing the hold because
+a free-text field was too short would cost your customer their place in the corridor.
+
+## 2026-08-21 (validation)
+
+**`minimum_fiat_amount` is now checked.** It is the floor that bounds a day-long settlement, and it
+was taken on trust: `"-999"` was accepted and stored, which is a floor that can never be crossed — the
+protection silently switched off, and the order would have settled at whatever the rate became. A value
+that is not a number, is zero or below, or is **above** the quoted amount now returns **422** with the
+reason. If you have been sending a placeholder, this is the release where it starts failing loudly.
+
+**Documents sent by reference are validated like uploaded ones.** The `documents` array on the
+declaration accepted anything: a `text/html` "statement", a negative `size_bytes`, and an empty object
+that stored an untitled, unlocated file. Each entry now needs a `document_type` and a `storage_key`,
+a `size_bytes` within 0–15 MB, and — when you declare one — a `content_type` from the same list the
+upload route accepts. All refusals are **422**, except an unacceptable content type which is **415**.
+
+**Two more doors now refuse a scheduled-settlement order**, for the same reason the cancel door did:
+they acted on the trade while the settlement plane carried on describing money that had moved.
+`POST /api/v1/trade/{id}/cancel` and `POST /api/v1/trade/{id}/resolve-escrow` answer **409** and name
+the settlement lifecycle. If your customer-facing app calls either on a converted order, switch it to
+`POST /partner/settlement/orders/{order_id}/cancel`.
+
+**An order cannot be recorded as paid unless the crypto actually left escrow**, and a refund cannot be
+recorded unless one was started. These were reachable through the operator resolution path and produced
+a finished, paid-looking order — reported to you as `completed` — with the customer's crypto untouched.
+
+## 2026-08-21 (refusals)
+
+**Four refusals that were wrong, on scheduled settlement.**
+
+- `POST .../requote/decline` used to answer **200** and start a refund even when no re-quote had ever
+  been issued — on an order still waiting for its escrow, or mid-compliance. Its sibling
+  `requote/accept` refused the same request. Decline now returns **409** unless a re-quote is
+  genuinely pending. An EXPIRED re-quote can still be declined: the offer lapsing does not un-ask the
+  question.
+- `POST /partner/orders/{order_id}/cancel` — the ordinary off-ramp cancel — used to cancel the TRADE
+  of a scheduled-settlement order while the settlement plane went on reporting `awaiting_escrow_funding`
+  with the capacity hold still standing. It now returns **409** and names
+  `POST /partner/settlement/orders/{order_id}/cancel`, which releases the hold and refuses when the
+  funds are no longer ours to return.
+- A malformed `order_id` returned **500** on order creation. It is a **404**, like every other endpoint.
+- `error.code` on the settlement endpoints was `INVALID_REQUEST` for every refusal, whatever the
+  status. It now carries `UNAUTHORIZED`, `ORDER_NOT_FOUND`, `INVALID_STATUS` or `INVALID_REQUEST` as
+  appropriate — so "not found" and "already decided" are distinguishable without parsing English.
+
+**One field is no longer returned.** `GET /settlement/requirements` no longer includes
+`reviewChecks` on a category. It was our compliance team's internal list of what to test each document
+against, written for a reviewer; published it reads as a guide to passing the check. Everything a
+partner renders — `baseDocuments`, `groups`, `statement`, labels, `revision` — is unchanged.
+
+## 2026-08-21 (documents)
+
+**You can now send us the document itself.**
+`POST /api/v1/partner/settlement/orders/{order_id}/documents` takes a multipart
+`file` plus a `document_type`, up to 15 MB, in PDF, JPEG, PNG, HEIC, HEIF, WebP
+or TIFF. Until now the declaration accepted documents only **by reference** — a
+`storage_key` pointing at storage of your own — which assumed every integrator
+had a bucket we could read. Most have a browser upload and nowhere to put it.
+
+The response answers the question you actually have: `satisfies_requirement`
+tells you whether the type you named is one the declared sources need, and when
+it is not, `expected_document_types` lists what the case is waiting for. An
+unrecognised type is still stored — evidence is not discarded over a label — so
+this is a signal, not a refusal. The field is absent rather than `false` before
+anything has been declared.
+
+`superseded_count` says how many earlier documents of the same type this upload
+retired, so a re-upload cannot be mistaken for a second copy.
+
+Refusals are specific: 409 when the case is already decided, 413 over the size
+limit, 415 for a file that is not a document (with `details.allowed`), 422 for a
+missing field or an empty file. Another partner's order is a 404, exactly like an
+order that does not exist.
+
+## 2026-08-21 (later the same day)
+
+**Three corrections to scheduled settlement, each of which replaces a silent
+outcome with a stated one.**
+
+- **Inheritance asks for ONE document, not two.** A certificate of the right to
+  inherit and a grant of probate are the same fact under two legal traditions,
+  and most jurisdictions issue one and have no concept of the other. `GET
+  /partner/settlement/requirements` now returns them as a `one_of` group at
+  `revision: 3`. Nothing changes if you render requirement groups by their
+  `mode`; if you flattened them into a list of mandatory uploads, this is the
+  category that could not be satisfied.
+- **`cancellable` is `false` while a refund is already running.** It stayed
+  `true` at `refund_processing`, and the cancel it invited answered
+  `{"success": true}` and did nothing. That call now returns **409** with the
+  reason, as does a cancel on a finished order. `manual_recovery` also reports
+  `false`: what happens there happens by hand.
+- **`required_action` is `submit_information` from the moment the escrow is
+  funded**, instead of `null` until a reviewer asks for something. The
+  declaration was always what compliance was waiting for; the field said nothing
+  was needed. If you gate your customer's "where did this money come from" screen
+  on `required_action`, it now appears when it should.
+
+## 2026-08-21
+
+**Scheduled settlement: a customer may now declare several sources of funds.** Put the main one in
+`source_of_funds` and the rest in `additional_sources` (at most three in total). Requirements combine as
+the strictest reading — the union of the documents, the longest statement window and the shortest
+allowed age — so a customer declaring salary alongside savings is asked for savings' six months rather
+than salary's three.
+
+Three further changes to the same endpoint, all of which make a previously silent outcome explicit:
+
+- The requirements response now carries `baseDocuments`, so every `document_type` key you need — the
+  bank statement in particular — is obtainable from the catalogue rather than assumed.
+- The declaration refuses, with the reason, an unknown category, `other`/`family_support` without a
+  written explanation, `crypto_assets` without the funding wallet address, and more than three sources.
+  All are **409**; a **500** from this endpoint now always means something on our side.
+- Re-uploading a document of a type you have already sent RETIRES the earlier one instead of adding a
+  second copy.
+
+## 2026-08-20
+
+**Scheduled settlement (Settlement T+1) is available for large off-ramps.** An
+off-ramp order can now be converted to a settlement class where the escrow is
+released into Unigox custody first and the fiat payout follows inside a
+published window — which is how a corridor takes a ticket larger than any
+provider will settle instantly. See
+[Scheduled settlement](./api-reference/settlement-t1.md).
+
+- Convert an existing order with `POST /api/v1/partner/settlement/orders`. It
+  takes a capacity hold and opens the source-of-funds compliance case.
+- Read what a corridor will accept right now with
+  `GET /api/v1/partner/settlement/capacity`, and what documents each source of
+  funds needs with `GET /api/v1/partner/settlement/requirements`.
+- Submit the declaration and documents (by storage reference) with
+  `POST /api/v1/partner/settlement/orders/{order_id}/declaration`.
+- Poll `GET /api/v1/partner/settlement/orders/{order_id}` for `stage`,
+  `required_action`, `financial_location` and `cancellable`.
+- Answer a rate movement with `requote/accept` or `requote/decline`, and cancel
+  while the funds are still refundable with `cancel`.
+
+**Two additive values in the order status enum**, on
+`GET /partner/orders/{order_id}` and the order webhooks. They can only appear on
+an order that has a settlement order, so nothing you have today starts returning
+them by surprise:
+
+- `settlement_in_progress` — the customer's crypto has left escrow into Unigox
+  custody and **no fiat has been paid yet**. Do not present it as complete.
+- `returned` — the payout was made and the receiving bank sent it back. It is
+  deliberately not `cancelled` or `failed`: it records that we paid.
+
+Both also work as filter inputs on the orders list.
+
 ## 2026-07-29
 
 **Third-party recipients are now first-class Partner API resources.** A KYC-verified sender can pay a separately registered recipient without representing that recipient as one of the sender's own payment methods.
