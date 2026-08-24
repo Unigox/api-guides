@@ -294,7 +294,14 @@ paths:
       tags:
         - Supported Resources
       summary: Blockchains
-      description: Get a list of all supported blockchains with their associated cryptocurrencies. Useful for discovering which blockchains are available and what tokens they support.
+      description: |
+        Get a list of all supported blockchains with their associated cryptocurrencies. Useful for
+        discovering which blockchains are available and what tokens they support.
+
+        Token coverage is per chain and is not uniform: a chain listed here does not carry every
+        stablecoin Unigox supports. Read `crypto_currencies` on each entry rather than assuming a
+        token is available because the chain appears. This endpoint is the authoritative list — a
+        token/chain pair absent from it is not enabled, regardless of what any other surface accepts.
       operationId: getBlockchains
       responses:
         '200':
@@ -4338,27 +4345,34 @@ components:
       properties:
         code:
           type: string
-          description: Cryptocurrency code (e.g., BTC, ETH)
-          example: BTC
+          description: Cryptocurrency code. Unigox settles in stablecoins only — today USDC, USDT and USDT0.
+          example: USDC
         name:
           type: string
           description: Cryptocurrency name
-          example: Bitcoin
+          example: USD Coin
         contract:
           type: string
-          description: Token contract address (for ERC-20 tokens)
-          example: "0x..."
+          description: |
+            Token contract address on this blockchain. Within `/supported/blockchains` this is always the
+            address on the enclosing chain. Within `/supported/crypto-currencies`, where one entry
+            aggregates every chain, it is the address on the FIRST chain listed in `blockchains` — use
+            `/supported/blockchains` when you need a specific chain's address.
+          example: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
         decimals:
           type: integer
           format: int64
           description: Token decimals (number of decimal places)
-          example: 8
+          example: 6
         blockchains:
           type: array
           items:
             type: string
-          description: List of supported blockchain names/slugs
-          example: ["ethereum", "polygon"]
+          description: |
+            Blockchain slugs this token is available on. Slugs are the same values returned in
+            `BlockchainCapability.slug` — note they are fully qualified (`ethereum-mainnet`,
+            `base-mainnet`, `arbitrum-one`), not bare chain names.
+          example: ["base-mainnet", "ethereum-mainnet", "polygon"]
 
     CryptoCurrenciesResponse:
       allOf:
@@ -4376,14 +4390,16 @@ components:
         name:
           type: string
           description: Blockchain name
-          example: Ethereum
+          example: Ethereum Mainnet
         slug:
           type: string
-          description: Blockchain slug identifier
-          example: ethereum
+          description: Blockchain slug identifier. Match on this, not on `name`.
+          example: ethereum-mainnet
         ticker:
           type: string
-          description: Blockchain ticker symbol
+          description: |
+            Blockchain ticker symbol. Empty for chains that have no ticker mapping yet, so treat it as
+            optional and key your own logic off `slug`.
           example: eth
         crypto_currencies:
           type: array
