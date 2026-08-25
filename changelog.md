@@ -2,6 +2,90 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-26 (complete Settlement T+1 OpenAPI contract)
+
+- `openapi/swagger.yaml` now describes all eleven registered Partner API
+  Settlement T+1 routes. Capacity, order conversion, exact quote acceptance,
+  both re-quote decisions and cancellation were previously present in the
+  implementation and long-form guide but missing from the generated reference.
+- The specification now carries the complete order, capacity, quote,
+  source-of-funds, funding-gate and funding-contract schemas, including nullable
+  money fields, the nine-category SoF enum, the final-approval cancellation
+  boundary and every documented upload status.
+- Shared order documentation now includes the implementation's
+  `settlement_in_progress` and `returned` statuses. It no longer advertises a
+  `cancel` action while crypto-transfer authorization may already be on chain.
+- New declarations remain exactly one of the nine current categories. The
+  request schema also preserves the implementation's narrow compatibility path:
+  an existing frozen legacy dossier may replay its unchanged retired or
+  multi-source values, but cannot introduce them on a new or changed case.
+- `funding-intent` is required for `crypto_assets`. A matching intent is accepted
+  for another SoF category but is not a funding prerequisite; it is registered
+  intent only, never wallet attribution or a Crystal result.
+
+## 2026-08-25 (source-of-funds parity and actual-funder screening)
+
+**The Partner API, first-party web flow and compliance console now use one
+source-of-funds contract. This entry supersedes the incorrect 2026-08-24 entry
+and the older SoF-specific claims about twelve/multiple categories, manual
+statement fields and fund-before-convert ordering below.**
+
+- There are exactly nine selectable categories and exactly one may be declared
+  per transfer. `requiresExplanation: true` is public and applies to every one.
+- A personal bank-issued PDF is required for eight categories. It covers at
+  least three months and ends within 31 days; `savings` asks for 6–12 months.
+  The PDF itself carries the account holder, institution, account number, dated
+  period and balance. The API no longer asks the customer to retype those facts.
+- `crypto_assets` is the exception: the bank statement is not required by
+  default. It requires exactly two uploads — `exchange_statement` and
+  `withdrawal_history` — plus address screening. A reviewer can request a bank statement later when the declared path
+  actually includes the customer's bank account.
+- Wallet-control signatures are not part of the policy. `funding-intent` records
+  the declared address/network/chain/asset immediately before broadcast. Once
+  the Safe is funded, Unigox reads the ERC-20 `Transfer` log, stores the actual
+  sender and screens that address through Crystal. A declared clean address
+  cannot clear a transfer that arrived from a different or unscored address.
+- Scheduled settlement now opens before funding. The existing transfer
+  parameter and authorization endpoints fail with **409** until quote
+  acceptance, the required dossier and (for crypto) the registered funding intent
+  are current. This closes the former API ordering contradiction where the
+  escrow had to be funded before the order and its funding intent could exist.
+- `GET /partner/settlement/orders/{order_id}` now returns the same customer-safe
+  `funding_gate`, `funding_contract` and `compliance` projection used by the web
+  flow. Integrations can see the frozen upload groups, current files, later
+  reviewer requests and funding-intent status instead of guessing from prior
+  responses.
+- `one_of` is an alternative (salary and inheritance/gift); `all_of` requires
+  every listed item. `payslips` requires 2–3 files. Uploads remain multipart
+  `file` + `document_type`, 15 MB maximum; bank statements are PDF-only.
+
+The crypto rule and whole-catalogue revision are now **9**; salary is **5**.
+
+## 2026-08-24 (superseded: source of funds statement policy)
+
+**Behaviour change, and it will make some previously-approvable crypto cases wait for one more
+document.** The source-of-funds catalogue now matches the compliance policy one to one.
+
+- **`crypto_assets` requires the personal bank statement.** It was the one category exempt from it. The
+  exemption also removed the three statement checks — the account being in the client's name among them —
+  so a crypto case was decided without them. Exchange evidence and proof of wallet control are still
+  required, now **in addition** to the statement rather than instead of it. `requiresBankStatement` on
+  that category is `true`, it carries a `statement` block of `{"minMonths": 3, "maxAgeDays": 31}`, and its
+  revision moved to 4. An integration that branches on `requiresBankStatement` picks this up with no
+  change; one that hardcoded the exemption must stop.
+- **`family_support` asks for a gift agreement.** Money from a relative is a gift under the policy, and
+  the category previously carried no document requirement of its own — the same fact needed a deed under
+  `gift` and nothing under `family_support`. Revision 4.
+- **`payslips` now really accepts three files.** `minFiles: 2, maxFiles: 3` shipped in the salary rule
+  months ago but never reached the served catalogue, because the rule reconciler overwrites only on a
+  strictly higher revision and the revision had not moved. The served copy said `multiple: true` alone,
+  which clients read as a maximum of two. Salary is now revision 5.
+- **The statement's own fields are documented as what they are.** `period_start`, `period_end`,
+  `account_holder`, `institution` and `account_last4` are optional at upload and required to approve a
+  statement; `account_last4` is exactly four characters; `bank_statement` must be a PDF. None of this
+  changed in the code — the reference simply did not say it, and an integration that omitted the fields
+  produced cases that could not be approved with nothing at upload time to explain why.
+
 ## 2026-08-23 (scheduled settlement: what the reference got wrong)
 
 **No API change. Eight things the scheduled-settlement reference told you that the API does not do.**

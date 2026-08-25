@@ -74,6 +74,9 @@ tags:
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
     x-page-icon: receipt
+  - name: Settlement T+1
+    description: Scheduled off-ramp settlement and its source-of-funds collection contract
+    x-page-icon: clock
   - name: Webhooks
     description: |
       Real-time notifications for order and KYC status changes.
@@ -3559,7 +3562,10 @@ paths:
         - Do not wait for `next_action` if you already have confirmation from your
           own banking or payment systems.
 
-        **Possible statuses:** `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `awaiting_fiat_received_confirmation`, `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`.
+        The response uses `PartnerOrderStatus`. For Settlement T+1 specifically,
+        `settlement_in_progress` means crypto has left escrow but fiat is not yet confirmed, and
+        `returned` means a completed bank payout was later returned. Neither is `completed` or
+        `cancelled`; read the Settlement T+1 order for its detailed stage and money location.
       operationId: getOrder
       security:
         - ApiKeyAuth: []
@@ -3761,6 +3767,16 @@ paths:
 
         Manual implementation: call `GET /transfer-authorization-parameters` first, then build
         the EIP-712 typed data and sign with your partner wallet private key locally.
+
+        This endpoint is single-flight per order. A concurrent request or replay never submits a
+        second ForwardRequest. A timeout, connection loss, 5xx or malformed success response from
+        the transactor is an ambiguous outcome, not proof that nothing moved: the API returns 200
+        with `status: crypto_transfer_authorization_pending` and may omit `tx_hash`. Poll the order
+        and do not sign a new nonce. Only a definitive local validation failure or transactor 4xx
+        releases the order for a corrected retry. Replay detection runs before the ordinary
+        pre-funding lifecycle gate: even if the accepted submission has already advanced the order,
+        the replay still returns 200 with the original pending state/hash instead of a misleading
+        409, and it never submits another ForwardRequest.
       operationId: authorizeCryptoTransfer
       security:
         - ApiKeyAuth: []
@@ -3801,7 +3817,29 @@ paths:
               signature: "0xabc123..."
       responses:
         '200':
-          description: Crypto authorization accepted
+          description: >-
+            Crypto authorization accepted or already in progress. `tx_hash` is omitted while the
+            single in-flight submission has no authoritative transactor id yet.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [order_id, status]
+                        properties:
+                          order_id:
+                            type: string
+                            format: uuid
+                          status:
+                            type: string
+                            enum: [crypto_transfer_authorization_pending]
+                          tx_hash:
+                            type: string
+                            description: Accepted transactor/on-chain id; absent while the result is unresolved.
         '400':
           description: Bad Request
         '401':
@@ -3824,7 +3862,7 @@ paths:
                   code: INSUFFICIENT_BALANCE
                   message: "insufficient USDC balance: wallet 0x... has 1928961 but 3000000 is required"
         '502':
-          description: Transactor service error (e.g. on-chain simulation failed)
+          description: Definitive transactor rejection; the request was not accepted and a corrected retry is allowed.
 
   /api/v1/partner/orders/{order_id}/confirm-fiat-received:
     post:
@@ -3911,8 +3949,7 @@ paths:
           required: false
           description: Filter by partner order status
           schema:
-            type: string
-            enum: [created, awaiting_liquidity_provider, awaiting_crypto_transfer_authorization, crypto_transfer_authorization_pending, crypto_received, awaiting_fiat_received_confirmation, fiat_received_confirmed, crypto_release_pending, completed, cancelled, failed, price_changed_requote_needed]
+            $ref: '#/components/schemas/PartnerOrderStatus'
           example: "completed"
         - name: page
           in: query
@@ -4189,8 +4226,920 @@ paths:
                 data:
                   error_key: "webhook delivery failed"
 
+  /api/v1/partner/settlement/capacity:
+    get:
+      tags: [Settlement T+1]
+      summary: Read currently schedulable corridor capacity
+      description: |
+        Returns only enabled crypto-first corridors matching the requested fiat currency and optional
+        rail/provider. Carry `capacity_id`, `revision` and `settlement_sla_hours` unchanged into order
+        creation. `available_usd` is the server-authoritative scheduled headroom; it is `"0.00"` when
+        required provider telemetry is absent or stale, and may be null only when no commercial or live
+        ceiling is configured. The service returns 503 instead of advertising capacity when any automatic
+        release, refund or provider-funding runtime path is unavailable.
+      operationId: getPartnerSettlementCapacity
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: fiat_currency
+          in: query
+          required: true
+          description: Case-sensitive upper-case fiat code, for example CNY.
+          schema: { type: string, minLength: 3, maxLength: 3, example: CNY }
+        - name: rail
+          in: query
+          required: false
+          description: Optional payout rail. A corridor with an empty rail matches every rail.
+          schema: { type: string, example: CNAPS }
+        - name: provider
+          in: query
+          required: false
+          description: Optional exact provider code.
+          schema: { type: string, example: lightnet }
+      responses:
+        '200':
+          description: Matching scheduled-settlement corridors and current availability
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementCapacityResponse' }
+        '400':
+          description: fiat_currency is missing
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Capacity or current corridor usage could not be read
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '503':
+          description: This host cannot safely complete or unwind a new scheduled order
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/requirements:
+    get:
+      tags: [Settlement T+1]
+      summary: Get the source-of-funds contract
+      description: |
+        Returns the same nine-category catalogue used by the Unigox web form and compliance console.
+        `requiresExplanation` is always true. Read `groups[].mode`: `all_of` requires every item;
+        `one_of` requires one alternative. `crypto_assets` has no bank statement by default and has
+        exactly two required uploads. There is no wallet-control signature or screenshot. After funding,
+        Unigox captures the actual ERC-20 sender from the Transfer log and screens it through Crystal.
+      operationId: getSettlementSourceOfFundsRequirements
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: source_of_funds
+          in: query
+          required: false
+          description: Omit for all nine categories, or filter by one exact category code.
+          schema:
+            $ref: '#/components/schemas/SettlementSourceOfFundsCode'
+      responses:
+        '200':
+          description: Current customer-visible requirement catalogue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementRequirementsResponse'
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Unknown source_of_funds code
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+        '500':
+          description: The nine-category catalogue is unavailable, incomplete or invalid
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders:
+    post:
+      tags: [Settlement T+1]
+      summary: Convert an existing partner off-ramp order to scheduled settlement
+      description: |
+        Opens the T+1 plane and compliance case before the customer sends crypto. The order must already
+        belong to the authenticated partner and be a SELL at a conversion-safe point. Terms provenance
+        and the exact capacity tuple are mandatory. An optional inline declaration uses exactly the same
+        schema as the standalone declaration endpoint. On the first create its `documents` array must be
+        omitted because the compliance case does not exist until this call commits; upload bytes and use
+        the standalone declaration endpoint afterwards. A retry for an order that already has a settlement
+        plane returns the existing order and does not take a second capacity hold.
+      operationId: createPartnerSettlementOrder
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettlementCreateOrderRequest' }
+      responses:
+        '201':
+          description: Settlement order opened, or the existing settlement order returned idempotently
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementOrderResponse' }
+        '400':
+          description: Unparseable JSON or missing order_id
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found or not owned by this partner
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: Capacity, promise, idempotency, trade lifecycle or inline-declaration conflict
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '422':
+          description: BUY order or invalid terms/capacity tuple/rail/floor
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Settlement order could not be opened
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '503':
+          description: Runtime is not ready or the ticket cannot currently be priced in USD
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}:
+    get:
+      tags: [Settlement T+1]
+      summary: Read settlement state and the customer-safe SoF dossier
+      description: |
+        Returns the settlement lifecycle plus the same `funding_gate`, persisted `funding_contract`
+        and customer-safe `compliance` projection used by the web flow. `requirements_snapshot` is the
+        frozen required/alternative upload contract for this case; `documents_provided` and
+        `documents_requested` make completed and later reviewer-requested tasks explicit. Internal
+        checks, notes, reviewer identities and verdict details are not exposed.
+      operationId: getPartnerSettlementOrder
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      responses:
+        '200':
+          description: Current lifecycle and SoF/funding contract
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementOrderSOFReadResponse'
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found, not owned, or not a T+1 settlement
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Funding or customer-safe compliance projection could not be established
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}/quote-acceptance:
+    post:
+      tags: [Settlement T+1]
+      summary: Accept the exact opening quote and settlement window
+      description: |
+        Echo the complete immutable quote tuple returned on the order after showing it to the customer.
+        The server compares every field as one atomic operation. Until this succeeds, the funding gate
+        remains closed. Decimal amounts are compared numerically, not as strings.
+      operationId: acceptPartnerSettlementOpeningQuote
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettlementQuoteAcceptanceRequest' }
+      responses:
+        '200':
+          description: Exact quote accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementOrderResponse' }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found or not owned by this partner
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: Quote/window tuple changed or the order no longer accepts an opening quote
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '422':
+          description: Body is invalid or accept is not true
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Quote acceptance could not be recorded
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}/declaration:
+    post:
+      tags: [Settlement T+1]
+      summary: Submit the customer's source-of-funds declaration
+      description: |
+        Accepts exactly one category and the same fields as the web form. The own-words explanation is
+        mandatory for every category. Crypto also requires the EVM funding wallet and a supported
+        network. Upload file bytes separately; `documents` may only reference document IDs already held
+        on this same case.
+      operationId: submitSettlementSourceOfFundsDeclaration
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettlementDeclarationRequest'
+      responses:
+        '200':
+          description: Declaration recorded; the response contains the current settlement order
+          content: { application/json: { schema: { $ref: '#/components/schemas/SettlementOrderResponse' } } }
+        '400':
+          description: Missing or malformed source_of_funds
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found or not owned by this partner
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: Invalid category, incomplete required declaration fields, or case no longer collecting
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Declaration, referenced evidence or updated order could not be persisted/read
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}/documents:
+    post:
+      tags: [Settlement T+1]
+      summary: Upload one source-of-funds document
+      description: |
+        Upload exactly one file with its catalogue document key. The endpoint is identical to the web
+        upload plane: no duplicate statement dates/account fields exist. Bank statements are PDF-only;
+        other evidence accepts PDF, JPEG, PNG, HEIC, HEIF, WebP and TIFF. Maximum size is 15 MB.
+        `satisfies_requirement` says whether this type contributes to the currently frozen dossier.
+      operationId: uploadSettlementSourceOfFundsDocument
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, document_type]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                document_type:
+                  type: string
+                  description: A document key from the selected catalogue category.
+                  example: exchange_statement
+      responses:
+        '201':
+          description: File stored and attached to the compliance case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementDocumentUploadResponse'
+        '400':
+          description: Multipart body or uploaded file could not be read
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found, not owned, or has no compliance case
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: Case decided or changed during upload
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '413':
+          description: File exceeds 15 MB
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '415':
+          description: Unsupported or content-mismatched file; bank_statement is not a PDF
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '422':
+          description: Missing document_type/file or empty/too-small file
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Compliance case, document bytes or completion state could not be stored/read
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}/funding-intent:
+    post:
+      tags: [Settlement T+1]
+      summary: Register the declared crypto funding source
+      description: |
+        For `crypto_assets`, submit the declared source address, network, chain and asset immediately
+        before funding; the existing transfer-authorization endpoints require the current intent. The
+        server binds it to the declaration and refund contract but does not treat it as attribution or
+        screening. No wallet-control signature is required or accepted. The actual sender is captured
+        from the token Transfer log after funding and Crystal-screened separately. For a non-crypto SoF
+        category the source constraint is not required; a matching refund-wallet intent is accepted but
+        is not a prerequisite to funding.
+      operationId: registerSettlementFundingIntent
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_address, source_network, source_chain_id, asset]
+              properties:
+                source_address: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' }
+                source_network: { type: string, enum: [ethereum, xai, bsc, arbitrum, polygon] }
+                source_chain_id: { type: integer, format: int64, enum: [1, 56, 137, 660279, 42161] }
+                asset: { type: string, example: USDT }
+      responses:
+        '200':
+          description: Funding source matched and intent registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementFundingIntentResponse'
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found or not owned by this partner
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: Address/network/chain/asset mismatch or order no longer waiting for funding
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '422':
+          description: One or more required funding-source fields are absent from the JSON body
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Funding contract or intent could not be read/recorded
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}/requote/accept:
+    post:
+      tags: [Settlement T+1]
+      summary: Accept a pending re-quote
+      description: |
+        Accepts the currently pending re-quote with no request body. The accepted amount becomes both
+        the new quote and customer floor, then the order returns through provider pre-clearance. An
+        expired or absent re-quote is refused and never silently settled at the worse amount.
+      operationId: acceptPartnerSettlementRequote
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      responses:
+        '200':
+          description: Re-quote accepted; current order returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementOrderResponse' }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found or not owned by this partner
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: No pending re-quote or the pending re-quote expired
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}/requote/decline:
+    post:
+      tags: [Settlement T+1]
+      summary: Decline a pending re-quote and start the refund
+      description: |
+        Declines the currently pending re-quote with no request body and starts the escrow refund. A
+        decline is still accepted after the quote's timer expires because the customer is refusing the
+        payout, not accepting an expired price.
+      operationId: declinePartnerSettlementRequote
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      responses:
+        '200':
+          description: Re-quote declined; current refunding order returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementOrderResponse' }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found or not owned by this partner
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: No pending re-quote or refund cannot be started
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Decision was saved but the updated order could not be read
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
+  /api/v1/partner/settlement/orders/{order_id}/cancel:
+    post:
+      tags: [Settlement T+1]
+      summary: Cancel before the customer commitment boundary
+      description: |
+        Cancels with no request body while `cancellable` is true. Before funding, no crypto moves; after
+        funding, an escrow refund starts. Customer/partner cancellation closes at final compliance
+        approval even though an operator may still recover technically reachable funds. The returned
+        `reconciliation_pending_until` must be polled when a just-broadcast funding transaction could
+        still mine after a pre-funding cancellation.
+      operationId: cancelPartnerSettlementOrder
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SettlementOrderId'
+      responses:
+        '200':
+          description: Cancellation/refund started; current order returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementOrderResponse' }
+        '401':
+          description: Invalid or missing API key
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '404':
+          description: Order not found or not owned by this partner
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '409':
+          description: Customer cancellation is closed, refund is already running, or money is no longer reachable
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '500':
+          description: Current order could not be read before/after cancellation
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+
 components:
+  parameters:
+    SettlementOrderId:
+      name: order_id
+      in: path
+      required: true
+      description: Partner order ID returned by off-ramp initiation.
+      schema:
+        type: string
+        format: uuid
   schemas:
+    SettlementCapacityCorridor:
+      type: object
+      required: [capacity_id, provider, fiat_currency, rail, revision, max_ticket_usd, min_ticket_fiat, settlement_sla_hours, reservation_ttl_seconds, reservable_usd, available_usd]
+      properties:
+        capacity_id: { type: integer, format: int64, minimum: 1 }
+        provider: { type: string, example: lightnet }
+        fiat_currency: { type: string, example: CNY }
+        rail: { type: string, description: Empty means the corridor covers every rail for this fiat currency. }
+        revision: { type: integer, minimum: 1 }
+        max_ticket_usd: { type: string, example: '50000.00' }
+        min_ticket_fiat: { type: string, nullable: true, example: '55.00' }
+        settlement_sla_hours: { type: integer, minimum: 1, example: 24 }
+        reservation_ttl_seconds: { type: integer, minimum: 1, example: 3600 }
+        reservable_usd:
+          type: string
+          nullable: true
+          description: Commercial in-flight ceiling; null means no separately configured commercial ceiling.
+          example: '250000.00'
+        available_usd:
+          type: string
+          nullable: true
+          description: Current schedulable headroom after active holds and freshness policy.
+          example: '240000.00'
+
+    SettlementCapacityResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [corridors]
+          properties:
+            corridors:
+              type: array
+              items: { $ref: '#/components/schemas/SettlementCapacityCorridor' }
+
+    SettlementStage:
+      type: string
+      enum: [awaiting_escrow_funding, compliance_review, additional_information_required, provider_preclearance, requote_required, ready_for_settlement, custody_release, provider_funding, provider_credit_confirmation, fiat_payout, refund_processing, manual_recovery, completed, refunded, returned]
+
+    SettlementFinancialLocation:
+      type: string
+      enum: [customer_wallet, escrow, custody, bridge_in_transit, provider_book, fiat_payout_in_transit, fiat_paid, crypto_refunded, fiat_returned]
+
+    SettlementRequiredAction:
+      type: string
+      nullable: true
+      enum: [fund_escrow, submit_information, accept_requote, contact_support]
+
+    SettlementOrder:
+      type: object
+      required: [order_id, trade_id, status, stage, required_action, settlement_class, fiat_currency, provider, financial_location, cancellable, contract_status, created_at, updated_at]
+      properties:
+        order_id: { type: string, description: Partner order ID supplied when the off-ramp was initiated. }
+        trade_id: { type: integer, format: int64 }
+        status:
+          type: string
+          enum: [pending_approval, under_review, processing, completed, cancelled, returned]
+        stage: { $ref: '#/components/schemas/SettlementStage' }
+        required_action: { $ref: '#/components/schemas/SettlementRequiredAction' }
+        settlement_class: { type: string, enum: [crypto_first] }
+        fiat_currency: { type: string, example: CNY }
+        rail: { type: string, example: CNAPS }
+        provider: { type: string, example: lightnet }
+        financial_location: { $ref: '#/components/schemas/SettlementFinancialLocation' }
+        cancellable:
+          type: boolean
+          description: Authoritative customer/partner cancellation verdict; false from final compliance approval onward.
+        contract_status: { type: string, enum: [pending_acceptance, accepted, legacy_missing] }
+        quote_id: { type: string }
+        quote_version: { type: string }
+        quote_accepted_at: { type: string, format: date-time }
+        quoted_fiat_amount: { type: string }
+        minimum_fiat_amount: { type: string }
+        final_fiat_amount: { type: string }
+        requote_fiat_amount: { type: string }
+        requote_expires_at: { type: string, format: date-time }
+        estimated_completion_at: { type: string, format: date-time }
+        payout_reference: { type: string }
+        capacity_id: { type: integer, format: int64 }
+        capacity_revision: { type: integer }
+        promised_settlement_sla_hours: { type: integer }
+        terms_version: { type: string }
+        terms_locale: { type: string }
+        terms_content_revision: { type: integer, format: int64 }
+        terms_content_hash: { type: string }
+        terms_content_snapshot: { type: string }
+        terms_accepted_at: { type: string, format: date-time }
+        funding_gate: { $ref: '#/components/schemas/SettlementFundingGate' }
+        funding_contract: { $ref: '#/components/schemas/SettlementFundingContract' }
+        compliance: { $ref: '#/components/schemas/SettlementCustomerSafeCompliance' }
+        reconciliation_pending_until: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    SettlementOrderResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/SettlementOrder' }
+
+    SettlementCreateOrderRequest:
+      type: object
+      required: [order_id, capacity_id, capacity_revision, promised_settlement_sla_hours, terms_accepted, terms_version, terms_locale, terms_content_revision, terms_content]
+      properties:
+        order_id: { type: string, description: Existing off-ramp partner order ID. }
+        provider: { type: string, description: Optional; omitted uses the corridor default. }
+        rail: { type: string, description: Optional only when the existing trade has no recorded payout rail. }
+        minimum_fiat_amount: { type: string, description: Customer floor; omitted derives the protected server floor. }
+        idempotency_key: { type: string, description: Optional partner key, scoped server-side to this settlement order. }
+        capacity_id: { type: integer, format: int64, minimum: 1 }
+        capacity_revision: { type: integer, minimum: 1 }
+        promised_settlement_sla_hours: { type: integer, minimum: 1 }
+        terms_accepted: { type: boolean, enum: [true] }
+        terms_version:
+          type: string
+          enum: [t1-2026-08-22-v3]
+          description: Current immutable scheduled-settlement terms version; reload the integration contract after a version bump.
+        terms_locale: { type: string, enum: [en, es, fr, pt] }
+        terms_content_revision:
+          type: integer
+          enum: [3]
+          description: Current localized content contract revision; values other than 3 are rejected.
+        terms_content: { type: string, minLength: 20, maxLength: 8192 }
+        declaration: { $ref: '#/components/schemas/SettlementDeclarationRequest' }
+
+    SettlementQuoteAcceptanceRequest:
+      type: object
+      required: [accept, quote_id, quote_version, quoted_fiat_amount, minimum_fiat_amount, capacity_id, capacity_revision, promised_settlement_sla_hours]
+      properties:
+        accept: { type: boolean, enum: [true] }
+        quote_id: { type: string }
+        quote_version: { type: string }
+        quoted_fiat_amount: { type: string }
+        minimum_fiat_amount: { type: string }
+        capacity_id: { type: integer, format: int64, minimum: 1 }
+        capacity_revision: { type: integer, minimum: 1 }
+        promised_settlement_sla_hours: { type: integer, minimum: 1 }
+
+    SettlementSourceOfFundsCode:
+      type: string
+      enum: [salary, business_income, sale_of_property, investment, crypto_assets, inheritance_gift, loan, dividends, savings]
+
+    SettlementDocumentRequirement:
+      type: object
+      required: [key, label]
+      properties:
+        key: { type: string, example: payslips }
+        label: { type: string, example: 2-3 recent payslips }
+        hint: { type: string }
+        multiple: { type: boolean, default: false }
+        minFiles: { type: integer, minimum: 1, example: 2 }
+        maxFiles: { type: integer, minimum: 1, example: 3 }
+
+    SettlementDocumentGroup:
+      type: object
+      required: [mode, documents]
+      properties:
+        mode:
+          type: string
+          enum: [all_of, one_of]
+          description: all_of requires every document; one_of requires any one alternative.
+        documents:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SettlementDocumentRequirement' }
+
+    SettlementSourceOfFundsCategory:
+      type: object
+      required: [code, label, description, requiresExplanation, requiresBankStatement, baseDocuments, groups, revision]
+      properties:
+        code: { $ref: '#/components/schemas/SettlementSourceOfFundsCode' }
+        label: { type: string }
+        description: { type: string }
+        requiresExplanation:
+          type: boolean
+          enum: [true]
+        requiresBankStatement: { type: boolean }
+        baseDocuments:
+          type: array
+          items: { $ref: '#/components/schemas/SettlementDocumentRequirement' }
+        statement:
+          type: object
+          description: Absent for crypto_assets.
+          required: [minMonths, maxAgeDays]
+          properties:
+            minMonths: { type: integer, minimum: 1 }
+            maxMonths: { type: integer, minimum: 1, description: Present for savings (12). }
+            maxAgeDays: { type: integer, minimum: 1, example: 31 }
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/SettlementDocumentGroup' }
+        requiresAddressScreening:
+          type: boolean
+          description: True only for crypto_assets.
+        revision: { type: integer, minimum: 1 }
+
+    SettlementRequirementsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [revision, categories]
+          properties:
+            revision: { type: integer, minimum: 1, description: Highest revision among returned categories. }
+            categories:
+              type: array
+              minItems: 1
+              maxItems: 9
+              items: { $ref: '#/components/schemas/SettlementSourceOfFundsCategory' }
+
+    SettlementFundingGate:
+      type: object
+      required: [evaluated_at, reservation_status, opening_evidence_status, opening_evidence_complete, can_fund]
+      properties:
+        evaluated_at: { type: string, format: date-time }
+        reservation_status:
+          type: string
+          enum: [missing, invalid, unavailable, held, consumed, released, expired]
+        funding_expires_at: { type: string, format: date-time }
+        opening_evidence_status: { type: string, enum: [complete, incomplete, unavailable, not_applicable] }
+        opening_evidence_complete: { type: boolean }
+        can_fund: { type: boolean }
+        blocked_reason:
+          type: string
+          enum: [not_applicable, reservation_missing, reservation_expired, reservation_unavailable, opening_evidence_incomplete, opening_evidence_unavailable, contract_acceptance_missing, order_not_fundable]
+          description: Server reason when can_fund is false; do not reconstruct this decision client-side.
+
+    SettlementFundingContract:
+      type: object
+      required: [asset, amount, decimals, token_address, network, chain_id, escrow_address, refund_destination, source_constraint]
+      properties:
+        asset: { type: string, example: USDT }
+        amount: { type: string, example: '5' }
+        decimals: { type: integer }
+        token_address: { type: string }
+        network: { type: string }
+        chain_id: { type: integer, format: int64 }
+        escrow_address: { type: string }
+        refund_destination: { type: string }
+        source_constraint:
+          type: object
+          required: [required, screening_status, intent_registered, attribution]
+          properties:
+            required: { type: boolean }
+            address: { type: string }
+            network: { type: string }
+            chain_id: { type: integer, format: int64 }
+            screening_status:
+              type: string
+              enum: [not_required]
+              description: This object is registered intent only. Crystal screening is bound to the actual ERC-20 sender after funding.
+            intent_registered: { type: boolean }
+            attribution: { type: string, enum: [registered_intent_only] }
+
+    SettlementFrozenRequirementsSnapshot:
+      type: object
+      required: [catalogue_revisions, sources, documents, requires_statement, statement_months, statement_max_months, statement_max_age_days, requires_explanation, frozen_at]
+      properties:
+        catalogue_revisions: { type: object, additionalProperties: { type: integer } }
+        sources:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: One current catalogue code for new cases; historical frozen multi-source or retired-code cases remain readable.
+        documents:
+          type: array
+          items:
+            type: object
+            required: [source_code, mode, documents]
+            properties:
+              source_code: { type: string }
+              mode: { type: string, enum: [all_of, one_of] }
+              documents: { type: array, items: { type: string } }
+              minimum_files: { type: object, additionalProperties: { type: integer, minimum: 1 } }
+              maximum_files: { type: object, additionalProperties: { type: integer, minimum: 1 } }
+        requires_statement: { type: boolean }
+        statement_months: { type: integer, minimum: 0 }
+        statement_max_months: { type: integer, minimum: 0, description: Zero when no upper statement window is configured; 12 for savings. }
+        statement_max_age_days: { type: integer, minimum: 0 }
+        requires_explanation: { type: boolean, enum: [true] }
+        frozen_at: { type: string, format: date-time }
+
+    SettlementCustomerSafeCompliance:
+      type: object
+      required: [status, documents_provided]
+      properties:
+        status: { type: string }
+        requested_info: { type: string }
+        requested_at: { type: string, format: date-time }
+        declaration:
+          type: object
+          properties:
+            source_of_funds: { type: string, description: Current catalogue code for new cases; historical responses may contain a retired code. }
+            additional_sources:
+              type: array
+              items: { type: string }
+              description: Present only on a historical frozen multi-source dossier.
+            explanation: { type: string }
+            funds_flow: { type: string }
+            purpose: { type: string }
+            relationship: { type: string }
+            wallet_address: { type: string }
+            wallet_network: { type: string }
+        requirements_snapshot: { $ref: '#/components/schemas/SettlementFrozenRequirementsSnapshot' }
+        documents_provided:
+          type: array
+          items:
+            type: object
+            required: [document_type, file_name, uploaded_at]
+            properties:
+              document_type: { type: string }
+              file_name: { type: string }
+              uploaded_at: { type: string, format: date-time }
+        documents_requested:
+          type: array
+          items:
+            type: object
+            required: [document_type, label, requested_at]
+            properties:
+              document_type: { type: string }
+              label: { type: string }
+              reason: { type: string }
+              requested_at: { type: string, format: date-time }
+              policy:
+                $ref: '#/components/schemas/SettlementRequestedDocumentPolicy'
+
+    SettlementRequestedDocumentPolicy:
+      type: object
+      required: [accepted_content_types]
+      properties:
+        accepted_content_types:
+          type: array
+          items: { type: string }
+          description: Server-enforced media types for this conditional request.
+        statement:
+          type: object
+          required: [minimum_months, maximum_age_days]
+          properties:
+            minimum_months: { type: integer, minimum: 1 }
+            maximum_age_days: { type: integer, minimum: 1 }
+
+    SettlementOrderSOFRead:
+      allOf:
+        - $ref: '#/components/schemas/SettlementOrder'
+        - type: object
+          required: [funding_gate, funding_contract]
+
+    SettlementOrderSOFReadResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/SettlementOrderSOFRead' }
+
+    SettlementDeclaredDocumentReference:
+      type: object
+      required: [document_type, storage_key]
+      description: References bytes already uploaded to this same compliance case; it is not an external URL.
+      properties:
+        document_type: { type: string }
+        storage_key:
+          type: string
+          description: Bare document_id returned by the multipart endpoint, or the equivalent `trades-db/<document_id>` reference.
+        file_name: { type: string, deprecated: true, description: Accepted for compatibility; stored bytes are authoritative. }
+        content_type: { type: string, deprecated: true, description: Advisory compatibility field. }
+        size_bytes: { type: integer, format: int64, minimum: 0, deprecated: true, description: Advisory compatibility field. }
+
+    SettlementDeclarationRequest:
+      type: object
+      required: [source_of_funds, explanation]
+      oneOf:
+        - description: Any of the eight non-crypto categories; wallet fields are not required.
+          properties:
+            source_of_funds:
+              type: string
+              enum: [salary, business_income, sale_of_property, investment, inheritance_gift, loan, dividends, savings]
+        - description: Crypto category; exact funding wallet and network are mandatory.
+          required: [source_wallet_address, source_wallet_network]
+          properties:
+            source_of_funds: { type: string, enum: [crypto_assets] }
+        - description: An unchanged historical frozen dossier may replay a retired primary category returned by GET order.
+          properties:
+            source_of_funds:
+              type: string
+              not:
+                enum: [salary, business_income, sale_of_property, investment, crypto_assets, inheritance_gift, loan, dividends, savings]
+      properties:
+        source_of_funds:
+          type: string
+          description: One current catalogue code for new/changed dossiers; an existing frozen legacy dossier may repeat its returned retired code unchanged.
+        additional_sources:
+          type: array
+          deprecated: true
+          items: { type: string }
+          description: Historical replay field only. New and materially changed dossiers must send an empty array or omit it; an unchanged frozen legacy dossier may repeat exactly the values returned by GET order.
+        explanation:
+          type: string
+          minLength: 20
+          description: Customer's own account of how, when and from whom the funds were received or accumulated.
+        funds_flow_description: { type: string, description: Optional context on how the money reached the funding wallet. }
+        purpose_of_payment: { type: string, description: Optional context. }
+        sender_recipient_relationship: { type: string, description: Optional context. }
+        source_wallet_address:
+          type: string
+          pattern: '^0x[0-9a-fA-F]{40}$'
+          description: Required only for crypto_assets; exact wallet that will fund escrow.
+        source_wallet_network:
+          type: string
+          enum: [ethereum, eth, xai, unigox, bsc, 'bnb smart chain', polygon, arbitrum, 'arbitrum one']
+          description: Required only for crypto_assets; the server stores the canonical network name.
+        catalogue_revision:
+          type: integer
+          description: Optional audit value recorded with the submission; the server does not use it to select or validate requirements.
+        documents:
+          type: array
+          description: Optional references to documents already uploaded to this same case.
+          items: { $ref: '#/components/schemas/SettlementDeclaredDocumentReference' }
+        custody_authorization_signature: { type: string, description: Optional escrow release authorization forwarded after the declaration commits. }
+        custody_authorization_data: { type: string, description: Optional companion payload forwarded with the authorization; this endpoint does not reject the declaration when authorization storage fails. }
+
+    SettlementDocumentUploadResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [document_id, document_type, file_name, size_bytes, content_type, superseded_count]
+          properties:
+            document_id: { type: string, format: uuid }
+            document_type: { type: string }
+            file_name: { type: string }
+            size_bytes: { type: integer, format: int64 }
+            content_type: { type: string }
+            satisfies_requirement:
+              type: boolean
+              description: Absent before a declaration; false means expected_document_types is also returned.
+            expected_document_types:
+              type: array
+              items: { type: string }
+              description: Flat type vocabulary, not a checklist; inspect all_of/one_of in the catalogue.
+            superseded_count: { type: integer, minimum: 0 }
+
+    SettlementFundingIntentResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [funding_contract]
+          properties:
+            funding_contract: { $ref: '#/components/schemas/SettlementFundingContract' }
+
     KycDocumentType:
       type: string
       description: >-
@@ -5955,7 +6904,7 @@ components:
             - `created` → `["cancel"]`
             - `awaiting_liquidity_provider` → `["cancel"]`
             - `awaiting_crypto_transfer_authorization` → `["authorize-crypto-transfer", "cancel"]`
-            - `crypto_transfer_authorization_pending` → `["cancel"]`
+            - `crypto_transfer_authorization_pending` → `[]` (a transaction may already be in flight)
             - `crypto_received` → `["confirm-fiat-received"]` (optional fast-track)
             - `fiat_payment_started` → `["confirm-fiat-received"]` (optional fast-track after buyer proof submission)
             - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]` (required)
@@ -6122,6 +7071,8 @@ components:
         - `crypto_transfer_authorization_pending` — authorization submitted, awaiting on-chain confirmation
         - `crypto_received` — crypto locked in escrow
         - `fiat_payment_started` — buyer submitted fiat payment proof
+        - `fiat_payment_review_started` — payment proof is being reviewed
+        - `dispute_started` — the order is in dispute resolution
         - `awaiting_fiat_received_confirmation` — waiting for partner to confirm fiat receipt
         - `fiat_received_confirmed` — fiat confirmed, crypto release pending
         - `crypto_release_pending` — escrow release in progress
@@ -6129,6 +7080,14 @@ components:
         - `cancelled` — order cancelled
         - `failed` — terminal error
         - `price_changed_requote_needed` — slippage exceeded at initiation (not a trade status)
+
+        **Settlement T+1 additions:**
+        - `settlement_in_progress` — customer crypto left escrow; fiat payout is not yet confirmed
+        - `returned` — fiat was paid and subsequently returned by the receiving bank
+
+        **Legacy intermediate values:** `awaiting_vendor_acceptance`, `awaiting_crypto_submit`,
+        `crypto_submit_pending`. Keep an unknown/default branch even if your current flow does not
+        receive them.
 
         **On-ramp statuses (fiat → crypto):**
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
@@ -6155,8 +7114,13 @@ components:
         - awaiting_liquidity_provider
         - awaiting_crypto_transfer_authorization
         - crypto_transfer_authorization_pending
+        - awaiting_vendor_acceptance
+        - awaiting_crypto_submit
+        - crypto_submit_pending
         - crypto_received
         - fiat_payment_started
+        - fiat_payment_review_started
+        - dispute_started
         - awaiting_fiat_received_confirmation
         - fiat_received_confirmed
         - crypto_release_pending
@@ -6167,6 +7131,8 @@ components:
         - cancelled
         - failed
         - price_changed_requote_needed
+        - settlement_in_progress
+        - returned
         - send_out_pending
         - send_out_completed
         - send_out_failed
