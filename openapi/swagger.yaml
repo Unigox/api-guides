@@ -4006,6 +4006,17 @@ paths:
       description: |
         Get a paginated list of orders with optional filtering by status.
         Each order includes `allowed_actions` indicating which API actions are available.
+
+        The list also contains **widget orders** — orders your customers created through the
+        embedded Unigox widget under your `widgetKey`. Those are attributed to you for reporting
+        and markup, but the crypto belongs to the end user, so they are **notify-only**: they
+        appear here and in your webhook stream, and every action endpoint answers `404
+        ORDER_NOT_FOUND` for them.
+
+        `allowed_actions` does not yet distinguish them — it is derived from `status` alone, so a
+        widget order can still advertise `authorize-crypto-transfer` or `cancel` and then answer
+        `404`. Act only on order ids your own `initiate` call returned; an id you first saw in this
+        listing or in a webhook is a customer's widget order.
       operationId: listOrders
       security:
         - ApiKeyAuth: []
