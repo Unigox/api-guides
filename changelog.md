@@ -2,6 +2,17 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-25
+
+**Widget orders are notify-only.** If your customers reach Unigox through the embedded widget under your `widgetKey`, the orders they create are attributed to you — they appear in `GET /api/v1/partner/orders` and in your webhook stream, exactly as before. What changes is that they are no longer actionable: every action endpoint (`authorize-crypto-transfer`, `confirm-fiat-received`, `cancel`, `submit-payer-details`, `confirm-payment-sent`, `authorize-bridge`, and the two authorization-parameter reads) now answers `404 ORDER_NOT_FOUND` for them.
+
+The crypto on a widget order belongs to the end user and sits in their own Unigox wallet, while every partner action moves crypto from *your* wallet. Funding a widget order's escrow therefore paid for a customer's trade out of your balance, and a refund on that order paid the customer rather than returning your funds. Refusing the action is what stops that.
+
+- Nothing changes for orders you created through this API. They remain fully actionable.
+- Webhooks for widget orders keep arriving, so you can still correlate a widget trade with your own records. Treat them as notifications, not as instructions: an `awaiting_crypto_transfer_authorization` status on a widget order is describing the customer's step, not asking you to take it.
+- **Neither `status` nor `allowed_actions` distinguishes a widget order yet.** `allowed_actions` is derived from status alone, so a widget order sitting at `awaiting_crypto_transfer_authorization` still advertises `["authorize-crypto-transfer", "cancel"]` — and both now return `404`. Until that is fixed, the reliable rule is the one below.
+- **Only act on orders you created.** Keep the `order_id` returned by your own `POST /offramp/initiate` or `POST /onramp/initiate` call and act on those. Any order id you first learned about from a listing or a webhook came from the widget, and is not yours to act on.
+
 ## 2026-08-11
 
 **Chinese mobile wallets pay Chinese nationals only, and WeChat pays fewer of them than Alipay.** Both wallets verify the account holder against a Chinese national ID, so a foreign resident's Alipay or WeChat account cannot receive on the `ewallet` format — use a bank format for those beneficiaries.
