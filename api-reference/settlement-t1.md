@@ -1459,18 +1459,58 @@ cancellation. **Keep polling until it passes**: treating the cancellation as
 final before then can leave you telling a customer their order was cancelled
 while their crypto is sitting in a Safe.
 
-Every refusal is **409** with `INVALID_STATUS`:
+### Why a cancel is refused
 
-| Message | When |
-| --- | --- |
-| `trade <n> cannot be refunded automatically: the funds are in bridge_in_transit` | past the point of no return. The location in the message is the current `financial_location` |
-| `trade <n> is already being refunded` | a refund is already running |
-| `trade <n> has finished as completed and cannot be refunded` | the order is terminal (`completed` or `refunded`) |
-| `trade <n> is not a crypto-first settlement order` | the order was never converted |
-| `this transfer can no longer be cancelled` | final compliance approval already committed the transfer to payout preparation |
+**Not every refusal is terminal.** Most are a fact about the order and an
+unchanged retry gets the same answer, but two are not: one clears by itself in
+minutes, and one needs a person rather than a retry. Switching on the status
+code alone will get those two wrong.
 
-A `returned` order is refused by the first row, not the third: it is not
-terminal, but its funds are in `fiat_returned`, which is not refundable by us.
+**409 `INVALID_STATUS` — a fact about your order.** Nothing was cancelled and
+nothing was queued.
+
+| Message | When | Retry? |
+| --- | --- | --- |
+| `this transfer is already being returned — nothing further is needed` | the order is at `refund_processing`: a cancellation is already running | **No.** You already have what you asked for — poll it |
+| `this transfer is being handled by our team and cannot be cancelled from here; the funds are accounted for and support can tell you where they are` | the order is at `manual_recovery` | **No.** Talk to us; there is usually a reason a person is already looking at it |
+| `this transfer can no longer be cancelled` | `cancellable` is false for any other reason: `provider_preclearance`, `requote_required`, `ready_for_settlement`, `custody_release`, `provider_funding`, `provider_credit_confirmation`, `fiat_payout`, `returned` | **No** |
+| `trade <n> has finished as <stage> and cannot be refunded` | the order is terminal — `completed` or `refunded` | **No** |
+| `trade <n> cannot be refunded automatically: the funds are in <location>` | the money is somewhere we cannot reach: any `financial_location` other than `customer_wallet`, `escrow` or `custody` — `bridge_in_transit`, `provider_book`, `fiat_payout_in_transit`, `fiat_paid`, `fiat_returned`, `crypto_refunded` | **No** |
+| `trade <n> is already being refunded` | a refund is already running. On this endpoint the stage check above answers first, so you see this from the admin and internal refund routes rather than here | **No** |
+| `trade <n> cannot be refunded: the provider has already been funded as <tx_hash>, so recovering it is a conversation with the provider rather than a refund` | the custody→provider transfer was submitted. The order row can still read `custody`, which is why this is a separate answer from the row above | **No.** Recovery is a conversation with us |
+| `trade <n> cannot be refunded: its bridge capability has already been spent (<tx_hash>), so the crypto has left custody for the provider and is no longer ours to return` | the bridge capability minted for this order was consumed. `(no transaction was recorded)` appears in place of the hash when the spend was observed without one | **No** |
+| `trade <n> cannot be refunded: a bridge capability minted for forwarder nonce <n> is unspent and whether it moved the crypto cannot be seen from here; an operator has to release the capability claim on the record that the transfer did not happen before it can be refunded` | a capability to move the crypto exists and we cannot see whether it was used. We refuse rather than promise back money that may already have gone | **Not by retrying.** Route this to a person — it clears when one of ours releases the claim |
+| `trade <n> cannot be refunded: a provider funding attempt holds it until <ISO-8601 timestamp>; the refund may be started once that lease ends` | a funding attempt holds a short lease on the order. This is the ordinary race between a cancel and a funding run, not a state | **Yes, after the timestamp.** The lease is minutes, and the message carries its exact expiry |
+
+A `returned` order is refused as not cancellable, not as terminal: the money came
+back, so the order is not finished — but its funds are in `fiat_returned`, which
+is not refundable by us either.
+
+The four in-flight reasons are reported **most serious first**, so an order that
+matches more than one tells you the most final thing that is true about it.
+
+An order that was never converted to a settlement plane is not in this table at
+all: `cancel` answers **404** `ORDER_NOT_FOUND` for an id that is not yours or
+not a settlement order, and **500** for one whose plane cannot be read. The
+`trade <n> is not a crypto-first settlement order` message this section used to
+list belongs to the internal and admin refund routes, not to this endpoint.
+
+**503 — a fact about us.** The refusal is the same and still queues nothing, but
+the reason is ours, so this one is worth retrying.
+
+| Message | When | Retry? |
+| --- | --- | --- |
+| `the transfer state could not be checked and nothing was cancelled; please retry` | we could not READ whether the order's crypto is already on its way to the provider. That is not a statement that it is | **Yes**, with backoff |
+
+Its `error.code` follows the status, as every code on these endpoints does — see
+the [error catalogue](#error-catalogue). Do not read it as a statement that this
+transfer can never be cancelled; that reading is exactly what the separate status
+exists to prevent.
+
+> **One 500 is not "nothing happened".** `the cancellation was saved, but the
+> order could not be reloaded` means the cancel **committed** and only the
+> response body failed. Re-read the order rather than treating it as a failed
+> cancel.
 
 > **`cancellable: false` means the endpoint refuses too.** The endpoint applies
 > the same stage boundary as the response field before it asks whether the money

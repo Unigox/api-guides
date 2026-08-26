@@ -2,6 +2,24 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-26 (Settlement T+1 cancellation: the complete refusal contract)
+
+- The cancel section listed five refusals and said every one of them is **409
+  `INVALID_STATUS`**. Neither half was true any more. The refund path also
+  refuses when the provider has already been funded, when a bridge capability
+  minted for the order is unspent, and when a provider funding attempt holds a
+  short lease on it — and when we cannot READ whether the crypto is already
+  moving, it answers **503**, not 409.
+- Every refusal now carries whether it is worth retrying, because two of them
+  are and a partner treating all of them as terminal gets both wrong. A funding
+  lease clears by itself and names the timestamp it expires at. An unspent
+  bridge capability needs one of our operators, not a retry. The 503 is a fact
+  about us and should be retried with backoff.
+- `openapi/swagger.yaml` declares the `503` on the cancel operation, which it
+  did not, and says which of its responses mean the cancellation did NOT happen.
+  A **500** after the cancellation committed is the exception: the cancel stands
+  and only the response body failed, so re-read the order rather than retrying.
+
 ## 2026-08-26 (complete Settlement T+1 OpenAPI contract)
 
 - `openapi/swagger.yaml` now describes all eleven registered Partner API

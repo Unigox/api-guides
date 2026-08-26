@@ -4664,10 +4664,24 @@ paths:
           description: Order not found or not owned by this partner
           content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
         '409':
-          description: Customer cancellation is closed, refund is already running, or money is no longer reachable
+          description: >-
+            Refused as a fact about the order, and nothing was queued. Customer cancellation is closed,
+            a refund is already running, the order is terminal, the money is no longer reachable, or a
+            provider funding act stands over it. Mostly terminal, but two messages are not: a provider
+            funding lease names the timestamp it expires at and may be retried after it, and an unspent
+            bridge capability needs an operator rather than a retry. The message distinguishes them.
           content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
         '500':
-          description: Current order could not be read before/after cancellation
+          description: >-
+            Current order could not be read before/after cancellation. After cancellation this means the
+            cancellation COMMITTED and only the response body failed - re-read the order rather than
+            treating it as a failed cancel.
+          content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
+        '503':
+          description: >-
+            Whether the order's crypto is already on its way to the provider could not be read. The
+            cancellation was refused and nothing was queued, but this is a fact about us and not about
+            the order - retry with backoff.
           content: { application/json: { schema: { $ref: '#/components/schemas/PartnerErrorResponse' } } }
 
 components:
