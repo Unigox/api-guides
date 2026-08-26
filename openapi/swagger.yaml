@@ -4792,7 +4792,7 @@ components:
         provider: { type: string, description: Optional; omitted uses the corridor default. }
         rail: { type: string, description: Optional only when the existing trade has no recorded payout rail. }
         minimum_fiat_amount: { type: string, description: Customer floor; omitted derives the protected server floor. }
-        idempotency_key: { type: string, description: Optional partner key, scoped server-side to this settlement order. }
+        idempotency_key: { type: string, description: "Optional partner key, scoped server-side to this settlement order." }
         capacity_id: { type: integer, format: int64, minimum: 1 }
         capacity_revision: { type: integer, minimum: 1 }
         promised_settlement_sla_hours: { type: integer, minimum: 1 }
