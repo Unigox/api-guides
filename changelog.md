@@ -10,7 +10,7 @@ This closes the gap flagged in the 2026-08-25 entry below. On `GET /api/v1/partn
 
 - Nothing changes for orders you created through this API. They advertise exactly what they advertised before, at every status.
 - Reading a widget order is unchanged. It still appears in listings and webhooks, and `status`, `next_action` and `timeline` still describe it — they describe your customer's step, not one for you to take. Only the advertisement of *your* actions is gated.
-- An empty `allowed_actions` on an order that is plainly mid-flight is the signal that the order is your customer's rather than yours.
+- **The guarantee runs one way only.** A widget order is always `[]`, but `[]` does not mean an order is a widget order — your own orders are also `[]` whenever their status carries no action for you, including the mid-flight `crypto_transfer_authorization_pending`, `fiat_received_confirmed` and `crypto_release_pending`. Do not use an empty array to infer that an order is a customer's; it would misclassify your own live orders.
 - **Keep acting only on order ids your own `initiate` call returned.** That rule still holds as defence in depth: it does not depend on reading a field correctly, and it is what the action endpoints themselves enforce.
 
 **Retail accounts: issue dedicated fiat accounts (IBANs) for your own end customers.** A new optional product lets an entitled partner register retail clients under its customers, push their identity to our banking provider, issue accounts, and read balances, ledger and incoming fiat payments — all under the existing `X-API-Key`. See the Retail accounts reference and the `Retail Accounts` endpoint group.

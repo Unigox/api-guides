@@ -4059,10 +4059,12 @@ paths:
         appear here and in your webhook stream, and every action endpoint answers `404
         ORDER_NOT_FOUND` for them.
 
-        `allowed_actions` distinguishes them: it is `[]` on a widget order at every status,
-        because it is derived from the same custody rule the action endpoints enforce. An action
-        listed there is an action that endpoint will accept, so an empty array on an order that is
-        plainly mid-flight is the signal that the order is your customer's rather than yours.
+        The guarantee runs one way only. A widget order is always `[]`, and any action listed is
+        one the endpoint will accept — but `[]` does NOT mean an order is a widget order. Your own
+        orders are also `[]` whenever their status carries no action for you, including the
+        mid-flight `crypto_transfer_authorization_pending`, `fiat_received_confirmed` and
+        `crypto_release_pending`. Reading an empty array as "this is a customer's order" would
+        misclassify your own live orders and stop you tracking them.
 
         Keep acting only on order ids your own `initiate` call returned. That rule still holds as
         defence in depth, and it is the one that does not depend on reading a field correctly.
