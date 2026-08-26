@@ -3668,6 +3668,12 @@ paths:
         as a fast-track: if you already know the fiat has arrived (via your own systems), you can
         confirm immediately without waiting for the buyer's payment proof flow to complete.
 
+        `allowed_actions` is `[]` for a **widget order** — one your customer created through the
+        embedded widget under your `widgetKey`. Those orders are attributed to you, and readable
+        here, but the crypto is the end user's, so every action endpoint answers `404
+        ORDER_NOT_FOUND` for them. `status`, `next_action` and the timeline still describe the
+        order; they describe your customer's step, not one for you to take.
+
         **Order flow summary:**
 
         | Status | next_action | Who acts |
@@ -3680,6 +3686,12 @@ paths:
         | `fiat_payment_review_started` | — | System accepts/rejects proof |
         | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
         | `completed` | — | — |
+
+        The "Who acts" column describes an order **you** created. On a widget order the rows
+        reading **Partner** are your customer's step, not yours — `next_action` is populated the
+        same way for both, because it describes where the order stands rather than who may move
+        it. `allowed_actions` is what tells you apart: `[]` on a widget order at every status.
+        Acting on a `next_action` for a widget order returns `404 ORDER_NOT_FOUND`.
 
         **Fiat settlement and confirmation:**
 
@@ -4053,10 +4065,15 @@ paths:
         appear here and in your webhook stream, and every action endpoint answers `404
         ORDER_NOT_FOUND` for them.
 
-        `allowed_actions` does not yet distinguish them — it is derived from `status` alone, so a
-        widget order can still advertise `authorize-crypto-transfer` or `cancel` and then answer
-        `404`. Act only on order ids your own `initiate` call returned; an id you first saw in this
-        listing or in a webhook is a customer's widget order.
+        The guarantee runs one way only. A widget order is always `[]`, and any action listed is
+        one the endpoint will accept — but `[]` does NOT mean an order is a widget order. Your own
+        orders are also `[]` whenever their status carries no action for you, including the
+        mid-flight `crypto_transfer_authorization_pending`, `fiat_received_confirmed` and
+        `crypto_release_pending`. Reading an empty array as "this is a customer's order" would
+        misclassify your own live orders and stop you tracking them.
+
+        Keep acting only on order ids your own `initiate` call returned. That rule still holds as
+        defence in depth, and it is the one that does not depend on reading a field correctly.
 
         To read a specific widget order, the embedded widget's `onTradeStarted` and
         `onTradeCompleted` callbacks carry `orderId` — the same `order_id` used here and in your
@@ -6771,6 +6788,11 @@ components:
             - `fiat_payment_started` → `["confirm-fiat-received"]` (optional fast-track after buyer proof submission)
             - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]` (required)
             - `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed` → `[]`
+
+            Custody outranks the mapping above: on a **widget order** — one your customer created
+            through the embedded widget under your `widgetKey` — this is `[]` at every status,
+            because the crypto is the end user's and every action endpoint answers `404
+            ORDER_NOT_FOUND` for it.
           example: ["authorize-crypto-transfer", "cancel"]
         crypto_transfer_authorization_seconds_left:
           type: integer
