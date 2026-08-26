@@ -3687,6 +3687,12 @@ paths:
         | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
         | `completed` | — | — |
 
+        The "Who acts" column describes an order **you** created. On a widget order the rows
+        reading **Partner** are your customer's step, not yours — `next_action` is populated the
+        same way for both, because it describes where the order stands rather than who may move
+        it. `allowed_actions` is what tells you apart: `[]` on a widget order at every status.
+        Acting on a `next_action` for a widget order returns `404 ORDER_NOT_FOUND`.
+
         **Fiat settlement and confirmation:**
 
         You can call `confirm-fiat-received` at any time after crypto is in escrow.
