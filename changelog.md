@@ -4,6 +4,15 @@ Notable changes to the Unigox partner API, newest first.
 
 ## 2026-08-26
 
+**`allowed_actions` is now empty for a widget order.** The field is derived from crypto custody as well as from status, so it no longer lists actions that would answer `404`. A widget order returns `"allowed_actions": []` at every status — including `awaiting_crypto_transfer_authorization`, where it used to advertise `["authorize-crypto-transfer", "cancel"]` and both calls then failed.
+
+This closes the gap flagged in the 2026-08-25 entry below. On `GET /api/v1/partner/orders/{order_id}` and `GET /api/v1/partner/orders`, `allowed_actions` has become a reliable signal: it is derived from the same custody rule the action endpoints enforce, so an action listed there is one that endpoint will accept.
+
+- Nothing changes for orders you created through this API. They advertise exactly what they advertised before, at every status.
+- Reading a widget order is unchanged. It still appears in listings and webhooks, and `status`, `next_action` and `timeline` still describe it — they describe your customer's step, not one for you to take. Only the advertisement of *your* actions is gated.
+- An empty `allowed_actions` on an order that is plainly mid-flight is the signal that the order is your customer's rather than yours.
+- **Keep acting only on order ids your own `initiate` call returned.** That rule still holds as defence in depth: it does not depend on reading a field correctly, and it is what the action endpoints themselves enforce.
+
 **Retail accounts: issue dedicated fiat accounts (IBANs) for your own end customers.** A new optional product lets an entitled partner register retail clients under its customers, push their identity to our banking provider, issue accounts, and read balances, ledger and incoming fiat payments — all under the existing `X-API-Key`. See the Retail accounts reference and the `Retail Accounts` endpoint group.
 
 - **The envelope is different for these endpoints.** Retail responses are flat: `{"source":"depa","ok":true, …}` on success (the payload merged at the top level, not under `data`), and `{"ok":false,"source":"depa","error":"<slug>","detail":"…"}` on error. Branch on `error`. Provider-origin failures add `upstream`; missing-field errors add a `missing` array. `GET /retail/accounts` returns `source` as an object, not the string `"depa"`.
