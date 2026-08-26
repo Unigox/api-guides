@@ -4,6 +4,12 @@ Notable changes to the Unigox partner API, newest first.
 
 ## 2026-08-26
 
+**Retail accounts: issue dedicated fiat accounts (IBANs) for your own end customers.** A new optional product lets an entitled partner register retail clients under its customers, push their identity to our banking provider, issue accounts, and read balances, ledger and incoming fiat payments — all under the existing `X-API-Key`. See the Retail accounts reference and the `Retail Accounts` endpoint group.
+
+- **The envelope is different for these endpoints.** Retail responses are flat: `{"source":"depa","ok":true, …}` on success (the payload merged at the top level, not under `data`), and `{"ok":false,"source":"depa","error":"<slug>","detail":"…"}` on error. Branch on `error`. Provider-origin failures add `upstream`; missing-field errors add a `missing` array. `GET /retail/accounts` returns `source` as an object, not the string `"depa"`.
+- **Enablement is Unigox-side.** You reach these endpoints only once we have activated the `retail` product on your partner and, for issuing, granted `issue_retail_accounts`. Until then writes answer `403` and `GET /retail/config` reports `enabled: false`. Money movement (funding, swaps, closing, outbound payments) is not on this API.
+- **Deposits stay on the customer's account by default.** When money lands on a retail IBAN you issued, it stays on that customer's own account and you read it via `…/fiat-payments`. We can, per partner, switch on collection of those credits into your master account instead — ask us to enable it. Only when collection is on and succeeds do you receive a new `retail.settlement.completed` webhook (same envelope and signature as other events); on the default there is no deposit webhook.
+
 **Widget callbacks now carry the order id.** The embedded widget's `onTradeStarted` and `onTradeCompleted` callbacks include `orderId` alongside `tradeId`. It is the same `order_id` this API and your webhooks use, so a widget trade can now be read directly with `GET /api/v1/partner/orders/{order_id}`.
 
 Previously there was no way to make that call. `tradeId` is a Unigox-internal numeric id, and this API validates the path segment as a UUID — passing `tradeId` answers `400 invalid order_id format`, not a `404`. The order UUID was not exposed to the widget and the order response carries no trade id, so the two identifiers had nothing to join on.
