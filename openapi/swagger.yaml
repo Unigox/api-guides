@@ -4017,6 +4017,12 @@ paths:
         widget order can still advertise `authorize-crypto-transfer` or `cancel` and then answer
         `404`. Act only on order ids your own `initiate` call returned; an id you first saw in this
         listing or in a webhook is a customer's widget order.
+
+        To read a specific widget order, the embedded widget's `onTradeStarted` and
+        `onTradeCompleted` callbacks carry `orderId` — the same `order_id` used here and in your
+        webhooks. Its sibling `tradeId` is a Unigox-internal numeric id and is **not** accepted by
+        this API: `GET /partner/orders/{order_id}` validates the path segment as a UUID and answers
+        `400 invalid order_id format` for it.
       operationId: listOrders
       security:
         - ApiKeyAuth: []
