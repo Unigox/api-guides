@@ -10,6 +10,14 @@ Notable changes to the Unigox partner API, newest first.
 - **Enablement is Unigox-side.** You reach these endpoints only once we have activated the `retail` product on your partner and, for issuing, granted `issue_retail_accounts`. Until then writes answer `403` and `GET /retail/config` reports `enabled: false`. Money movement (funding, swaps, closing, outbound payments) is not on this API.
 - **Deposits stay on the customer's account by default.** When money lands on a retail IBAN you issued, it stays on that customer's own account and you read it via `…/fiat-payments`. We can, per partner, switch on collection of those credits into your master account instead — ask us to enable it. Only when collection is on and succeeds do you receive a new `retail.settlement.completed` webhook (same envelope and signature as other events); on the default there is no deposit webhook.
 
+**Widget callbacks now carry the order id.** The embedded widget's `onTradeStarted` and `onTradeCompleted` callbacks include `orderId` alongside `tradeId`. It is the same `order_id` this API and your webhooks use, so a widget trade can now be read directly with `GET /api/v1/partner/orders/{order_id}`.
+
+Previously there was no way to make that call. `tradeId` is a Unigox-internal numeric id, and this API validates the path segment as a UUID — passing `tradeId` answers `400 invalid order_id format`, not a `404`. The order UUID was not exposed to the widget and the order response carries no trade id, so the two identifiers had nothing to join on.
+
+- `orderId` is optional in the callback payload, because a trade opened outside a partner widget has no partner order behind it. Read it defensively rather than asserting it.
+- `tradeId` is unchanged and still correlates the widget's own events (`onTradeStarted`, `onTradeCompleted`, `onSendout*`) with each other.
+- This does not make widget orders actionable. They remain notify-only — see below.
+
 ## 2026-08-25
 
 **Widget orders are notify-only.** If your customers reach Unigox through the embedded widget under your `widgetKey`, the orders they create are attributed to you — they appear in `GET /api/v1/partner/orders` and in your webhook stream, exactly as before. What changes is that they are no longer actionable: every action endpoint (`authorize-crypto-transfer`, `confirm-fiat-received`, `cancel`, `submit-payer-details`, `confirm-payment-sent`, `authorize-bridge`, and the two authorization-parameter reads) now answers `404 ORDER_NOT_FOUND` for them.
