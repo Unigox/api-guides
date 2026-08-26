@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-26
+
+**Widget callbacks now carry the order id.** The embedded widget's `onTradeStarted` and `onTradeCompleted` callbacks include `orderId` alongside `tradeId`. It is the same `order_id` this API and your webhooks use, so a widget trade can now be read directly with `GET /api/v1/partner/orders/{order_id}`.
+
+Previously there was no way to make that call. `tradeId` is a Unigox-internal numeric id, and this API validates the path segment as a UUID — passing `tradeId` answers `400 invalid order_id format`, not a `404`. The order UUID was not exposed to the widget and the order response carries no trade id, so the two identifiers had nothing to join on.
+
+- `orderId` is optional in the callback payload, because a trade opened outside a partner widget has no partner order behind it. Read it defensively rather than asserting it.
+- `tradeId` is unchanged and still correlates the widget's own events (`onTradeStarted`, `onTradeCompleted`, `onSendout*`) with each other.
+- This does not make widget orders actionable. They remain notify-only — see below.
+
 ## 2026-08-25
 
 **Widget orders are notify-only.** If your customers reach Unigox through the embedded widget under your `widgetKey`, the orders they create are attributed to you — they appear in `GET /api/v1/partner/orders` and in your webhook stream, exactly as before. What changes is that they are no longer actionable: every action endpoint (`authorize-crypto-transfer`, `confirm-fiat-received`, `cancel`, `submit-payer-details`, `confirm-payment-sent`, `authorize-bridge`, and the two authorization-parameter reads) now answers `404 ORDER_NOT_FOUND` for them.
