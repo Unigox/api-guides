@@ -238,6 +238,46 @@ tags:
       assuming it. Manual `confirm-fiat-received` and the automatic confirmation are mutually
       idempotent — whichever happens first wins and the other is a safe no-op.
     x-page-icon: bell
+  - name: Retail Accounts
+    description: |
+      Issue and manage dedicated fiat accounts (IBANs) for your own end customers.
+
+      This is an optional product. A partner reaches these endpoints only when Unigox has
+      activated the `retail` product on the partner and granted the `issue_retail_accounts`
+      capability. Without them the write endpoints answer `403` (`retail_not_activated` /
+      `retail_issuance_not_granted`) and `GET /retail/config` reports `enabled: false` with a
+      `disabledReason`. Talk to Unigox to be enabled — you cannot self-grant it.
+
+      **This tag does NOT use the `{success, data}` envelope.** Every retail response is a flat
+      object stamped by the provider layer:
+
+      - Success: `{"source": "depa", "ok": true, …handler fields…}` — the payload fields
+        (`config`, `account`, `clients`, …) are merged onto the top level, not nested under
+        `data`. A `201` still carries `ok: true`; the HTTP status is what signals created-ness.
+      - Error: `{"ok": false, "source": "depa", "error": "<machine_slug>", "detail": "<sentence>"}`.
+        `detail` is omitted when empty. A failure that originated at the banking provider adds
+        `"upstream": "<provider_code>"`; a missing-fields validation error adds `"missing": [ … ]`.
+      - Two shape exceptions: `GET /retail/accounts` returns `source` as an **object**
+        (`{accountId, balances}`), not the string `"depa"`; and the missing-fields errors above
+        carry the extra `missing` array.
+
+      Authentication is the same `X-API-Key` (or operator `Authorization: Bearer`) as the rest of
+      the Partner API. The partner is always resolved from the credential server-side, and every
+      `customerUuid` is scoped to that partner — a customer you do not own answers `404
+      customer_not_found`, indistinguishable from one that does not exist.
+
+      **Money movement is not on this API.** Funding, swaps, closing an account and issuing
+      payments are Unigox-operated (Portal only). A partner can issue accounts and read balances,
+      ledger and fiat payments — nothing here debits an account.
+
+      **Settlement of incoming deposits is Unigox-configured, not a call you make.** When a
+      deposit lands on a retail IBAN you issued, by default the money stays on that customer's own
+      account. Unigox can, per partner, switch on collection of those credits into your master
+      (operating) account instead — ask Unigox to enable it. Only when that is on **and** a
+      collection succeeds do you receive a single webhook, `retail.settlement.completed`; a
+      partner left on the default receives no webhook for a retail deposit (there is no separate
+      "deposit received" event).
+    x-page-icon: building-columns
 
 paths:
   # ============================================
@@ -4304,6 +4344,647 @@ paths:
                 data:
                   error_key: "webhook delivery failed"
 
+  # ============================================
+  # RETAIL ACCOUNTS (optional product)
+  # Flat provider envelope — see the Retail Accounts tag. NOT {success, data}.
+  # ============================================
+  /api/v1/partner/retail/config:
+    get:
+      tags:
+        - Retail Accounts
+      summary: Retail capabilities for your partner
+      description: |
+        What retail issuance your partner may use right now: whether it is enabled, which
+        currencies and issuing jurisdictions are available, the swap assets, and the parent
+        account. Never fails on entitlement — when the product is not active it returns
+        `enabled: false` with a `disabledReason` rather than an error.
+      operationId: getRetailConfig
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Current retail capability view
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  config:
+                    $ref: '#/components/schemas/RetailConfigView'
+
+  /api/v1/partner/retail/accounts:
+    get:
+      tags:
+        - Retail Accounts
+      summary: List issued retail accounts
+      description: |
+        Every retail account you have issued, each enriched with its client's name, email and
+        status, plus the aggregate balances on the parent account. Returns the full list — this
+        endpoint is not paginated.
+
+        Note the envelope exception: `source` here is an object (`{accountId, balances}`), not the
+        usual `"depa"` string.
+      operationId: listRetailAccounts
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Issued accounts and parent balances
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailAccountView'
+                  source:
+                    type: object
+                    properties:
+                      accountId: { type: string, example: "1f0a…-parent-uuid" }
+                      balances:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/RetailBalanceLine'
+        '500':
+          description: Could not load accounts (`load_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/accounts/{account_id}:
+    get:
+      tags:
+        - Retail Accounts
+      summary: Get one retail account
+      description: |
+        Full detail for one issued account: live status, the client it belongs to, the provider
+        bank account(s) with full IBAN/sort code, and current balances. `balancesUnavailable` is
+        `true` when the provider balance read failed but the account itself loaded.
+      operationId: getRetailAccount
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Numeric id of the issued account (from the list / provisioning response).
+          schema:
+            type: integer
+            format: int64
+          example: 4821
+      responses:
+        '200':
+          description: Account detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  account:
+                    $ref: '#/components/schemas/RetailAccountView'
+                  client:
+                    nullable: true
+                    allOf:
+                      - $ref: '#/components/schemas/RetailAccountClient'
+                  bankAccounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailDepaBankAccount'
+                  balances:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailBalanceLine'
+                  balancesUnavailable: { type: boolean, example: false }
+        '404':
+          description: Account not found (`retail_account_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '422':
+          description: Account exists locally but is not yet provisioned at the provider (`account_not_provisioned`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '500':
+          description: Load failure (`load_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/accounts/{account_id}/ledger:
+    get:
+      tags:
+        - Retail Accounts
+      summary: Account ledger
+      description: Provider ledger entries for one account, most recent first. Page size is provider-controlled.
+      operationId: getRetailLedger
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          example: 4821
+        - name: page
+          in: query
+          required: false
+          description: 1-based page. Absent or `< 1` is coerced to 1.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        '200':
+          description: Ledger page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailLedgerEntry'
+                  pagination:
+                    $ref: '#/components/schemas/RetailPagination'
+        '404':
+          description: Account not found (`retail_account_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '502':
+          description: Provider read failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/accounts/{account_id}/fiat-payments:
+    get:
+      tags:
+        - Retail Accounts
+      summary: Account fiat payments
+      description: Incoming and outgoing fiat payments seen on one account's bank account(s).
+      operationId: getRetailFiatPayments
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          example: 4821
+        - name: page
+          in: query
+          required: false
+          description: 1-based page. Absent or `< 1` is coerced to 1.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        '200':
+          description: Fiat payments page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  payments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailFiatPayment'
+                  bankAccounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailBankAccountRef'
+                  pagination:
+                    $ref: '#/components/schemas/RetailPagination'
+        '404':
+          description: Account not found (`retail_account_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '502':
+          description: Provider read failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/customers/{customerUuid}/clients:
+    get:
+      tags:
+        - Retail Accounts
+      summary: List clients for a customer
+      description: |
+        The retail clients registered under one of your customers, each with its issued accounts
+        inlined (`accounts` is always present, `[]` when none). Not paginated.
+      operationId: listRetailClients
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RetailCustomerUuid'
+      responses:
+        '200':
+          description: Clients under the customer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  clients:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailClientView'
+        '500':
+          description: Load failure (`load_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+    post:
+      tags:
+        - Retail Accounts
+      summary: Register a retail client
+      description: |
+        Create a retail client under a customer as a local draft. No provider call happens here —
+        the client starts `status: draft`, `kycStatus: kyc_pending`. Only `firstName` and
+        `lastName` are required; `documentNumber` is never stored (only its last 4 digits are kept).
+
+        Requires the `retail` product (and the platform kill switch on).
+      operationId: createRetailClient
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RetailCustomerUuid'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetailCreateClientRequest'
+      responses:
+        '201':
+          description: Client created (local draft)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  client:
+                    $ref: '#/components/schemas/RetailClientView'
+        '400':
+          description: Missing first/last name — body carries a `missing` array (`missing_fields`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailMissingFieldsError'
+        '403':
+          description: Retail not enabled for this partner (`retail_writes_disabled` / `retail_not_activated`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '404':
+          description: Customer not found / not owned (`customer_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '500':
+          description: Insert failure (`create_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/customers/{customerUuid}/identity:
+    get:
+      tags:
+        - Retail Accounts
+      summary: Identity readiness for a customer
+      description: |
+        The identity Unigox already holds for a customer (from their KYC), what is still missing
+        before an IBAN can be issued, and a `ready` flag. `missing` is exactly the set that
+        `POST …/identification` would refuse on. Read-only — stays available when writes are off.
+      operationId: getRetailCustomerIdentity
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RetailCustomerUuid'
+      responses:
+        '200':
+          description: Identity view
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  identity:
+                    $ref: '#/components/schemas/RetailIdentity'
+                  missing:
+                    type: array
+                    items: { type: string }
+                    example: [address, city, birthdate]
+                  ready: { type: boolean, example: false }
+        '422':
+          description: Customer not linked to a retail record (`customer_unknown`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '503':
+          description: Identity read unavailable (`identity_unavailable`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/customers/{customerUuid}/clients/{clientId}:
+    get:
+      tags:
+        - Retail Accounts
+      summary: Get one retail client
+      description: One client with its issued accounts. `operations` is always an empty array.
+      operationId: getRetailClient
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RetailCustomerUuid'
+        - $ref: '#/components/parameters/RetailClientId'
+      responses:
+        '200':
+          description: Client detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  client:
+                    $ref: '#/components/schemas/RetailClientView'
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RetailAccountView'
+                  operations:
+                    type: array
+                    items: {}
+                    example: []
+        '404':
+          description: Client not found or not under this customer (`retail_client_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '500':
+          description: Load failure (`load_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/customers/{customerUuid}/clients/{clientId}/identification:
+    post:
+      tags:
+        - Retail Accounts
+      summary: Push identification to the provider
+      description: |
+        Send the client's identity to the banking provider, the step that makes them eligible for
+        an IBAN. Every body field is a **fallback** for something the customer's KYC did not
+        already capture — a verified KYC fact cannot be overridden, and name / partner are never
+        taken from the body. The effective required set after merging with KYC is `address`,
+        `city`, `birthdate`, `documentNumber`, `documentType`, `email`, `countryOfResidence`.
+
+        Idempotent: an already-linked client returns `200` with `alreadyLinked: true`. Requires
+        the `retail` product (and the kill switch on).
+      operationId: pushRetailIdentification
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RetailCustomerUuid'
+        - $ref: '#/components/parameters/RetailClientId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetailPushIdentificationRequest'
+      responses:
+        '200':
+          description: Identification accepted (or already linked)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  client:
+                    $ref: '#/components/schemas/RetailClientView'
+                  alreadyLinked: { type: boolean, example: false }
+        '400':
+          description: Missing fields (`missing_fields`, with a `missing` array) or unknown `documentType` (`invalid_document_type`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailMissingFieldsError'
+        '403':
+          description: Retail not enabled for this partner (`retail_writes_disabled` / `retail_not_activated`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '409':
+          description: This identity already belongs to another client (`identification_already_linked`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '422':
+          description: Customer not KYC-verified by Unigox / not linked (`customer_not_verified`, `customer_unknown`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '502':
+          description: Provider rejected the identification (envelope may carry `upstream`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '500':
+          description: Provider accepted but the local link write failed — do not retry (`link_write_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/customers/{customerUuid}/clients/{clientId}/identification/refresh:
+    post:
+      tags:
+        - Retail Accounts
+      summary: Refresh identification status
+      description: |
+        Re-read the provider's current identification status for a client and reconcile it locally.
+        Reconcile-only — no request body, and it keeps working even when retail writes are switched
+        off.
+      operationId: refreshRetailIdentification
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RetailCustomerUuid'
+        - $ref: '#/components/parameters/RetailClientId'
+      responses:
+        '200':
+          description: Status refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  client:
+                    $ref: '#/components/schemas/RetailClientView'
+                  providerStatus: { type: string, example: "approved" }
+        '422':
+          description: Client never submitted identification (`identification_missing`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '502':
+          description: Provider read failed or returned a blank status (`provider_error`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '500':
+          description: Local write failed (`status_write_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
+  /api/v1/partner/retail/customers/{customerUuid}/clients/{clientId}/accounts:
+    post:
+      tags:
+        - Retail Accounts
+      summary: Issue a retail account (IBAN)
+      description: |
+        Open a dedicated fiat account for an approved, identified client. `currency` is required
+        and must be one the partner's plan prices; `issuerCountry` is optional (defaults to the
+        currency's default jurisdiction); `postalCode` is required only for postal-code
+        jurisdictions.
+
+        Idempotent — `created` is `false` when an existing provider account was adopted or the
+        client already held the account. Requires the `retail` product **and** the
+        `issue_retail_accounts` capability (and the kill switch on).
+      operationId: provisionRetailAccount
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RetailCustomerUuid'
+        - $ref: '#/components/parameters/RetailClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetailProvisionAccountRequest'
+      responses:
+        '201':
+          description: Account issued (or adopted)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  source: { type: string, example: depa }
+                  account:
+                    $ref: '#/components/schemas/RetailAccountView'
+                  created:
+                    type: boolean
+                    description: true when a new IBAN was opened; false when an existing account was adopted or already held.
+                    example: true
+        '400':
+          description: |
+            Unsupported currency (`unsupported_currency`), unsupported issuer country
+            (`unsupported_issuer_country`), or postal-code problem (`postal_code_required`,
+            `invalid_postal_code`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '403':
+          description: |
+            Retail issuance not enabled for this partner (`retail_writes_disabled`,
+            `retail_issuance_not_granted`) or the currency is not permitted by the issuance link
+            (`currency_not_permitted`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '409':
+          description: A concurrent provisioning claim is already held (`provisioning_in_progress`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '422':
+          description: |
+            Client not approved / not identified (`client_not_approved`,
+            `identification_missing`), customer no longer verified (`customer_not_verified`), or
+            currency not priced (`currency_not_priced`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '502':
+          description: Provider refused to open the account (envelope may carry `upstream`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+        '500':
+          description: Provider opened the account but the local record write failed — do not retry (`record_failed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailError'
+
 components:
   schemas:
     KycDocumentType:
@@ -6644,6 +7325,360 @@ components:
               example:
                 quoted_rate: 1530.12
                 current_rate: 1545.00
+
+    # ---- Retail Accounts ----
+    RetailError:
+      type: object
+      description: |
+        Retail error envelope. Flat (no `data` wrapper): `error` is a stable machine slug you can
+        branch on, `detail` is a human sentence, and `upstream` appears only when the failure
+        originated at the banking provider.
+      required:
+        - ok
+        - source
+        - error
+      properties:
+        ok:
+          type: boolean
+          example: false
+        source:
+          type: string
+          example: depa
+        error:
+          type: string
+          description: Stable machine slug for this failure.
+          example: retail_account_not_found
+        detail:
+          type: string
+          description: Human-readable explanation (omitted when empty).
+          example: "That retail account does not exist for this partner."
+        upstream:
+          type: string
+          description: Provider machine code — present only on a provider-origin failure.
+          example: account_locked
+
+    RetailMissingFieldsError:
+      description: 'A RetailError (error = "missing_fields") that additionally lists what was missing.'
+      allOf:
+        - $ref: '#/components/schemas/RetailError'
+        - type: object
+          properties:
+            missing:
+              type: array
+              items:
+                type: string
+              example: [firstName, lastName]
+
+    RetailConfigView:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Whether this partner may currently use retail issuance.
+          example: true
+        disabledReason:
+          type: string
+          description: Machine slug for why it is disabled — present only when `enabled` is false because of this partner.
+          example: retail_not_activated
+        issuesAccounts:
+          type: boolean
+          description: Whether the partner also holds the `issue_retail_accounts` capability.
+          example: true
+        currencies:
+          type: array
+          items:
+            type: string
+          description: Currencies the partner's plan prices, in ISO 4217.
+          example: [GBP, EUR]
+        issuers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Currency → allowed issuing jurisdictions (ISO 3166-1 alpha-2). First entry is the default.
+          example:
+            GBP: [GB]
+            EUR: [LT, DE]
+        postalCodeIssuers:
+          type: array
+          items:
+            type: string
+          description: Jurisdictions that require a postal code at issuance time.
+          example: [DE]
+        swapAssets:
+          type: array
+          items:
+            type: string
+          example: [USDT, USDC]
+        parentAccountId:
+          type: string
+          nullable: true
+          description: The partner's parent (master) account uuid, when set.
+
+    RetailBalanceLine:
+      type: object
+      description: A currency balance. Amounts are decimal strings.
+      properties:
+        currency: { type: string, example: GBP }
+        available: { type: string, example: "999.00" }
+        pending: { type: string, example: "0.00" }
+        total: { type: string, example: "999.00" }
+
+    RetailAccountView:
+      type: object
+      description: |
+        A retail account as shown in console/list views. IBAN and account number are truncated to
+        their last four digits here; full details live on the provider bank account
+        (`RetailDepaBankAccount`) returned by the single-account read.
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 4821
+        retailClientId:
+          type: integer
+          format: int64
+          example: 1307
+        customerPublicUuid:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        currency: { type: string, example: GBP }
+        issuerCountry: { type: string, example: GB }
+        status: { type: string, example: active }
+        ibanLast4: { type: string, example: "8123" }
+        accountNumberLast4: { type: string, example: "8123" }
+        sortCode: { type: string, example: "040004" }
+        holderName: { type: string, example: "M ZALISHCHUK" }
+        institution: { type: string, example: "Clear Bank" }
+        bic: { type: string, example: "CLRBGB22" }
+        depaAccountUuid: { type: string }
+        depaBankAccountUuid: { type: string }
+        providerStatusRaw: { type: string, description: Provider's own status string before remapping. }
+        createdAt: { type: string, description: Creation timestamp. }
+        clientName: { type: string, description: Present only in the list view. }
+        clientEmail: { type: string, description: Present only in the list view. }
+        clientStatus: { type: string, description: Present only in the list view. }
+
+    RetailAccountClient:
+      type: object
+      description: The client an account belongs to (nested on the single-account read).
+      properties:
+        fullName: { type: string, example: "Maria ZALISHCHUK" }
+        email: { type: string, format: email }
+        phone: { type: string }
+        countryOfResidence: { type: string, example: GB }
+        customerPublicUuid: { type: string }
+
+    RetailClientView:
+      type: object
+      description: A retail client registered under one of the partner's customers.
+      properties:
+        id:
+          type: string
+          description: Client id (stringified integer).
+          example: "1307"
+        customerPublicUuid: { type: string }
+        externalUuid: { type: string }
+        firstName: { type: string, example: Maria }
+        lastName: { type: string, example: ZALISHCHUK }
+        fullName: { type: string, example: "Maria ZALISHCHUK" }
+        email: { type: string, format: email }
+        phone: { type: string }
+        countryOfResidence: { type: string, example: GB }
+        kycStatus: { type: string, example: kyc_pending }
+        status: { type: string, example: draft }
+        providerStatusRaw: { type: string }
+        depaIdentificationUuid: { type: string }
+        depaAccountUuid: { type: string }
+        createdAt: { type: string }
+        canRequestAccount:
+          type: boolean
+          description: Whether this client is approved and identified enough to issue an account.
+          example: false
+        accounts:
+          type: array
+          description: The client's issued accounts (`[]` when none).
+          items:
+            $ref: '#/components/schemas/RetailAccountView'
+
+    RetailDepaBankAccount:
+      type: object
+      description: A provider bank account with full details.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        holder_name: { type: string }
+        currency: { type: string, example: GBP }
+        iban: { type: string, example: "GB29NWBK60161331926819" }
+        account_number: { type: string }
+        sort_code: { type: string }
+        swift: { type: string }
+        institution: { type: string }
+        balance: { type: string, description: Decimal string. }
+        kind: { type: string }
+        status: { type: string }
+        requires_otp: { type: boolean }
+        created_at:
+          type: integer
+          format: int64
+          description: Unix epoch seconds.
+
+    RetailLedgerEntry:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        category: { type: string }
+        amount: { type: string, description: Decimal string. }
+        currency: { type: string }
+        entryable_id: { type: string }
+        note: { type: string }
+        created_at:
+          type: integer
+          format: int64
+          description: Unix epoch seconds.
+
+    RetailPagination:
+      type: object
+      properties:
+        current_page: { type: integer, example: 1 }
+        per_page: { type: integer, example: 20 }
+        total_pages: { type: integer, example: 3 }
+        total_count: { type: integer, example: 54 }
+
+    RetailFiatPayment:
+      type: object
+      properties:
+        id: { type: string }
+        bank_account_id: { type: string }
+        bank_account_name: { type: string }
+        recipient: { type: string }
+        amount: { type: string, description: Decimal string. }
+        currency: { type: string, example: GBP }
+        kind: { type: string, description: "e.g. credit / debit" }
+        status: { type: string }
+        description: { type: string }
+        payment_rail: { type: string, example: FPS }
+        iban: { type: string }
+        swift: { type: string }
+        created_at:
+          type: integer
+          format: int64
+          description: Unix epoch seconds.
+        updated_at:
+          type: integer
+          format: int64
+          description: Unix epoch seconds.
+        recipient_volume:
+          type: object
+          additionalProperties: true
+
+    RetailBankAccountRef:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    RetailIdentity:
+      type: object
+      description: |
+        The identity Unigox already holds for a customer, merged from their KYC. `documentLast4`
+        is the last four digits only — the full document number is never returned.
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        countryOfResidence: { type: string, example: GB }
+        address: { type: string }
+        city: { type: string }
+        postalCode: { type: string }
+        birthdate: { type: string, example: "1990-05-14" }
+        documentType:
+          type: string
+          description: Provider enum spelling; blank when no KYC document was accepted.
+          example: PASSPORT
+        documentLast4: { type: string, example: "6819" }
+        sources:
+          type: object
+          additionalProperties:
+            type: string
+          description: Per-field provenance (which source supplied each value).
+
+    RetailCreateClientRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+      properties:
+        firstName: { type: string, example: Maria }
+        lastName: { type: string, example: ZALISHCHUK }
+        email: { type: string, format: email }
+        phone: { type: string, example: "+447700900123" }
+        countryOfResidence:
+          type: string
+          description: ISO 3166-1 alpha-2; upper-cased server-side.
+          example: GB
+        documentType: { type: string, example: PASSPORT }
+        documentNumber:
+          type: string
+          description: Not stored — only the last four digits are kept.
+
+    RetailPushIdentificationRequest:
+      type: object
+      description: |
+        Every field is a fallback used only when the customer's KYC did not already capture it; a
+        verified KYC fact is never overridden. Name, identification and partner are never read from
+        the body.
+      properties:
+        address: { type: string }
+        city: { type: string }
+        birthdate: { type: string, example: "1990-05-14", description: "YYYY-MM-DD" }
+        documentType:
+          type: string
+          enum: [PASSPORT, NATIONAL_ID, DRIVERS_LICENCE, WORK_PERMIT]
+          example: PASSPORT
+        documentNumber: { type: string }
+        email: { type: string, format: email }
+        countryOfResidence: { type: string, example: GB }
+
+    RetailProvisionAccountRequest:
+      type: object
+      required:
+        - currency
+      properties:
+        currency:
+          type: string
+          description: ISO 4217; must be one the partner's plan prices. Upper-cased server-side.
+          example: GBP
+        issuerCountry:
+          type: string
+          description: Issuing jurisdiction (ISO 3166-1 alpha-2). Omit for the currency's default.
+          example: GB
+        postalCode:
+          type: string
+          description: Required only for postal-code jurisdictions.
+
+  parameters:
+    RetailCustomerUuid:
+      name: customerUuid
+      in: path
+      required: true
+      description: Public uuid of a customer owned by the authenticated partner.
+      schema:
+        type: string
+        format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
+    RetailClientId:
+      name: clientId
+      in: path
+      required: true
+      description: Numeric id of a retail client under the customer.
+      schema:
+        type: integer
+        format: int64
+      example: 1307
 
   securitySchemes:
     ApiKeyAuth:

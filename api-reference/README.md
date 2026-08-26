@@ -13,5 +13,6 @@ Reference groups:
 - [Third-party payouts](./third-party-payouts.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
 - [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
+- [Retail accounts](./retail-accounts.md)
 
 This page exists only to make the API reference tree visible in the same left sidebar as the guide pages.
