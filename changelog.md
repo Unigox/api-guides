@@ -43,7 +43,7 @@ The crypto on a widget order belongs to the end user and sits in their own Unigo
 **Chinese mobile wallets pay Chinese nationals only, and WeChat pays fewer of them than Alipay.** Both wallets verify the account holder against a Chinese national ID, so a foreign resident's Alipay or WeChat account cannot receive on the `ewallet` format — use a bank format for those beneficiaries.
 
 - `alipay` settles to the sender themselves, to family, or to a third party.
-- `wechat-pay` settles to the sender themselves or to family only. A `wechat-pay` destination quoted as `supplier`, `employee` or `friend` is refused before any money moves.
+- `wechat-pay` settles to the sender themselves or to family only. A `wechat-pay` destination quoted as `supplier`, `employee` or `friend` is refused at payout and the order is cancelled — nothing reaches the beneficiary. Route those to `alipay` or to a bank format.
 - The receiving wallet may ask the beneficiary to evidence the declared relationship (proof of income for a payment to the sender themselves, proof of the relationship for family). A relationship the beneficiary cannot evidence is what leaves a payment held inside the wallet.
 - Paying a Chinese company from your company (B2C) is not available on this rail yet.
 
