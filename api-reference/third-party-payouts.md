@@ -133,16 +133,26 @@ the institution you chose:
 3. send that format's `fields`.
 
 Formats also carry `has_liquidity`. A format with `has_liquidity: false` cannot
-currently be settled in that corridor — do not build against it. On `cnaps`/CNY
-today the two bank formats are liquid and the `ewallet` format is not: no
-`mobile-wallets` institution is quoted on this corridor yet, so an Alipay or
-WeChat Pay destination is accepted and stored but its quote comes back with no
-liquidity. Check the endpoint rather than this sentence.
+currently be settled in that corridor — do not build against it. Check the
+endpoint rather than any table in this guide.
 
-For `rail: "cnaps"`, institutions of type `mobile-wallets` (`alipay`,
-`wechat-pay`), the `ewallet` format collects far less than a bank transfer — the
-wallet is identified by the institution, so there is no Chinese name and no
-national ID:
+### The Chinese wallets are their own rails
+
+Alipay and WeChat Pay are **not** formats of `cnaps`. `cnaps` carries the two
+bank formats only; each wallet is a rail of its own:
+
+| `rail` | Wallet | `institution_id` |
+| --- | --- | --- |
+| `alipay-wallet` | Alipay | not required |
+| `wechat-wallet` | WeChat Pay | not required |
+
+A wallet rail carries exactly one institution, and its format asks for no bank
+field, so `/api/v1/supported/payment-rails` reports `institution_required:
+false` and you may omit `institution_id` entirely. Sending the rail's own
+institution (`alipay`, `wechat-pay`) is accepted and means the same thing.
+
+Both wallet rails take the same three fields — the wallet is identified by the
+rail, so there is no Chinese name and no national ID:
 
 | Required `details` |
 | --- |
@@ -157,13 +167,13 @@ foreign resident in China over a bank format instead.
 
 The two wallets also differ in what the payment may be:
 
-| Institution | Relationships it settles |
+| Rail | Relationships it settles |
 | --- | --- |
-| `alipay` | the sender themselves, family, or a third party |
-| `wechat-pay` | the sender themselves or family only |
+| `alipay-wallet` | the sender themselves, family, or a third party |
+| `wechat-wallet` | the sender themselves or family only |
 
 `sender_recipient_relationship` on the quote is what states which of those this
-payment is, so a `wechat-pay` destination sent as `supplier`, `employee` or
+payment is, so a `wechat-wallet` destination sent as `supplier`, `employee` or
 `friend` cannot settle and is refused before any money moves. And because the
 remitter has to be your own paying customer (see *The sender on
 consumer-to-consumer rails*), a payment to the sender themselves is only possible
@@ -323,8 +333,8 @@ earlier drafts of this page.
 
 ### The sender on consumer-to-consumer rails
 
-Chinese mobile wallets (Alipay, WeChat Pay — the `ewallet` format on `cnaps`)
-settle person to person. The receiving wallet shows a remitter, and on those
+Chinese mobile wallets (the `alipay-wallet` and `wechat-wallet` rails) settle
+person to person. The receiving wallet shows a remitter, and on those
 rails it has to be **your customer**, with their own document, address and phone.
 It cannot be Unigox and it cannot be your company: a payout whose remitter does
 not match the person behind it is what the rail's identity check exists to catch.

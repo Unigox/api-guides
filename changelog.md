@@ -2,6 +2,19 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-08-28
+
+**The Chinese wallets are their own rails, and `institution_id` is not required on them.** Alipay and WeChat Pay are no longer formats of `cnaps`: they are the rails `alipay-wallet` and `wechat-wallet`, each carrying one wallet and one format (`full_name`, `account_number`, `mobile_number`). `cnaps` now carries the two bank formats only.
+
+- `/api/v1/supported/payment-rails` reports `institution_required: false` for both wallet rails, and creating a destination on them without an `institution_id` now works. It previously failed with `institution_id is required for this rail` — a partner following the catalog was refused, which was our bug, not a missing field on your side.
+- Sending the rail's own institution (`alipay`, `wechat-pay`) is still accepted and means the same thing.
+- Nothing changes for `cnaps` bank destinations, which continue to require an `institution_id`.
+
+**Fewer sender fields come back on a payout to those wallets.** The sender identity behind `422 SENDER_IDENTITY_REQUIRED` now reads the identity document from a KYC verification you performed and shared with us, not only from our own. For a customer verified that way, the name, date of birth, document type and number, issuing country, nationality, gender and country of residence are taken from that verification instead of being reported missing.
+
+- What remains in `missing_fields` is what no identity document carries: the residential address (`address`, `city`, `postal_code`), the mobile number and the source of funds. All five are in `kyc_fields`, so `PATCH /api/v1/partner/users/{user_uuid}/kyc` can supply them.
+- Retry with a fresh quote after the patch, as before.
+
 ## 2026-08-26
 
 **`allowed_actions` is now empty for a widget order.** The field is derived from crypto custody as well as from status, so it no longer lists actions that would answer `404`. A widget order returns `"allowed_actions": []` at every status — including `awaiting_crypto_transfer_authorization`, where it used to advertise `["authorize-crypto-transfer", "cancel"]` and both calls then failed.
