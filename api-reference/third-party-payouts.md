@@ -393,11 +393,12 @@ byte count it passes on the wire:
 | `address` | 70 |
 | `city` | 50 |
 | `id_number` | 30 |
-| `phone_number` | 15 |
 
-`postal_code` has no published ceiling on this corridor. Read the limits from
-`field_limits` rather than hard-coding this table: they are the vendor's, they
-differ per corridor, and a new corridor will bring its own.
+`postal_code` has no published ceiling on this corridor, and `phone_number`
+needs none: the format it already has to be in (`+`, then 8 to 15 digits) is
+shorter than what the rail accepts. Read the limits from `field_limits` rather
+than hard-coding this table: they are the vendor's, they differ per corridor,
+and a new corridor will bring its own.
 
 That patch is all-or-nothing: one rejected value writes none of the others, and
 the `error_key` names which one — `invalid_gender`, `invalid_country_code`,

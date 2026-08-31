@@ -8,7 +8,7 @@ Notable changes to the Unigox partner API, newest first.
 
 - `error.details.field_limits` carries the rail's ceiling on any listed field that has one, keyed the way you write it in the KYC patch: `{"address": 70}`. It is absent when no listed field has a ceiling.
 - Read the ceilings from there rather than hard-coding them. They are the payout vendor's, they differ per corridor, and they are counted in characters, not bytes — a Chinese address is three bytes per character.
-- On the Chinese wallet corridor today: first and last name 60, `address` 70, `city` 50, `id_number` 30, `phone_number` 15. `postal_code` has no published ceiling.
+- On the Chinese wallet corridor today: first and last name 60, `address` 70, `city` 50, `id_number` 30. `postal_code` has no published ceiling, and `phone_number` needs none because the format it already has to be in is shorter than the rail accepts.
 - Nothing changes for a record already within the limits, and `missing_fields` and `kyc_fields` keep their existing meaning. What changes is that a field can now appear because its value is too long, not only because it is absent — which is why the ceiling ships alongside it.
 - `PATCH /api/v1/partner/users/{user_uuid}/kyc` still accepts an over-long value: the ceiling belongs to the payout corridor, and the KYC record is not tied to one. It comes back from that corridor's `initiate`.
 
