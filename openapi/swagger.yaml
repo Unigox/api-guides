@@ -1458,6 +1458,10 @@ paths:
         (`MALE`/`FEMALE` are folded in), `nationality` and `id_issue_country` take an ISO
         3166-1 alpha-2 code, and `source_of_funds` takes one of the listed slugs.
 
+        Length is the exception, because the ceiling belongs to the payout rail and this record is
+        not tied to one: a value too long for a corridor is accepted here and comes back from that
+        corridor's `initiate` as a listed field, with the ceiling in `error.details.field_limits`.
+
         The record belongs to the customer, not to a payout destination — never send another
         person's details here to satisfy a payout.
       operationId: updateKYC
@@ -3616,6 +3620,13 @@ paths:
             only come from verification itself — the customer has to complete or redo KYC. Send the
             customer's own details: substituting anyone else's is what the rail's identity check
             exists to catch.
+
+            A field is also listed when the record holds a value the rail would refuse for its
+            length: the rail rejects the whole payment, at payout, after the customer has funded, so
+            it is refused here while a retry is still free. `error.details.field_limits` is the
+            vendor's ceiling on any listed field that has one, keyed the way you write it in the KYC
+            patch and counted in characters, not bytes; it is absent when no listed field has one.
+            Read the ceilings from there rather than hard-coding them — they differ per corridor.
           content:
             application/json:
               schema:
@@ -3641,6 +3652,7 @@ paths:
                         corridor: cn_wallet
                         missing_fields: ["date_of_birth", "id_number", "source_of_funds"]
                         kyc_fields: ["dob", "id_number", "source_of_funds"]
+                        field_limits: {"id_number": 30}
         '500':
           description: Internal server error
           content:
@@ -7321,7 +7333,7 @@ components:
                 - `INSUFFICIENT_BALANCE` — partner wallet lacks tokens to fund escrow
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
-                - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`
+                - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
               enum:
                 - QUOTE_EXPIRED
                 - QUOTE_NOT_FOUND

@@ -356,7 +356,8 @@ is reverted, so the same customer can retry:
     "details": {
       "corridor": "cn_wallet",
       "missing_fields": ["date_of_birth", "id_number", "source_of_funds"],
-      "kyc_fields": ["dob", "id_number", "source_of_funds"]
+      "kyc_fields": ["dob", "id_number", "source_of_funds"],
+      "field_limits": {"id_number": 30}
     }
   }
 }
@@ -367,6 +368,37 @@ is reverted, so the same customer can retry:
 initiate with a fresh quote. The full set a wallet payout can ask for is `dob`,
 `phone_number`, `address`, `city`, `postal_code`, `id_type`, `id_number`,
 `id_issue_country`, `gender`, `nationality` and `source_of_funds`.
+
+### A field can be listed because it is too long
+
+`missing_fields` names a field the corridor could not answer, and a value the
+payout rail would refuse for its length counts as unanswered. The rail rejects
+the whole payment rather than the one field, and it does so at payout, after the
+customer has funded — so the value is refused here instead, where a retry is
+still free.
+
+`details.field_limits` is the ceiling on any listed field that has one, keyed the
+way you write it in the KYC patch. It is absent when no listed field has a
+ceiling. Without it a field that is present but too long is indistinguishable
+from one that was never set: you would patch the same value again and see the
+same field come back.
+
+Today the Chinese wallet corridor publishes these, counted in **characters**, not
+bytes — a Chinese address is three bytes per character and would otherwise fail a
+byte count it passes on the wire:
+
+| Field | Maximum |
+| --- | --- |
+| first name, last name | 60 |
+| `address` | 70 |
+| `city` | 50 |
+| `id_number` | 30 |
+
+`postal_code` has no published ceiling on this corridor, and `phone_number`
+needs none: the format it already has to be in (`+`, then 8 to 15 digits) is
+shorter than what the rail accepts. Read the limits from `field_limits` rather
+than hard-coding this table: they are the vendor's, they differ per corridor,
+and a new corridor will bring its own.
 
 That patch is all-or-nothing: one rejected value writes none of the others, and
 the `error_key` names which one — `invalid_gender`, `invalid_country_code`,
