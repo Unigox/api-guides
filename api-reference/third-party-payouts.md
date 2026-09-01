@@ -165,19 +165,30 @@ beneficiary must be a **Chinese national**. A foreign resident's Alipay or WeCha
 account cannot be paid over this rail, whatever name the account shows. Pay a
 foreign resident in China over a bank format instead.
 
-The two wallets also differ in what the payment may be:
+Both wallets settle exactly two kinds of payment, and no others:
 
-| Rail | Relationships it settles |
+| `sender_recipient_relationship` | Who the beneficiary is |
 | --- | --- |
-| `alipay-wallet` | the sender themselves, family, or a third party |
-| `wechat-wallet` | the sender themselves or family only |
+| `self` | your customer's own wallet |
+| `family` | a family member of your customer |
 
-`sender_recipient_relationship` on the quote is what states which of those this
-payment is, so a `wechat-wallet` destination sent as `supplier`, `employee` or
-`friend` cannot settle and is refused before any money moves. And because the
-remitter has to be your own paying customer (see *The sender on
+That is the whole list, on `alipay-wallet` and on `wechat-wallet` alike. A
+wallet destination quoted as `supplier`, `employee`, `friend` or anything else
+is refused with `422 THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` **at the quote** —
+before your customer funds anything, so it costs a corrected retry rather than
+an order for us to unwind. Pay a supplier or an employee in China over a bank
+format instead.
+
+`purpose_of_payment` must likewise be one this corridor can declare to the
+wallet. For a payment to a family member that is `family_support`; `education`,
+`medical`, `donation` and `other` are the rest of what a personal payment
+normally is. A purpose the corridor has no code for is refused with `400
+INVALID_REQUEST` naming the alternatives — it does not quietly become "other".
+
+Because the remitter has to be your own paying customer (see *The sender on
 consumer-to-consumer rails*), a payment to the sender themselves is only possible
-when that customer is Chinese.
+when that customer is Chinese. A `family` payment is not: your customer may be of
+any nationality, as long as the beneficiary is Chinese.
 
 The receiving wallet may additionally ask the beneficiary to evidence the
 relationship that was declared before it credits the funds: proof of income when
@@ -263,6 +274,28 @@ Content-Type: application/json
 }
 ```
 
+A payment to a family member on a Chinese wallet is the same request with the
+wallet's rail, `family`, and a purpose the wallet accepts:
+
+```json
+{
+  "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "sender_id": "550e8400-e29b-41d4-a716-446655440000",
+  "recipient_id": "eb83f57f-814e-4da0-84e8-902d1c60204a",
+  "recipient_destination_id": "881b2818-90dd-4e80-a77d-6ce67b6b95a7",
+  "sender_recipient_relationship": "family",
+  "purpose_of_payment": "family_support",
+  "purpose_details": "Monthly support for my mother",
+  "crypto_currency": "USDT",
+  "fiat_currency": "CNY",
+  "fiat_amount": "1000",
+  "rail": "alipay-wallet"
+}
+```
+
+The wallet rails have a floor of **CNY 55.00**. Below it nothing can serve the
+payment and the quote comes back `409 NO_OFFERS_AVAILABLE`.
+
 `crypto_currency` and the amount are not decoration: a pair with no vendor
 liquidity, or an amount above what the corridor can currently serve, returns
 `409 NO_OFFERS_AVAILABLE`. Call `/api/v1/partner/liquidity` or
@@ -312,9 +345,11 @@ order — the request is rejected, and you act on the error:
 | `KYC_NOT_CLEARED` | 422 | The sender's KYC is not cleared for this partner. | Complete the sender's KYC; do not substitute another user. |
 | `SENDER_IDENTITY_REQUIRED` | 422 | The corridor settles consumer-to-consumer and the sender's record cannot name them on the wire. `details.kyc_fields` is what you can supply. | `PATCH /api/v1/partner/users/{user_uuid}/kyc` with those fields, then retry. See below. |
 | `THIRD_PARTY_CONTEXT_INVALID` | 422 | The recipient/destination is not usable: not found for this partner, archived, screening not `cleared`, incomplete route, or `sender_id` ≠ `user_uuid`. | Read the message; re-check the recipient, or wait for screening. |
-| `INVALID_REQUEST` | 400 | The payload is wrong — a `details` field the rail does not accept, a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a destination currency that is not `fiat_currency`, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). The message names what to fix. | Fix the request. |
+| `INVALID_REQUEST` | 400 | The payload is wrong — a `details` field the rail does not accept, a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a destination currency that is not `fiat_currency`, a `purpose_of_payment` the corridor cannot declare, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). The message names what to fix. | Fix the request. |
 | `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
 | `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | The recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
+| `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on. A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. | Use a destination on a rail that is open, or ask us to open this one. A retry does not change it. |
+| `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
 | `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later or use a different amount. |
 | `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
 | `RAIL_ROUTE_MISMATCH` | 400 | The rail you asked for does not match the route the destination resolves to. | Send the `rail` the destination was created with, or omit it. |
