@@ -190,6 +190,29 @@ consumer-to-consumer rails*), a payment to the sender themselves is only possibl
 when that customer is Chinese. A `family` payment is not: your customer may be of
 any nationality, as long as the beneficiary is Chinese.
 
+### Where an Alipay payment may be sent from
+
+Alipay screens the country the money is sent **from**, not only who receives it.
+Your customer's own country of residence — the one on their verified identity —
+decides whether they may pay an Alipay wallet at all, and the answer is the same
+for every beneficiary they name.
+
+These countries cannot send an Alipay payment:
+
+Afghanistan, Algeria, Bahrain, Belarus, Iran, Iraq, Kuwait, Lebanon, Myanmar,
+North Korea, Oman, Pakistan, Palestine, Qatar, Russia, Somalia, South Sudan,
+Syria, Yemen.
+
+A quote for an Alipay destination from one of them is refused with `422
+THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED`, naming the country. The refusal is
+Alipay's and applies to that rail only: the same customer pays the same
+beneficiary's **bank account** over `cnaps` normally, and WeChat Pay is not
+covered by it.
+
+Nothing about the sender's file changes this — a completed verification, a
+different purpose or a different relationship all fail identically. Use a bank
+format instead.
+
 The receiving wallet may additionally ask the beneficiary to evidence the
 relationship that was declared before it credits the funds: proof of income when
 the payment is to the sender themselves, proof of the relationship when it is to
@@ -350,6 +373,7 @@ order — the request is rejected, and you act on the error:
 | `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | The recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
 | `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on. A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. | Use a destination on a rail that is open, or ask us to open this one. A retry does not change it. |
 | `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
+| `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` | 422 | The rail refuses money sent from the country on your customer's verified identity. Alipay bars a list of sending countries whoever the beneficiary is. The message names the country. | Pay this beneficiary over a bank format (`cnaps`). No change to the sender's record opens the wallet rail, and a retry fails identically. |
 | `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later or use a different amount. |
 | `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
 | `RAIL_ROUTE_MISMATCH` | 400 | The rail you asked for does not match the route the destination resolves to. | Send the `rail` the destination was created with, or omit it. |
