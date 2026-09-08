@@ -9,7 +9,7 @@ Notable changes to the Unigox partner API, newest first.
 - **Sign with `signer_address`**, which the GET returns. The escrow is a 2-of-3 Safe; on an order you opened for your end customer, its seller-side owner is your wallet, and the customer holds no key at all. Unigox adds the second signature and executes.
 - **The recipient is fixed server-side** to the escrow's seller address. `recipient_address` comes back so you can verify it before signing; no parameter changes where the money goes.
 - **Your private key never reaches the API.** Sign the returned typed data locally and submit only the signature.
-- An order that has already been refunded or released, or that is under manual review, answers `409` with the reason. A signature from a key that does not own the escrow answers `502` — check `signer_address` and retry.
+- An order that has already been refunded or released, or whose status does not owe the crypto back, answers `409 INVALID_STATUS`. An order held for review answers `409 OPERATION_NOT_ALLOWED` — a held order is settled by our operations team, and retrying will not clear it. A signature from a key that does not own the escrow answers `502` — check `signer_address` and retry.
 - `tx_hash` comes back on the response when the refund executed. If it is absent the refund is still in flight; poll `GET /api/v1/partner/orders/{order_id}`.
 
 ## 2026-08-31

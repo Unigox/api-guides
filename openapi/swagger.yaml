@@ -4154,9 +4154,10 @@ paths:
           description: No order with this id belongs to your partner account.
         '409':
           description: >-
-            The order does not owe a refund. Either it has already been refunded or released, it is
-            under manual review, or its status is one where the crypto is not owed back — the
-            message says which.
+            The order does not owe a refund. Either it has already been refunded or released, its
+            status is one where the crypto is not owed back (`INVALID_STATUS`), or it is held for
+            review and no automatic refund may run against it (`OPERATION_NOT_ALLOWED`) — the
+            message says which. A held order is settled by our operations team, not by retrying.
           content:
             application/json:
               schema:
@@ -4270,8 +4271,10 @@ paths:
           description: No order with this id belongs to your partner account.
         '409':
           description: >-
-            The order does not owe a refund — already refunded, already released, under manual
-            review, or in a status where the crypto is not owed back.
+            The order does not owe a refund — already refunded, already released, or in a status
+            where the crypto is not owed back (`INVALID_STATUS`); or it is held for review and no
+            automatic refund may run against it (`OPERATION_NOT_ALLOWED`), in which case retrying
+            will not clear it and our operations team settles the order.
           content:
             application/json:
               schema:
