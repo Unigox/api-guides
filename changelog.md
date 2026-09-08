@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-08
+
+**You can now return a funded escrow to the seller yourself.** An off-ramp order that stops before settlement — the payment window expires, a payment proof is declined, the bank returns the payment, or a dispute is resolved for the seller — leaves the crypto in escrow owing its way back. Two new endpoints let you sign that refund with your own key, the same shape as the funding pair you already use: `GET /api/v1/partner/orders/{order_id}/refund-authorization-parameters` returns the EIP-712 Safe transaction, and `POST /api/v1/partner/orders/{order_id}/authorize-refund` takes the signature.
+
+- **Sign with `signer_address`**, which the GET returns. The escrow is a 2-of-3 Safe; on an order you opened for your end customer, its seller-side owner is your wallet, and the customer holds no key at all. Unigox adds the second signature and executes.
+- **The recipient is fixed server-side** to the escrow's seller address. `recipient_address` comes back so you can verify it before signing; no parameter changes where the money goes.
+- **Your private key never reaches the API.** Sign the returned typed data locally and submit only the signature.
+- An order that has already been refunded or released, or that is under manual review, answers `409` with the reason. A signature from a key that does not own the escrow answers `502` — check `signer_address` and retry.
+- `tx_hash` comes back on the response when the refund executed. If it is absent the refund is still in flight; poll `GET /api/v1/partner/orders/{order_id}`.
+
 ## 2026-08-31
 
 **A sender field too long for the payout rail is now refused up front, with the limit in the response.** The rails behind `SENDER_IDENTITY_REQUIRED` cap several sender fields, and they enforce the cap at payout: the whole payment is rejected, after the customer has funded, and the customer sees only that the order was cancelled. A value over the cap is now treated as a field the record could not answer, so `POST /api/v1/partner/offramp/initiate` refuses it while a retry is still free.
