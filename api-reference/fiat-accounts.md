@@ -3,10 +3,19 @@
 Issue dedicated fiat accounts (IBANs) for your own customers, and read their
 balances, ledger and incoming payments — all under your partner API key.
 
-Accounts are issued to a customer you already have: the same customer you create
-with `POST /api/v1/partner/users` and put through KYC. There is no separate
-"retail client" to register and no second identity to keep in step — the person
-Unigox verified is the person the account is opened for.
+An account has a **holder**, and there are two kinds. A `retail` account belongs
+to a person — the customer you create with `POST /api/v1/partner/users` and put
+through KYC. A `business` account belongs to a company you onboarded through
+business (KYB) onboarding. Both are read through the same endpoints and render
+in the same shape; `holder_type` says which you are looking at.
+
+There is no separate "retail client" to register and no second identity to keep
+in step — the person Unigox verified is the person the account is opened for.
+
+**You can issue `retail` accounts here; `business` accounts are read-only on this
+API.** Opening one for a company needs a verified KYB case, which is a console
+flow and is not exposed over the partner API — so business accounts appear in
+these reads once they exist, and are opened elsewhere.
 
 This is an optional product. You reach these endpoints only once Unigox has
 activated the `retail` product on your partner and, for issuing accounts,
@@ -42,8 +51,15 @@ your logs and your support team, and `details` carries whatever the particular
 refusal can say.
 
 Field names are `snake_case` at every depth. Authentication is the same
-`X-API-Key` as everywhere else, and every `user_id` is scoped to you: a customer
-you do not own answers `404`, indistinguishable from one that does not exist.
+`X-API-Key` as everywhere else, and every id is scoped to you: a customer or an
+account you do not own answers `404`, indistinguishable from one that does not
+exist.
+
+**Account ids are opaque and carry their holder kind** — `retail_412`,
+`business_87`. Pass them back verbatim; do not parse them and do not assume the
+numeric part means anything. The two kinds are stored separately and their
+numbers overlap, which is why the prefix is part of the id rather than a
+parameter beside it.
 
 Nothing in this section identifies the bank or banking platform behind an
 account, and nothing branches on it. Which institution issues a given currency
@@ -198,8 +214,9 @@ otherwise ignored.
   "success": true,
   "data": {
     "account": {
-      "id": "412",
-      "user_id": "9f1c…",
+      "id": "retail_412",
+      "holder_type": "retail",
+      "holder_id": "9f1c…",
       "currency": "EUR",
       "issuer_country": "NL",
       "status": "active",
@@ -227,12 +244,22 @@ settles rather than treating it as a failure.
 ### 6. Read the account
 
 ```http
-GET /api/v1/partner/fiat-accounts                      # every account you operate
-GET /api/v1/partner/users/{user_id}/fiat-accounts      # one customer's accounts
-GET /api/v1/partner/fiat-accounts/{id}                 # one account, with balances
-GET /api/v1/partner/fiat-accounts/{id}/ledger?page=N   # transaction history
-GET /api/v1/partner/fiat-accounts/{id}/payments?page=N # incoming payment records
+GET /api/v1/partner/fiat-accounts                        # every account you operate
+GET /api/v1/partner/fiat-accounts?holder_type=retail     # …only people's
+GET /api/v1/partner/fiat-accounts?holder_type=business   # …only companies'
+GET /api/v1/partner/users/{user_id}/fiat-accounts        # one customer's accounts
+GET /api/v1/partner/fiat-accounts/{id}                   # one account, with balances
+GET /api/v1/partner/fiat-accounts/{id}/ledger?page=N     # transaction history
+GET /api/v1/partner/fiat-accounts/{id}/payments?page=N   # incoming payment records
 ```
+
+`GET /fiat-accounts` returns both holder kinds. `holder_type` narrows it; any
+other value answers `400 INVALID_HOLDER_TYPE`. If you were never set up for
+business accounts you simply have none, and the unfiltered list is your retail
+accounts — that is not an error and does not need handling.
+
+`holder_id` names the holder in that kind's own id space: the customer's
+`user_id` for `retail`, the KYB case id for `business`.
 
 The list views carry `iban_last4` (or `account_number_last4` and `sort_code` for
 a sterling account, which has no IBAN). The single-account view adds the full
@@ -262,6 +289,7 @@ amount, the currency and the account it came from. Register webhooks with
 | `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
 | `ACCOUNT_HOLDER_NOT_FOUND` | 404 | No such account holder under that customer. |
 | `MISSING_FIELDS` | 400 | See `error.details.missing_fields`. |
+| `INVALID_HOLDER_TYPE` | 400 | `holder_type` must be `retail` or `business`. |
 | `INVALID_DOCUMENT_TYPE` | 400 | Not one of the four accepted document types. |
 | `UNSUPPORTED_CURRENCY` | 400 | Not in `config.currencies`. |
 | `UNSUPPORTED_ISSUER_COUNTRY` | 400 | Not in `config.issuers[currency]`. |

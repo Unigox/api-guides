@@ -243,10 +243,22 @@ tags:
       Issue dedicated fiat accounts (IBANs) for your own customers, and read their balances, ledger
       and incoming payments.
 
-      An account is issued to a customer you already have — the same customer you create with
-      `POST /api/v1/partner/users` and put through KYC. There is no separate "retail client" entity
-      to register and no second identity to keep in step: the person Unigox verified is the person
-      the account is opened for, and the issuance record behind it is resolved server-side.
+      An account has a HOLDER, and there are two kinds. A `retail` account belongs to a person — the
+      customer you create with `POST /api/v1/partner/users` and put through KYC. A `business`
+      account belongs to a company onboarded through business (KYB) onboarding. Both are read
+      through the same endpoints, in the same shape, and `holder_type` says which one you are
+      looking at.
+
+      There is no separate "retail client" entity to register and no second identity to keep in
+      step: the person Unigox verified is the person the account is opened for, and the issuance
+      record behind it is resolved server-side.
+
+      **Retail accounts can be issued here; business accounts are read-only on this API.** Opening
+      one for a company needs a verified KYB case, which is a console flow — so business accounts
+      appear in these reads once they exist, and are opened elsewhere.
+
+      Account ids are opaque and carry their holder kind (`retail_412`, `business_87`). Pass them
+      back verbatim: the two kinds are stored separately and their numbers overlap.
 
       This is an optional product. A partner reaches these endpoints only when Unigox has activated
       the `retail` product on the partner and granted the `issue_retail_accounts` capability.
@@ -4421,11 +4433,22 @@ paths:
       summary: List every account you operate
       operationId: listFiatAccounts
       description: |
-        Every fiat account issued under this partner, across all customers, with the holder each one
+        Every fiat account issued under this partner, of either holder kind, with the holder each one
         belongs to. Only the last four digits of the identifier travel here — fetch a single account
         for the full details.
+
+        A partner set up for only one of the two kinds simply gets that one: having no business
+        accounts is not an error and needs no handling.
       security:
         - ApiKeyAuth: []
+      parameters:
+        - name: holder_type
+          in: query
+          required: false
+          description: Narrow the list to one holder kind. Any other value answers `400 INVALID_HOLDER_TYPE`.
+          schema:
+            type: string
+            enum: [retail, business]
       responses:
         '200':
           description: Accounts
@@ -4433,6 +4456,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FiatAccountsResponse'
+        '400':
+          description: '`holder_type` is not `retail` or `business` (`INVALID_HOLDER_TYPE`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '401':
           description: Missing or invalid credential
           content:
@@ -7206,12 +7235,24 @@ components:
       properties:
         id:
           type: string
-          description: Unigox account id. This is what every `/fiat-accounts/{account_id}` route takes.
-          example: "412"
-        user_id:
+          description: |
+            Opaque account id, carrying its holder kind: `retail_412`, `business_87`. This is what
+            every `/fiat-accounts/{account_id}` route takes. Pass it back verbatim — the two kinds
+            are stored separately and their numbers overlap, which is why the prefix is part of the
+            id rather than a parameter beside it.
+          example: "retail_412"
+        holder_type:
           type: string
-          format: uuid
-          description: The customer this account belongs to — the id from `POST /api/v1/partner/users`.
+          enum: [retail, business]
+          description: |
+            Whose account this is. `retail` belongs to a person you onboarded through KYC;
+            `business` to a company you onboarded through KYB.
+          example: retail
+        holder_id:
+          type: string
+          description: |
+            The holder, in that kind's own id space: the customer's `user_id` (from
+            `POST /api/v1/partner/users`) for `retail`, the KYB case id for `business`.
         currency:
           type: string
           example: EUR
@@ -7223,9 +7264,16 @@ components:
           type: string
           description: '`active`, `pending`, `closed` or `unknown`.'
           example: active
+        iban:
+          type: string
+          description: Single-account view only — the list views carry `iban_last4`.
+          example: "NL91ABNA0417164300"
         iban_last4:
           type: string
           example: "8827"
+        account_number:
+          type: string
+          description: Single-account view only, on a non-IBAN (GB sterling) account.
         account_number_last4:
           type: string
           description: Present instead of `iban_last4` on a non-IBAN account (a GB sterling one).
@@ -7535,10 +7583,13 @@ components:
       name: account_id
       in: path
       required: true
-      description: Unigox id of a fiat account issued under the authenticated partner.
+      description: |
+        Opaque id of a fiat account issued under the authenticated partner, as returned in
+        `FiatAccount.id` — `retail_412` or `business_87`. An id that names no account, or one that is
+        not yours, answers `404`; the two are indistinguishable on purpose.
       schema:
         type: string
-      example: "412"
+      example: "retail_412"
 
   securitySchemes:
     ApiKeyAuth:
