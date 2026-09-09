@@ -2,6 +2,15 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-09
+
+**You can fund your wallet from another chain, and read the deposit addresses we monitor for you.** Getting USDC onto XAI is no longer your problem. We provision a deposit address for your account on each supported chain and watch it: a deposit is bridged to your XAI wallet automatically, credited 1:1 with no bridge fee, normally within a minute. `GET /api/v1/partner/deposit-addresses` returns the set, with the tokens each chain accepts.
+
+- Funding was previously described only under third-party payouts, which understated it. The same wallet funds on-ramp and off-ramp orders as well, so it now has its own page: [Funding your wallet](./api-reference/funding-your-wallet.md).
+- **The accepted tokens differ per chain, and a mismatch is unrecoverable.** Solana takes USDC only; Tron and TON take USDT only; Base and Avalanche take USDC only; the remaining EVM chains take both. Read the list off the endpoint rather than assuming a chain behaves like its neighbours.
+- **A deposit address is not your XAI wallet address.** They are never interchangeable, and a send to the wrong one is unrecoverable in either direction. The previous wording — "a transfer on another chain cannot fund an order and is not recoverable" — remains true of your *XAI wallet address* specifically, and is now stated that way.
+- Nothing changes about signing. You still hold the key and still authorize every movement with an EIP-712 signature; this only changes how crypto reaches the wallet.
+
 ## 2026-08-31
 
 **A sender field too long for the payout rail is now refused up front, with the limit in the response.** The rails behind `SENDER_IDENTITY_REQUIRED` cap several sender fields, and they enforce the cap at payout: the whole payment is rejected, after the customer has funded, and the customer sees only that the order was cancelled. A value over the cap is now treated as a field the record could not answer, so `POST /api/v1/partner/offramp/initiate` refuses it while a retry is still free.

@@ -12,20 +12,16 @@ results for every sender.
 ## Funding: you pre-fund, we debit
 
 Payouts are funded from **your own crypto balance**, not from your customer's.
+Your customer never sends crypto to you through Unigox — how they pay you, if at
+all, is outside this API.
 
-Your Unigox partner account is itself an account with a wallet. You top that
-wallet up with crypto in advance, and every payout your customers make draws
-down that balance: the wallet signs the transfer into each order's escrow. Your
-customer never sends crypto to you through Unigox — how they pay you, if at all,
-is outside this API.
+Your partner wallet signs the transfer into each order's escrow, so **an empty
+balance stops every payout**, not just the next one. The same wallet funds
+on-ramp and off-ramp orders too.
 
-The practical consequence: **an empty balance stops every payout**, not just the
-next one. Keep the wallet funded ahead of demand.
-
-The address is the one on your Unigox wallet page — it does not change, and it
-is the same address that appears as `sender_address` on any order's transfer
-authorization parameters. Send only the token and chain shown there; a transfer
-on another chain cannot fund an order and is not recoverable.
+See [Funding your wallet](./funding-your-wallet.md) for the address, the chains
+and tokens you can fund from, and the deposit addresses we monitor on your
+behalf.
 
 ## End-to-end flow
 
