@@ -1,27 +1,41 @@
 # Fiat accounts
 
-Issue dedicated fiat accounts (IBANs) for your own customers, and read their
-balances, ledger and incoming payments — all under your partner API key.
+Give your customers a bank account of their own — a dedicated IBAN they can be
+paid into — and read what lands on it.
 
-Every account is reached **through the customer that holds it**. An account is
-not a free-standing thing you own — it belongs to a person, and that person is
-the customer you create with `POST /api/v1/partner/users` and put through KYC.
-So the routes live under `/api/v1/partner/users/{user_uuid}/…`, beside the KYC
-and payment-details routes for that same customer.
+**What you will build.** By the end of this guide one of your customers holds a
+real EUR or GBP account in their own name, you can show them where to send
+money, and you can read the balance, the transaction history and every incoming
+payment.
 
-There is no separate "retail client" to register and no second identity to keep
-in step — the person Unigox verified is the person the account is opened for.
+**What you need first.** A partner API key, and the `retail` product activated on
+your partner — plus the `issue_retail_accounts` capability if you want to open
+accounts rather than only verify people for them. Neither is self-service; ask
+Unigox. Until they are on, the write endpoints answer `403` and
+`GET /fiat-accounts/config` reports `enabled: false`, which is the check to run
+first.
 
-Accounts are held by individuals. An account issued to a company you onboarded
-through business (KYB) onboarding is not on this API: its holder is a KYB case
-rather than a customer, so it cannot be addressed through this tree. Those
-remain available in the Unigox console.
+**How long it takes.** Three calls per customer once they are KYC-verified, and
+approval is usually immediate. It is not guaranteed to be, which is why step 4
+is a poll rather than a wait.
 
-This is an optional product. You reach these endpoints only once Unigox has
-activated the `retail` product on your partner and, for issuing accounts,
-granted the `issue_retail_accounts` capability. You cannot self-grant either —
-talk to Unigox. Until then the write endpoints answer `403` and
-`GET /fiat-accounts/config` reports `enabled: false`.
+## The one idea to hold on to
+
+An account belongs to a **person**, and that person is a customer you already
+have — the one you created with `POST /api/v1/partner/users` and put through
+KYC. It is not a separate banking record with its own identity to register and
+keep in step.
+
+Everything follows from that. The routes live under
+`/api/v1/partner/users/{user_uuid}/…`, beside the KYC and payment-details routes
+for the same customer. An account id on its own is not enough to read an
+account — you address it through its holder. And the identity the bank opens the
+account on is the one Unigox verified, not one you retype into a request body.
+
+Accounts here are held by individuals. An account issued to a company you
+onboarded through business (KYB) onboarding is not on this API: its holder is a
+KYB case rather than a customer, so it cannot be addressed through this tree.
+Those remain available in the Unigox console.
 
 ## Conventions
 
