@@ -81,11 +81,12 @@ tags:
 
       **Event model**
 
-      Two event types are delivered:
+      Three event types are delivered:
 
       | Event type | Fired when |
       |---|---|
       | `order.status.changed` | An order transitions to a new status |
+      | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
@@ -113,6 +114,46 @@ tags:
         }
       }
       ```
+
+      **Payload shape — `order.refund.required`**
+
+      Fired when an off-ramp order has stopped without a payout and its crypto is still in escrow.
+      This has its own event type because there is no status change to carry it: the order reads
+      `cancelled` from the moment it stopped, exactly like an order whose refund was already paid out,
+      so a listener filtering on status transitions would never learn that anything is owed. It is
+      sent **at most once per order**, and the same information is on `GET /orders/{order_id}` for as
+      long as it stays true.
+
+      The `data` object is the order.status.changed payload plus `action_required`.
+
+      ```json
+      {
+        "event_id": "evt_refund_required_b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "event_type": "order.refund.required",
+        "created_at": "2026-09-09T09:14:00Z",
+        "data": {
+          "order_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+          "status": "cancelled",
+          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "crypto_amount": "1000.25",
+          "crypto_currency": "USDT",
+          "fiat_amount": "3070.50",
+          "fiat_currency": "KWD",
+          "provider": "p2p",
+          "payment_details_id": "987",
+          "action_required": {
+            "type": "authorize_refund",
+            "message": "This order ended without a payout and the crypto is still in escrow. ...",
+            "endpoint": "POST /api/v1/partner/orders/{order_id}/authorize-refund"
+          }
+        }
+      }
+      ```
+
+      Act on it with the refund pair: `GET /orders/{order_id}/refund-authorization-parameters` for the
+      transaction to sign, then `POST /orders/{order_id}/authorize-refund` with the signature. Nobody
+      else can produce that signature — the escrow needs two of its three owners, we hold one key and
+      you hold the other.
 
       **Payload shape — `user.kyc.updated`**
 
@@ -3249,7 +3290,10 @@ paths:
         by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
         (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
         crypto base as the platform fee (non-compounding) and is settled on-chain to your partner wallet
-        on successful release; cancelled or failed orders refund the full amount, markup included.
+        on successful release. An order that does not settle is never charged the markup, and the refund
+        returns the full funded amount with the markup in it. Note that the refund is not automatic once
+        the escrow has been funded: the crypto stays there until you sign for it — see
+        `POST /orders/{order_id}/authorize-refund`.
 
         Apply your fee on the **same side** the platform does, or your receipts won't reconcile with our
         orders. `crypto_amount` in responses and webhooks stays partner-fee-exclusive, with two
@@ -3700,6 +3744,15 @@ paths:
         ORDER_NOT_FOUND` for them. `status`, `next_action` and the timeline still describe the
         order; they describe your customer's step, not one for you to take.
 
+        **A `cancelled` order can still owe you money.** An off-ramp order that stopped after its
+        escrow was funded reads `cancelled` — the same as one that never funded and the same as one
+        whose refund has already been paid out. The status does not distinguish them and never will.
+        What distinguishes them is `allowed_actions`: `["authorize-refund"]` means the crypto is
+        still in the escrow and your signature is the only thing that can send it back, with
+        `next_action: "authorize_refund"` and `action_required` naming the endpoint. Check it before
+        writing an order off. The `order.refund.required` webhook says the same thing once, if you
+        would rather not poll.
+
         **Order flow summary:**
 
         | Status | next_action | Who acts |
@@ -4007,6 +4060,310 @@ paths:
                   message: "insufficient USDC balance: wallet 0x... has 1928961 but 3000000 is required"
         '502':
           description: Transactor service error (e.g. on-chain simulation failed)
+
+  /api/v1/partner/orders/{order_id}/refund-authorization-parameters:
+    get:
+      tags:
+        - SDK
+        - Orders
+      summary: Get refund authorization parameters
+      description: |
+        Returns the EIP-712 Safe transaction to sign in order to send a funded escrow back to the
+        seller. This is the way out of an off-ramp order that stopped before settlement — the payment
+        window expired, a payment proof was declined, the bank returned the payment, or a dispute was
+        resolved for the seller. In every one of those the crypto is still sitting in escrow and owes
+        its way back.
+
+        Use this endpoint first, sign the returned typed data locally with the key that owns
+        `signer_address`, then send the signature to
+        `/api/v1/partner/orders/{order_id}/authorize-refund`.
+
+        **Who signs.** The escrow is a 2-of-3 Safe whose owners are the buyer side, the seller side
+        and Unigox. On an order you opened for your own end customer, the seller-side owner is *your*
+        wallet — the customer never holds a key. `signer_address` names it explicitly; sign with that
+        key and no other, or the Safe rejects the transaction.
+
+        **Where the money goes is not yours to choose.** The recipient is read from the escrow's
+        seller address on the server. `recipient_address` is returned so you can verify it before
+        signing; there is no parameter that changes it.
+      operationId: getRefundAuthorizationParameters
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      responses:
+        '200':
+          description: Refund authorization parameters returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          order_id:
+                            type: string
+                            format: uuid
+                          status:
+                            type: string
+                            description: The order's current status
+                          escrow_address:
+                            type: string
+                            description: The Safe holding the crypto
+                          signer_address:
+                            type: string
+                            description: >-
+                              The escrow's seller-side owner — the address whose key must produce the
+                              signature. On an order opened for your end customer this is your wallet.
+                          recipient_address:
+                            type: string
+                            description: >-
+                              Where the refund lands. Server-derived and identical to `signer_address`
+                              on a partner order; returned for verification, not as an input.
+                          amount_human:
+                            type: string
+                            description: Amount to be refunded, in whole units
+                          crypto_currency:
+                            type: string
+                          crypto_decimals:
+                            type: integer
+                          direction:
+                            type: string
+                            description: Always `to_seller`. Refunds have no other direction.
+                            example: to_seller
+                          safe_params:
+                            type: object
+                            description: The Safe transaction fields to sign
+                            properties:
+                              to:
+                                type: string
+                                description: Token contract address
+                              value:
+                                type: string
+                              data:
+                                type: string
+                                description: Encoded ERC20 transfer calldata
+                              operation:
+                                type: integer
+                              safeTxGas:
+                                type: string
+                              baseGas:
+                                type: string
+                              gasPrice:
+                                type: string
+                              gasToken:
+                                type: string
+                              refundReceiver:
+                                type: string
+                              nonce:
+                                type: string
+                                description: Safe nonce
+                          domain:
+                            type: object
+                            description: EIP-712 domain
+                            properties:
+                              chainId:
+                                type: integer
+                              verifyingContract:
+                                type: string
+                          types:
+                            type: object
+                            description: EIP-712 type definitions (`SafeTx`)
+                          authorization_path:
+                            type: string
+                            description: The endpoint to POST the signature to
+              example:
+                success: true
+                data:
+                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                  status: "refund_pending"
+                  escrow_address: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
+                  signer_address: "0xd1c06c202D613594189d119Cad36E2D777b02071"
+                  recipient_address: "0xd1c06c202D613594189d119Cad36E2D777b02071"
+                  amount_human: "666.666667"
+                  crypto_currency: "USDT"
+                  crypto_decimals: 6
+                  direction: "to_seller"
+                  safe_params:
+                    to: "0x2222222222222222222222222222222222222222"
+                    value: "0"
+                    data: "0xa9059cbb000000000000000000000000..."
+                    operation: 0
+                    safeTxGas: "0"
+                    baseGas: "0"
+                    gasPrice: "0"
+                    gasToken: "0x0000000000000000000000000000000000000000"
+                    refundReceiver: "0x0000000000000000000000000000000000000000"
+                    nonce: "0"
+                  domain:
+                    chainId: 660279
+                    verifyingContract: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
+                  types:
+                    SafeTx:
+                      - name: "to"
+                        type: "address"
+                      - name: "value"
+                        type: "uint256"
+                  authorization_path: "/api/v1/partner/orders/b2c3d4e5-f6a7-8901-bcde-f12345678901/authorize-refund"
+        '401':
+          description: Unauthorized
+        '404':
+          description: No order with this id belongs to your partner account.
+        '409':
+          description: >-
+            The order does not owe a refund. Either it has already been refunded or released, its
+            status is one where the crypto is not owed back (`INVALID_STATUS`), or it is held for
+            review and no automatic refund may run against it (`OPERATION_NOT_ALLOWED`) — the
+            message says which. A held order is settled by our operations team, not by retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "this order has already been refunded"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/authorize-refund:
+    post:
+      tags:
+        - SDK
+        - Orders
+      summary: Authorize refund
+      description: |
+        Submit the signature produced from `GET /refund-authorization-parameters` to send the escrow
+        back to the seller. Unigox adds the second of the two signatures the Safe requires and
+        executes the transaction.
+
+        **Security note:** your private key is never sent to the API. Sign the typed data locally and
+        submit only the resulting signature.
+
+        The recipient is fixed server-side to the escrow's seller address. A signature is an
+        authorization to move the money back, never an instruction about where it goes.
+
+        Safe to retry: the on-chain Safe executes a given transaction at most once, so a duplicate
+        call after a successful refund is refused on status rather than paying twice.
+      operationId: authorizeRefund
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - signature
+              properties:
+                signature:
+                  type: string
+                  description: Hex-encoded signature over the returned `safe_params`
+                signed_data:
+                  type: string
+                  description: >-
+                    The exact payload that was signed. Optional — the server rebuilds it from the
+                    order and uses its own copy for verification.
+            example:
+              signature: "0xabc123..."
+      responses:
+        '200':
+          description: Refund accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          order_id:
+                            type: string
+                            format: uuid
+                          status:
+                            type: string
+                            description: The status the order landed in after the refund
+                          tx_hash:
+                            type: string
+                            description: >-
+                              On-chain transaction hash. Absent when the refund still needs another
+                              signature or is executing — poll `GET /orders/{order_id}`.
+              example:
+                success: true
+                data:
+                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                  status: "refunded"
+                  tx_hash: "0x7f1e...c4"
+        '400':
+          description: Missing or malformed signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "signature is required"
+        '401':
+          description: Unauthorized
+        '404':
+          description: No order with this id belongs to your partner account.
+        '409':
+          description: >-
+            The order does not owe a refund — already refunded, already released, or in a status
+            where the crypto is not owed back (`INVALID_STATUS`); or it is held for review and no
+            automatic refund may run against it (`OPERATION_NOT_ALLOWED`), in which case retrying
+            will not clear it and our operations team settles the order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "this order has already been released to the buyer"
+        '502':
+          description: >-
+            The refund could not be executed on-chain — most often a signature from a key that does
+            not own the escrow. Verify you signed with `signer_address` and retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: TRANSACTOR_ERROR
+                  message: "refund execution failed, please retry"
 
   /api/v1/partner/orders/{order_id}/confirm-fiat-received:
     post:
@@ -6573,8 +6930,11 @@ components:
             - `confirm_fiat_received` — partner must confirm they received the fiat payment
             - `request_new_quote` — price changed, partner must request a new quote
             - `update_kyc_address` — address fields are required for EUR/AUD/GBP payouts; see `action_required` for the endpoint and fields to submit
+            - `authorize_refund` — the order ended without a payout and its crypto is still in escrow; only your
+              signature can send it back. Note that this appears on an order whose `status` is `cancelled`, which
+              is the one case where a terminal status still needs something from you
             - `null` — no required action (waiting for buyer or system)
-          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, null]
+          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, null]
           example: authorize_crypto_transfer
         action_required:
           type: object
@@ -6634,7 +6994,14 @@ components:
             - `crypto_received` → `["confirm-fiat-received"]` (optional fast-track)
             - `fiat_payment_started` → `["confirm-fiat-received"]` (optional fast-track after buyer proof submission)
             - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]` (required)
-            - `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed` → `[]`
+            - `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `failed` → `[]`
+            - `cancelled` → `[]`, **except** when the order's crypto is still sitting in escrow: then
+              `["authorize-refund"]`. An off-ramp order that stops after funding — expired payment window,
+              declined payment proof, returned bank payment, dispute resolved for the seller — reads as
+              `cancelled` like every other stopped order, and the escrow is a 2-of-3 Safe your key is an
+              owner of. This is the only thing that tells the two apart, so poll it on `cancelled` orders
+              rather than assuming a cancelled order is finished with. `next_action` is
+              `authorize_refund` and `action_required` names the endpoint at the same time.
 
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
@@ -6912,7 +7279,10 @@ components:
           example: "evt_a1b2c3d4-e5f6-7890-abcd-ef1234567890"
         event_type:
           type: string
-          description: Event type (always `order.status.changed`)
+          description: |
+            Event type. `order.status.changed` for a status transition, `order.refund.required` for an
+            order whose crypto is stuck in escrow awaiting your signature (see the Webhooks section).
+          enum: [order.status.changed, order.refund.required]
           example: "order.status.changed"
         created_at:
           type: string
