@@ -282,25 +282,31 @@ amount, the currency and the account it came from. Register webhooks with
 
 | `error.code` | Status | What it means |
 | --- | --- | --- |
-| `PRODUCT_NOT_ACTIVATED` | 403 | The product is not active on your partner. |
-| `ISSUANCE_NOT_GRANTED` | 403 | You may verify customers but not open accounts for them. |
-| `ISSUANCE_DISABLED` | 403 | Account issuance is switched off platform-wide. |
-| `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
-| `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
-| `ACCOUNT_HOLDER_NOT_FOUND` | 404 | No such account holder under that customer. |
 | `MISSING_FIELDS` | 400 | See `error.details.missing_fields`. |
 | `INVALID_HOLDER_TYPE` | 400 | `holder_type` must be `retail` or `business`. |
 | `INVALID_DOCUMENT_TYPE` | 400 | Not one of the four accepted document types. |
+| `INVALID_POSTAL_CODE` | 400 | Longer than the banking layer accepts. |
 | `UNSUPPORTED_CURRENCY` | 400 | Not in `config.currencies`. |
 | `UNSUPPORTED_ISSUER_COUNTRY` | 400 | Not in `config.issuers[currency]`. |
 | `POSTAL_CODE_REQUIRED` | 400 | This jurisdiction will not issue without one. |
+| `PRODUCT_NOT_ACTIVATED` | 403 | The product is not active on your partner. |
+| `ISSUANCE_NOT_GRANTED` | 403 | You may verify customers but not open accounts for them. |
+| `ISSUANCE_DISABLED` | 403 | Account issuance is switched off platform-wide. |
+| `CURRENCY_NOT_PERMITTED` | 403 | This holder's issuance is limited to other currencies. |
+| `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
+| `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
+| `ACCOUNT_HOLDER_NOT_FOUND` | 404 | No such account holder under that customer. |
+| `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. |
+| `IDENTIFICATION_ALREADY_LINKED` | 409 | This person is already an account holder under a different record. |
 | `CLIENT_NOT_APPROVED` | 422 | The identity is not approved yet. |
 | `IDENTIFICATION_MISSING` | 422 | Submit the identity before opening an account. |
+| `CUSTOMER_NOT_VERIFIED` | 422 | The customer's KYC is not (or no longer) verified. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |
-| `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. |
-| `ENTITLEMENT_UNAVAILABLE` | 503 | We could not check your entitlements; nothing was done. |
+| `ACCOUNT_NOT_PROVISIONED` | 422 | The account has not finished being opened, so it has no details or history yet. |
+| `RECORD_FAILED` | 500 | The account was opened but could not be recorded. **Do not retry** — contact Unigox to reconcile. |
 | `BANKING_ERROR` | 502 | The banking layer refused or failed the request. |
 | `BANKING_UNAVAILABLE` | 502 / 503 | The banking layer could not be reached. |
+| `ENTITLEMENT_UNAVAILABLE` | 503 | We could not check your entitlements; nothing was done. |
 
 `BANKING_ERROR` and `BANKING_UNAVAILABLE` mean the request reached the banking
 layer and did not complete. Both are safe to retry: issuance is idempotent per
