@@ -13,6 +13,11 @@ Reference groups:
 - [Third-party payouts](./third-party-payouts.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
 - [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
-- [Fiat accounts](./fiat-accounts.md)
+
+Guides:
+
+- [Fiat accounts](./fiat-accounts.md) — issuing IBANs for your customers. The
+  endpoints themselves live under **User Management**, because an account is
+  reached through the customer that holds it.
 
 This page exists only to make the API reference tree visible in the same left sidebar as the guide pages.

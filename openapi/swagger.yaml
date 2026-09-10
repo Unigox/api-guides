@@ -57,7 +57,53 @@ tags:
     description: Get information about supported trading pairs
     x-page-icon: shuffle
   - name: User Management
-    description: Endpoints to create and manage user accounts
+    description: |
+      Create and manage your customers, put them through KYC, hold their payout details — and issue
+      the fiat accounts they are paid into.
+
+      All of it hangs off one customer. `POST /api/v1/partner/users` creates them and answers with
+      the `user_uuid` every route below takes in its path; KYC verifies them; and an account is
+      opened for that same person. There is no second identity to register and no separate customer
+      record for banking — the person Unigox verified is the person the account belongs to.
+
+      ## Fiat accounts
+
+      Issue dedicated fiat accounts (IBANs) for your customers, and read their balances, ledger and
+      incoming payments. **Every account is reached through the customer that holds it**, at
+      `/api/v1/partner/users/{user_uuid}/fiat-accounts/…` — an account is not a free-standing thing
+      you own, and an account id alone is not enough to read one. An account that belongs to a
+      different customer answers `404`, exactly as one that does not exist.
+
+      `GET /api/v1/partner/fiat-accounts/config` is the one route outside the customer tree, and
+      deliberately: it answers what you may offer AT ALL — which currencies, which jurisdictions,
+      whether the product is on — before any customer is in scope. It is not an account.
+
+      Accounts are held by individuals. Accounts issued to a company you onboarded through business
+      (KYB) onboarding are not on this API: their holder is a KYB case rather than a customer, so
+      they cannot be addressed through this tree. They remain available in the Unigox console.
+
+      Fiat accounts are an optional product. You reach those endpoints only once Unigox has
+      activated the `retail` product on your partner and, for issuing accounts, granted the
+      `issue_retail_accounts` capability. Without them the write endpoints answer `403`
+      (`PRODUCT_NOT_ACTIVATED` / `ISSUANCE_NOT_GRANTED`) and `GET /fiat-accounts/config` reports
+      `enabled: false` with a `disabled_reason`. Talk to Unigox to be enabled — you cannot
+      self-grant it.
+
+      **Nothing here identifies the bank or banking platform behind an account.** Which institution
+      issues a given currency is an operational detail we may change, and no response field, error
+      code or status exposes it. `bank_name` and `bic` are different — they describe the account a
+      payer sends money to, and are yours to display.
+
+      **Money movement is not on this API.** Funding, conversions, closing an account and issuing
+      payments are Unigox-operated (console only). You can issue accounts and read balances, ledger
+      and payments — nothing here debits an account.
+
+      **Settlement of incoming deposits is Unigox-configured, not a call you make.** When a deposit
+      lands on an account you issued, by default the money stays on that customer's own account.
+      Unigox can, per partner, switch on collection of those credits into your master (operating)
+      account instead — ask Unigox to enable it. Only when that is on **and** a collection succeeds
+      do you receive a single webhook, `retail.settlement.completed`; a partner left on the default
+      receives no webhook for a deposit (there is no separate "deposit received" event).
     x-page-icon: user
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
@@ -279,58 +325,6 @@ tags:
       assuming it. Manual `confirm-fiat-received` and the automatic confirmation are mutually
       idempotent — whichever happens first wins and the other is a safe no-op.
     x-page-icon: bell
-  - name: Fiat Accounts
-    description: |
-      Issue dedicated fiat accounts (IBANs) for your own customers, and read their balances, ledger
-      and incoming payments.
-
-      **Every account is reached through the customer that holds it.** An account is not a
-      free-standing thing you own — it belongs to a person, and that person is the customer you
-      created with `POST /api/v1/partner/users` and put through KYC. So the routes live under
-      `/api/v1/partner/users/{user_uuid}/…`, beside the KYC and payment-details routes for the same
-      customer. There is no separate "retail client" entity to register and no second identity to
-      keep in step: the person Unigox verified is the person the account is opened for, and the
-      issuance record behind it is resolved server-side.
-
-      `GET /fiat-accounts/config` is the one route outside that tree, and deliberately — it answers
-      what you may offer AT ALL, before any customer is in scope. It is not an account.
-
-      Accounts are held by individuals. Accounts issued to a company you onboarded through business
-      (KYB) onboarding are not on this API: their holder is a KYB case rather than a customer, so
-      they cannot be addressed through this tree. They remain available in the Unigox console.
-
-      This is an optional product. A partner reaches these endpoints only when Unigox has activated
-      the `retail` product on the partner and granted the `issue_retail_accounts` capability.
-      Without them the write endpoints answer `403` (`PRODUCT_NOT_ACTIVATED` /
-      `ISSUANCE_NOT_GRANTED`) and `GET /fiat-accounts/config` reports `enabled: false` with a
-      `disabled_reason`. Talk to Unigox to be enabled — you cannot self-grant it.
-
-      **The envelope is the standard one.** `{"success": true, "data": { … }}` on success; failure is
-      `{"success": false, "error": {"code", "message", "details"}}`, the same `PartnerErrorResponse`
-      the order and off-ramp endpoints use. Field names are `snake_case` at every depth.
-
-      **Nothing here identifies the bank or banking platform behind an account.** Which institution
-      issues a given currency is an operational detail we may change, and no response field, error
-      code or status exposes it. `bank_name` and `bic` are different — they describe the account a
-      payer sends money to, and are yours to display.
-
-      Authentication is the same `X-API-Key` (or operator `Authorization: Bearer`) as the rest of
-      the Partner API. The partner is always resolved from the credential server-side, and every
-      `user_uuid` is scoped to that partner — a customer you do not own answers `404
-      CUSTOMER_NOT_FOUND`, indistinguishable from one that does not exist. So does an account that
-      exists but belongs to a different customer.
-
-      **Money movement is not on this API.** Funding, conversions, closing an account and issuing
-      payments are Unigox-operated (console only). A partner can issue accounts and read balances,
-      ledger and payments — nothing here debits an account.
-
-      **Settlement of incoming deposits is Unigox-configured, not a call you make.** When a deposit
-      lands on an account you issued, by default the money stays on that customer's own account.
-      Unigox can, per partner, switch on collection of those credits into your master (operating)
-      account instead — ask Unigox to enable it. Only when that is on **and** a collection succeeds
-      do you receive a single webhook, `retail.settlement.completed`; a partner left on the default
-      receives no webhook for a deposit (there is no separate "deposit received" event).
-    x-page-icon: building-columns
 
 paths:
   # ============================================
@@ -4755,7 +4749,8 @@ paths:
 
   /api/v1/partner/fiat-accounts/config:
     get:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: What you can offer
       operationId: getFiatAccountsConfig
       description: |
@@ -4787,7 +4782,8 @@ paths:
 
   /api/v1/partner/users/{user_uuid}/identity:
     get:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: What identity we hold, and what is still needed
       operationId: getFiatCustomerIdentity
       description: |
@@ -4819,7 +4815,8 @@ paths:
 
   /api/v1/partner/users/{user_uuid}/identification:
     get:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: Verification status of the account holder
       operationId: getFiatIdentification
       description: |
@@ -4855,7 +4852,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
     post:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: Submit the customer's identity
       operationId: submitFiatIdentification
       description: |
@@ -4934,7 +4932,8 @@ paths:
 
   /api/v1/partner/users/{user_uuid}/fiat-accounts:
     get:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: This customer's accounts
       operationId: listFiatAccountsForUser
       description: |
@@ -4961,7 +4960,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
     post:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: Issue an account
       operationId: issueFiatAccount
       description: |
@@ -5052,7 +5052,8 @@ paths:
 
   /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}:
     get:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: One account, with balances
       operationId: getFiatAccount
       description: |
@@ -5094,7 +5095,8 @@ paths:
 
   /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}/ledger:
     get:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: Transaction history
       operationId: getFiatAccountLedger
       description: |
@@ -5146,7 +5148,8 @@ paths:
 
   /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}/payments:
     get:
-      tags: [Fiat Accounts]
+      tags:
+        - User Management
       summary: Payment records
       operationId: getFiatAccountPayments
       description: |
