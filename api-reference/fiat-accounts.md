@@ -3,19 +3,19 @@
 Issue dedicated fiat accounts (IBANs) for your own customers, and read their
 balances, ledger and incoming payments — all under your partner API key.
 
-An account has a **holder**, and there are two kinds. A `retail` account belongs
-to a person — the customer you create with `POST /api/v1/partner/users` and put
-through KYC. A `business` account belongs to a company you onboarded through
-business (KYB) onboarding. Both are read through the same endpoints and render
-in the same shape; `holder_type` says which you are looking at.
+Every account is reached **through the customer that holds it**. An account is
+not a free-standing thing you own — it belongs to a person, and that person is
+the customer you create with `POST /api/v1/partner/users` and put through KYC.
+So the routes live under `/api/v1/partner/users/{user_uuid}/…`, beside the KYC
+and payment-details routes for that same customer.
 
 There is no separate "retail client" to register and no second identity to keep
 in step — the person Unigox verified is the person the account is opened for.
 
-**You can issue `retail` accounts here; `business` accounts are read-only on this
-API.** Opening one for a company needs a verified KYB case, which is a console
-flow and is not exposed over the partner API — so business accounts appear in
-these reads once they exist, and are opened elsewhere.
+Accounts are held by individuals. An account issued to a company you onboarded
+through business (KYB) onboarding is not on this API: its holder is a KYB case
+rather than a customer, so it cannot be addressed through this tree. Those
+remain available in the Unigox console.
 
 This is an optional product. You reach these endpoints only once Unigox has
 activated the `retail` product on your partner and, for issuing accounts,
@@ -55,11 +55,13 @@ Field names are `snake_case` at every depth. Authentication is the same
 account you do not own answers `404`, indistinguishable from one that does not
 exist.
 
-**Account ids are opaque and carry their holder kind** — `retail_412`,
-`business_87`. Pass them back verbatim; do not parse them and do not assume the
-numeric part means anything. The two kinds are stored separately and their
-numbers overlap, which is why the prefix is part of the id rather than a
-parameter beside it.
+**Account ids are opaque** — `retail_412`. Pass them back verbatim; do not parse
+them and do not assume the numeric part means anything. The prefix is part of
+the id, not decoration.
+
+An account is always addressed under its own customer. One that belongs to a
+different customer answers `404`, exactly as one that does not exist — so an
+account id alone is never enough to read an account.
 
 Nothing in this section identifies the bank or banking platform behind an
 account, and nothing branches on it. Which institution issues a given currency
@@ -244,39 +246,20 @@ settles rather than treating it as a failure.
 ### 6. Read the account
 
 ```http
-GET /api/v1/partner/fiat-accounts                        # every account you operate
-GET /api/v1/partner/fiat-accounts?holder_type=retail     # …only people's
-GET /api/v1/partner/fiat-accounts?holder_type=business   # …only companies'
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts        # one customer's accounts
-GET /api/v1/partner/fiat-accounts/{id}                   # one account, with balances
-GET /api/v1/partner/fiat-accounts/{id}/ledger?page=N     # transaction history
-GET /api/v1/partner/fiat-accounts/{id}/payments?page=N   # incoming payment records
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts                        # this customer's accounts
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}                   # one account, full details
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/ledger?page=N     # transaction history
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/payments?page=N   # incoming payments
 ```
 
-`GET /fiat-accounts` returns both holder kinds. `holder_type` narrows it; any
-other value answers `400 INVALID_HOLDER_TYPE`. If you were never set up for
-business accounts you simply have none, and the unfiltered list is your retail
-accounts — that is not an error and does not need handling.
-
-`holder_id` names the holder in that kind's own id space: the customer's
-`user_uuid` for `retail`, the KYB case id for `business`.
-
-**A closed account stays readable.** Closing retires the IBAN; it does not remove
-the account, its history, or any money still behind it. Closed accounts keep
-appearing in these lists with `status: "closed"` and answer every read.
-
-**One caveat on the ledger, for older business accounts.** A ledger is kept per
-account container. An account opened under the company's own identity owns its
-container, so its ledger is its own. A small number of older business accounts
-share a container instead, and their entries cannot be separated from the rest
-of it — those answer `422 LEDGER_NOT_ATTRIBUTABLE` rather than return entries
-that are not theirs. Their **incoming payments are unaffected** and remain
-available at `…/payments`, which is scoped to the account itself.
-
-The list views carry `iban_last4` (or `account_number_last4` and `sort_code` for
-a sterling account, which has no IBAN). The single-account view adds the full
-details a payer needs, plus `balances` and `balances_unavailable` — a balance
+The list carries `iban_last4` (or `account_number_last4` and `sort_code` for a
+sterling account, which has no IBAN). The single-account view adds the full
+identifier a payer needs, plus `balances` and `balances_unavailable` — a balance
 read that failed is reported rather than shown as zero.
+
+**A closed account stays readable.** Closing retires the IBAN; it does not
+remove the account, its history, or any money still behind it. Closed accounts
+keep appearing in the list with `status: "closed"` and answer every read.
 
 Ledger and payment pages carry the upstream `pagination` object when one is
 available. Its **absence means unknown, not "one page"** — fall back to judging
@@ -295,7 +278,6 @@ amount, the currency and the account it came from. Register webhooks with
 | `error.code` | Status | What it means |
 | --- | --- | --- |
 | `MISSING_FIELDS` | 400 | See `error.details.missing_fields`. |
-| `INVALID_HOLDER_TYPE` | 400 | `holder_type` must be `retail` or `business`. |
 | `INVALID_DOCUMENT_TYPE` | 400 | Not one of the four accepted document types. |
 | `INVALID_POSTAL_CODE` | 400 | Longer than the banking layer accepts. |
 | `UNSUPPORTED_CURRENCY` | 400 | Not in `config.currencies`. |
@@ -306,7 +288,7 @@ amount, the currency and the account it came from. Register webhooks with
 | `ISSUANCE_DISABLED` | 403 | Account issuance is switched off platform-wide. |
 | `CURRENCY_NOT_PERMITTED` | 403 | This holder's issuance is limited to other currencies. |
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
-| `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
+| `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, not yours, or not this customer's. |
 | `ACCOUNT_HOLDER_NOT_FOUND` | 404 | No such account holder under that customer. |
 | `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. |
 | `HOLDER_REGISTRATION_IN_PROGRESS` | 409 | This customer is already being registered as a holder. Retry once it settles. |
@@ -316,7 +298,6 @@ amount, the currency and the account it came from. Register webhooks with
 | `CUSTOMER_NOT_VERIFIED` | 422 | The customer's KYC is not (or no longer) verified. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |
 | `ACCOUNT_NOT_PROVISIONED` | 422 | The account has not finished being opened, so it has no details or history yet. |
-| `LEDGER_NOT_ATTRIBUTABLE` | 422 | This account's ledger cannot be separated from the account it shares. See below. |
 | `RECORD_FAILED` | 500 | The account was opened but could not be recorded. **Do not retry** — contact Unigox to reconcile. |
 | `BANKING_ERROR` | 502 | The banking layer refused or failed the request. |
 | `BANKING_UNAVAILABLE` | 502 / 503 | The banking layer could not be reached. |
