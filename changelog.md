@@ -2,6 +2,17 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-10
+
+**Fiat accounts are now reached through the customer that holds them, and the flat `/partner/fiat-accounts` tree is gone.** This follows yesterday's entry and replaces the account routes it introduced. An account is not a free-standing thing you own — it belongs to a person, that person is the customer you created with `POST /api/v1/partner/users`, and holding an account id was enough to read an account without holding the relationship behind it.
+
+- **The account routes moved under the customer.** `GET /partner/users/{user_uuid}/fiat-accounts/{id}`, `…/{id}/ledger` and `…/{id}/payments` replace `GET /partner/fiat-accounts/{id}` and its children. Listing and issuing were already customer-scoped and are unchanged.
+- **`GET /partner/fiat-accounts` — the list of every account across all your customers — is removed.** It was the one route that could not name a holder. Read a customer's accounts with `GET /partner/users/{user_uuid}/fiat-accounts`.
+- **`GET /partner/fiat-accounts/config` stays where it is.** It answers what you may offer at all, before any customer is in scope, and it is not an account.
+- **An account is only addressable under its own customer.** One that exists but belongs to a different customer answers `404`, exactly as one that does not exist. An account id alone is no longer enough to read an account.
+- **Business-held accounts are off this API.** Accounts issued to a company you onboarded through KYB have a KYB case as their holder, not a customer, so they cannot be addressed through this tree. They remain available in the Unigox console. `holder_type` and the `retail_` id prefix stay as they are — they are how you will tell holder kinds apart if another becomes available, and changing the id format twice would be worse than publishing a constant once.
+- Gone with the removed routes: `INVALID_HOLDER_TYPE` and `LEDGER_NOT_ATTRIBUTABLE`.
+
 ## 2026-09-09
 
 **Retail accounts are now Fiat accounts, on the standard envelope, scoped to the customer you already have. This replaces the `/api/v1/partner/retail/*` endpoints, which are removed.** The product is unchanged — you still issue dedicated IBANs for your own customers and read their balances, ledger and payments. What changes is the shape, and every part of it was a departure from the rest of this API that should not have shipped.
