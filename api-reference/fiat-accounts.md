@@ -261,6 +261,18 @@ accounts — that is not an error and does not need handling.
 `holder_id` names the holder in that kind's own id space: the customer's
 `user_id` for `retail`, the KYB case id for `business`.
 
+**A closed account stays readable.** Closing retires the IBAN; it does not remove
+the account, its history, or any money still behind it. Closed accounts keep
+appearing in these lists with `status: "closed"` and answer every read.
+
+**One caveat on the ledger, for older business accounts.** A ledger is kept per
+account container. An account opened under the company's own identity owns its
+container, so its ledger is its own. A small number of older business accounts
+share a container instead, and their entries cannot be separated from the rest
+of it — those answer `422 LEDGER_NOT_ATTRIBUTABLE` rather than return entries
+that are not theirs. Their **incoming payments are unaffected** and remain
+available at `…/payments`, which is scoped to the account itself.
+
 The list views carry `iban_last4` (or `account_number_last4` and `sort_code` for
 a sterling account, which has no IBAN). The single-account view adds the full
 details a payer needs, plus `balances` and `balances_unavailable` — a balance
@@ -297,16 +309,19 @@ amount, the currency and the account it came from. Register webhooks with
 | `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
 | `ACCOUNT_HOLDER_NOT_FOUND` | 404 | No such account holder under that customer. |
 | `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. |
+| `HOLDER_REGISTRATION_IN_PROGRESS` | 409 | This customer is already being registered as a holder. Retry once it settles. |
 | `IDENTIFICATION_ALREADY_LINKED` | 409 | This person is already an account holder under a different record. |
 | `CLIENT_NOT_APPROVED` | 422 | The identity is not approved yet. |
 | `IDENTIFICATION_MISSING` | 422 | Submit the identity before opening an account. |
 | `CUSTOMER_NOT_VERIFIED` | 422 | The customer's KYC is not (or no longer) verified. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |
 | `ACCOUNT_NOT_PROVISIONED` | 422 | The account has not finished being opened, so it has no details or history yet. |
+| `LEDGER_NOT_ATTRIBUTABLE` | 422 | This account's ledger cannot be separated from the account it shares. See below. |
 | `RECORD_FAILED` | 500 | The account was opened but could not be recorded. **Do not retry** — contact Unigox to reconcile. |
 | `BANKING_ERROR` | 502 | The banking layer refused or failed the request. |
 | `BANKING_UNAVAILABLE` | 502 / 503 | The banking layer could not be reached. |
 | `ENTITLEMENT_UNAVAILABLE` | 503 | We could not check your entitlements; nothing was done. |
+| `HOLDER_UNAVAILABLE` | 503 | The customer could not be registered as a holder just now; nothing was done. |
 
 `BANKING_ERROR` and `BANKING_UNAVAILABLE` mean the request reached the banking
 layer and did not complete. Both are safe to retry: issuance is idempotent per

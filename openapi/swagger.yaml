@@ -4538,6 +4538,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: |
+            The account has not finished being opened (`ACCOUNT_NOT_PROVISIONED`), or its ledger
+            cannot be separated from the container it shares (`LEDGER_NOT_ATTRIBUTABLE`) — a small
+            number of older business accounts. Their incoming payments are unaffected and remain
+            available at `…/payments`, which is scoped to the account itself.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '502':
           description: The banking layer could not be read (`BANKING_ERROR` / `BANKING_UNAVAILABLE`)
           content:
@@ -4710,7 +4720,9 @@ paths:
         '409':
           description: |
             The banking layer matched this person to an identity another holder already owns
-            (`IDENTIFICATION_ALREADY_LINKED`).
+            (`IDENTIFICATION_ALREADY_LINKED`), or this customer is already being registered as a
+            holder by a request in flight (`HOLDER_REGISTRATION_IN_PROGRESS`) — retry once it
+            settles.
           content:
             application/json:
               schema:
@@ -4811,7 +4823,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: The same account is already being opened (`PROVISIONING_IN_PROGRESS`)
+          description: |
+            The same account is already being opened (`PROVISIONING_IN_PROGRESS`), or this customer
+            is already being registered as a holder by a request in flight
+            (`HOLDER_REGISTRATION_IN_PROGRESS`). Both settle on their own — retry.
           content:
             application/json:
               schema:
@@ -7262,7 +7277,9 @@ components:
           example: NL
         status:
           type: string
-          description: '`active`, `pending`, `closed` or `unknown`.'
+          description: |
+            `active`, `pending`, `closed` or `unknown`. A CLOSED account stays readable: closing
+            retires the IBAN without removing the account, its history, or any money still behind it.
           example: active
         iban:
           type: string
