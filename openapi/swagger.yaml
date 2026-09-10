@@ -278,7 +278,7 @@ tags:
 
       Authentication is the same `X-API-Key` (or operator `Authorization: Bearer`) as the rest of
       the Partner API. The partner is always resolved from the credential server-side, and every
-      `user_id` is scoped to that partner — a customer you do not own answers `404
+      `user_uuid` is scoped to that partner — a customer you do not own answers `404
       CUSTOMER_NOT_FOUND`, indistinguishable from one that does not exist.
 
       **Money movement is not on this API.** Funding, conversions, closing an account and issuing
@@ -4593,7 +4593,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
-  /api/v1/partner/users/{user_id}/identity:
+  /api/v1/partner/users/{user_uuid}/identity:
     get:
       tags: [Fiat Accounts]
       summary: What identity we hold, and what is still needed
@@ -4610,7 +4610,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserId'
+        - $ref: '#/components/parameters/FiatUserUuid'
       responses:
         '200':
           description: Known identity and remaining gaps
@@ -4625,7 +4625,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
-  /api/v1/partner/users/{user_id}/identification:
+  /api/v1/partner/users/{user_uuid}/identification:
     get:
       tags: [Fiat Accounts]
       summary: Verification status of the account holder
@@ -4639,7 +4639,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserId'
+        - $ref: '#/components/parameters/FiatUserUuid'
       responses:
         '200':
           description: Holder status
@@ -4671,7 +4671,7 @@ paths:
         if this is the first call.
 
         **Every body field is optional.** What Unigox verified at KYC is always preferred over what
-        is sent here, so send only what `GET /users/{user_id}/identity` reported as `missing`. The
+        is sent here, so send only what `GET /users/{user_uuid}/identity` reported as `missing`. The
         name, the country of residence and the document are taken from the verification and cannot
         be overridden — the identity a bank opens an account on has to be the one that was verified.
 
@@ -4683,7 +4683,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserId'
+        - $ref: '#/components/parameters/FiatUserUuid'
       requestBody:
         required: false
         content:
@@ -4740,7 +4740,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
-  /api/v1/partner/users/{user_id}/fiat-accounts:
+  /api/v1/partner/users/{user_uuid}/fiat-accounts:
     get:
       tags: [Fiat Accounts]
       summary: One customer's accounts
@@ -4751,7 +4751,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserId'
+        - $ref: '#/components/parameters/FiatUserUuid'
       responses:
         '200':
           description: Accounts
@@ -4772,7 +4772,7 @@ paths:
       description: |
         Opens a fiat account (IBAN) for the customer, registering them as an account holder first if
         needed. The holder must already be approved — see
-        `GET /users/{user_id}/identification`.
+        `GET /users/{user_uuid}/identification`.
 
         **Idempotent per (customer, currency, jurisdiction).** A repeat answers `201` with the same
         account and `created: false`; it does not open a second one. One customer may hold accounts
@@ -4784,7 +4784,7 @@ paths:
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserId'
+        - $ref: '#/components/parameters/FiatUserUuid'
       requestBody:
         required: true
         content:
@@ -7266,7 +7266,7 @@ components:
         holder_id:
           type: string
           description: |
-            The holder, in that kind's own id space: the customer's `user_id` (from
+            The holder, in that kind's own id space: the customer's `user_uuid` (from
             `POST /api/v1/partner/users`) for `retail`, the KYB case id for `business`.
         currency:
           type: string
@@ -7322,11 +7322,11 @@ components:
     FiatAccountHolder:
       type: object
       description: |
-        The customer, as the account holder. There is no separate identity here: `user_id` is the
+        The customer, as the account holder. There is no separate identity here: `user_uuid` is the
         customer created with `POST /api/v1/partner/users`, and the names and country are the ones
         Unigox KYC verified.
       properties:
-        user_id:
+        user_uuid:
           type: string
           format: uuid
         first_name: { type: string }
@@ -7549,7 +7549,7 @@ components:
       type: object
       description: |
         Every field is optional. What Unigox verified at KYC is preferred over anything sent here,
-        so send only what `GET /users/{user_id}/identity` reported as missing. The name, the country
+        so send only what `GET /users/{user_uuid}/identity` reported as missing. The name, the country
         of residence and the document are taken from the verification and cannot be overridden.
       properties:
         address: { type: string, example: "10 Downing Street" }
@@ -7584,8 +7584,8 @@ components:
           example: "1011 AB"
 
   parameters:
-    FiatUserId:
-      name: user_id
+    FiatUserUuid:
+      name: user_uuid
       in: path
       required: true
       description: |

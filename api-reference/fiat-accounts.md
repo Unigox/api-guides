@@ -79,10 +79,10 @@ account.
 1. Create and KYC-verify a customer (`POST /api/v1/partner/users`, then the KYC
    flow). Reuse an existing verified customer if you have one.
 2. Check what you can offer: `GET /fiat-accounts/config`.
-3. Check what identity is still needed: `GET /users/{user_id}/identity`.
-4. Submit the customer's identity: `POST /users/{user_id}/identification`, then
-   poll `GET /users/{user_id}/identification` until it approves.
-5. Issue the account: `POST /users/{user_id}/fiat-accounts`.
+3. Check what identity is still needed: `GET /users/{user_uuid}/identity`.
+4. Submit the customer's identity: `POST /users/{user_uuid}/identification`, then
+   poll `GET /users/{user_uuid}/identification` until it approves.
+5. Issue the account: `POST /users/{user_uuid}/fiat-accounts`.
 6. Read balances, ledger and payments as deposits arrive.
 
 ### 1. See what you can offer
@@ -119,7 +119,7 @@ This endpoint never errors on entitlement. When the product is off it returns
 ### 2. See what identity is still needed
 
 ```http
-GET /api/v1/partner/users/{user_id}/identity
+GET /api/v1/partner/users/{user_uuid}/identity
 X-API-Key: <api-key>
 ```
 
@@ -134,7 +134,7 @@ number is never returned — only its last four digits.
 ### 3. Submit the customer's identity
 
 ```http
-POST /api/v1/partner/users/{user_id}/identification
+POST /api/v1/partner/users/{user_uuid}/identification
 X-API-Key: <api-key>
 Content-Type: application/json
 ```
@@ -163,7 +163,7 @@ A gap answers `400` with `error.code: "MISSING_FIELDS"` and the field list under
 ### 4. Wait for approval
 
 ```http
-GET /api/v1/partner/users/{user_id}/identification
+GET /api/v1/partner/users/{user_uuid}/identification
 X-API-Key: <api-key>
 ```
 
@@ -172,7 +172,7 @@ X-API-Key: <api-key>
   "success": true,
   "data": {
     "holder": {
-      "user_id": "9f1c…",
+      "user_uuid": "9f1c…",
       "full_name": "Maria ZALISHCHUK",
       "status": "approved",
       "kyc_status": "approved",
@@ -194,7 +194,7 @@ answers `404 ACCOUNT_HOLDER_NOT_FOUND` — polling never creates a holder record
 ### 5. Issue the account
 
 ```http
-POST /api/v1/partner/users/{user_id}/fiat-accounts
+POST /api/v1/partner/users/{user_uuid}/fiat-accounts
 X-API-Key: <api-key>
 Content-Type: application/json
 ```
@@ -247,7 +247,7 @@ settles rather than treating it as a failure.
 GET /api/v1/partner/fiat-accounts                        # every account you operate
 GET /api/v1/partner/fiat-accounts?holder_type=retail     # …only people's
 GET /api/v1/partner/fiat-accounts?holder_type=business   # …only companies'
-GET /api/v1/partner/users/{user_id}/fiat-accounts        # one customer's accounts
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts        # one customer's accounts
 GET /api/v1/partner/fiat-accounts/{id}                   # one account, with balances
 GET /api/v1/partner/fiat-accounts/{id}/ledger?page=N     # transaction history
 GET /api/v1/partner/fiat-accounts/{id}/payments?page=N   # incoming payment records
@@ -259,7 +259,7 @@ business accounts you simply have none, and the unfiltered list is your retail
 accounts — that is not an error and does not need handling.
 
 `holder_id` names the holder in that kind's own id space: the customer's
-`user_id` for `retail`, the KYB case id for `business`.
+`user_uuid` for `retail`, the KYB case id for `business`.
 
 **A closed account stays readable.** Closing retires the IBAN; it does not remove
 the account, its history, or any money still behind it. Closed accounts keep
