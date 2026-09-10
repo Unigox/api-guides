@@ -68,42 +68,14 @@ tags:
 
       ## Fiat accounts
 
-      Issue dedicated fiat accounts (IBANs) for your customers, and read their balances, ledger and
-      incoming payments. **Every account is reached through the customer that holds it**, at
-      `/api/v1/partner/users/{user_uuid}/fiat-accounts/…` — an account is not a free-standing thing
-      you own, and an account id alone is not enough to read one. An account that belongs to a
-      different customer answers `404`, exactly as one that does not exist.
+      Issue dedicated fiat accounts (IBANs) for your customers and read their balances, ledger and
+      incoming payments. Every account is reached through the customer that holds it — which is why
+      these routes live here rather than under a product of their own, and why an account id on its
+      own will not read an account. It is an optional product that Unigox activates per partner, it
+      covers individuals rather than companies, and money movement is not on this API. The
+      [Fiat accounts guide](https://developers.unigox.com/tutorials/fiat-accounts) has the flow end
+      to end, what has to be switched on before you start, and the error codes.
 
-      `GET /api/v1/partner/fiat-accounts/config` is the one route outside the customer tree, and
-      deliberately: it answers what you may offer AT ALL — which currencies, which jurisdictions,
-      whether the product is on — before any customer is in scope. It is not an account.
-
-      Accounts are held by individuals. Accounts issued to a company you onboarded through business
-      (KYB) onboarding are not on this API: their holder is a KYB case rather than a customer, so
-      they cannot be addressed through this tree. They remain available in the Unigox console.
-
-      Fiat accounts are an optional product. You reach those endpoints only once Unigox has
-      activated the `retail` product on your partner and, for issuing accounts, granted the
-      `issue_retail_accounts` capability. Without them the write endpoints answer `403`
-      (`PRODUCT_NOT_ACTIVATED` / `ISSUANCE_NOT_GRANTED`) and `GET /fiat-accounts/config` reports
-      `enabled: false` with a `disabled_reason`. Talk to Unigox to be enabled — you cannot
-      self-grant it.
-
-      **Nothing here identifies the bank or banking platform behind an account.** Which institution
-      issues a given currency is an operational detail we may change, and no response field, error
-      code or status exposes it. `bank_name` and `bic` are different — they describe the account a
-      payer sends money to, and are yours to display.
-
-      **Money movement is not on this API.** Funding, conversions, closing an account and issuing
-      payments are Unigox-operated (console only). You can issue accounts and read balances, ledger
-      and payments — nothing here debits an account.
-
-      **Settlement of incoming deposits is Unigox-configured, not a call you make.** When a deposit
-      lands on an account you issued, by default the money stays on that customer's own account.
-      Unigox can, per partner, switch on collection of those credits into your master (operating)
-      account instead — ask Unigox to enable it. Only when that is on **and** a collection succeeds
-      do you receive a single webhook, `retail.settlement.completed`; a partner left on the default
-      receives no webhook for a deposit (there is no separate "deposit received" event).
     x-page-icon: user
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
