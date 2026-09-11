@@ -5770,7 +5770,16 @@ components:
                 user_uuid:
                   type: string
                   format: uuid
-                  description: Public UUID of the user. Use this value in all subsequent API calls.
+                  description: |
+                    Public UUID of the user. **Use this value in every subsequent call** — it is the
+                    `{user_uuid}` in `/partner/users/{user_uuid}/…`.
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                id:
+                  type: string
+                  format: uuid
+                  description: |
+                    The same value as `user_uuid`, kept for integrations written before that name
+                    existed. Either can be read; they never differ.
                   example: "550e8400-e29b-41d4-a716-446655440000"
                 email:
                   type: string
