@@ -6891,8 +6891,11 @@ components:
             - `authorize_refund` — the order ended without a payout and its crypto is still in escrow; only your
               signature can send it back. Note that this appears on an order whose `status` is `cancelled`, which
               is the one case where a terminal status still needs something from you
+            - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_iban` is waiting for the
+              customer to transfer the order's fiat amount into the fiat account issued to them. The transfer
+              itself confirms the payment; there is nothing to call
             - `null` — no required action (waiting for buyer or system)
-          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, null]
+          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, null]
           example: authorize_crypto_transfer
         action_required:
           type: object
@@ -6961,11 +6964,26 @@ components:
               rather than assuming a cancelled order is finished with. `next_action` is
               `authorize_refund` and `action_required` names the endpoint at the same time.
 
+            On-ramp orders with `fiat_funding_source: own_iban` never offer `confirm-payment-sent`: the
+            transfer into the customer's own account is the confirmation.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
             because the crypto is the end user's and every action endpoint answers `404
             ORDER_NOT_FOUND` for it.
           example: ["authorize-crypto-transfer", "cancel"]
+        fiat_funding_source:
+          type: string
+          enum: [vendor_details, own_iban]
+          description: |
+            On-ramp orders only. Where the fiat for this order is paid:
+            - `vendor_details` — to the vendor's bank account in `vendor_payment_details`; then call
+              `confirm-payment-sent`.
+            - `own_iban` — into the fiat account you issued to the customer. There are no
+              `vendor_payment_details` and no `confirm-payment-sent`: the transfer landing on the customer's
+              account is matched to the order by amount and the order proceeds on its own.
+
+            Read it on every order rather than assuming one or the other.
+          example: own_iban
         crypto_transfer_authorization_seconds_left:
           type: integer
           format: int64
