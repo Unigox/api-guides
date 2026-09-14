@@ -2283,7 +2283,10 @@ paths:
         Once a vendor accepts, the order moves to `awaiting_vendor_escrow_funding`, then
         `awaiting_fiat_transfer` when the crypto is locked in escrow.
 
-        At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order.
+        At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order —
+        unless the order's `fiat_funding_source` is `own_iban`. Then `next_action` is
+        `deposit_to_user_account`: the customer transfers the order's fiat amount into the fiat account
+        issued to them, that transfer confirms the payment, and `confirm-payment-sent` is not used.
         If the order type is `payment_request`, call `submit-payer-details` first before confirming.
 
         **KYC requirement:** The customer must be KYC-cleared, as described on `POST /onramp/quote`.
@@ -7156,7 +7159,7 @@ components:
         **On-ramp statuses (fiat → crypto):**
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
         - `awaiting_vendor_escrow_funding` — vendor accepted, funding escrow with crypto
-        - `awaiting_fiat_transfer` — crypto locked in escrow, partner must confirm payment sent
+        - `awaiting_fiat_transfer` — crypto locked in escrow; the partner pays the vendor and confirms payment sent (`fiat_funding_source: vendor_details`), or the customer transfers into their own fiat account (`own_iban`)
         - `fiat_transfer_pending` — fiat payment confirmed, awaiting vendor confirmation of receipt
         - `completed` — vendor confirmed fiat received, crypto released to end-user wallet
         - `cancelled` — order cancelled
