@@ -2,6 +2,33 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## Unreleased — China USD preparation
+
+**China USD payouts are behind a per-deployment rollout setting.** Where it is
+off, the corridor answers as unavailable with `provider_confirmation_pending`;
+where it is on, only an exact capacity row naming the `usd-wire-china` rail
+admits the route. An existing USD offer or general USD settlement capacity does
+not enable China either way. See [USD payments to China](api-reference/china-usd-payments.md)
+for the account and invoice rules and the distinction between storage and
+provider acceptance.
+
+- Settlement capacity accepts optional `country_code`, taken from the payout bank's
+  destination. Where the rollout setting is off, USD with `country_code=CN`
+  returns empty `corridors` and `unavailable_reason: "provider_confirmation_pending"`.
+- Payment rails can expose `directions`. Discovery respects a payout-only network;
+  listing an offramp rail does not make it an onramp option.
+- Quote, initiate and settlement execution enforce China USD readiness on the
+  server before a new payment is funded. Existing committed-order recovery remains
+  available. No China USD bank list, price or arrival-time guarantee is published.
+- Settlement capacity and order open resolve `rail` given as a network's display
+  name to its slug and match case-insensitively. An exact `usd-wire-china` row is
+  now discoverable by the customer plane; a different network is still refused.
+- SELL trades and trade requests name their payout route: `payment_network_slug`
+  and `route_country_code` at the top level, `payment_network_slug` and
+  `country_code` on `initiator_payment_details`. A vendor agent resolves a USD
+  corridor from currency, country and rail together; `payment_network_name`
+  remains display text. Absent on BUY and on rows frozen before the change.
+
 ## 2026-08-31
 
 **A sender field too long for the payout rail is now refused up front, with the limit in the response.** The rails behind `SENDER_IDENTITY_REQUIRED` cap several sender fields, and they enforce the cap at payout: the whole payment is rejected, after the customer has funded, and the customer sees only that the order was cancelled. A value over the cap is now treated as a field the record could not answer, so `POST /api/v1/partner/offramp/initiate` refuses it while a retry is still free.

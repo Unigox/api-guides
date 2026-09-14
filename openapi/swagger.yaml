@@ -5042,13 +5042,18 @@ paths:
         - name: fiat_currency
           in: query
           required: true
-          description: Case-sensitive upper-case fiat code, for example CNY.
+          description: Fiat code, normalized to upper case, for example CNY.
           schema: { type: string, minLength: 3, maxLength: 3, example: CNY }
         - name: rail
           in: query
           required: false
-          description: Optional payout rail. A corridor with an empty rail matches every rail.
-          schema: { type: string, example: CNAPS }
+          description: Optional payout rail — the network slug (usd-wire-china, cnaps). A network's display name that names exactly one network is accepted and resolved to its slug; matching is case-insensitive. Legacy empty-rail capacity does not authorize a pending China USD route.
+          schema: { type: string, example: usd-wire-china }
+        - name: country_code
+          in: query
+          required: false
+          description: Recipient bank country (ISO 3166-1 alpha-2), not sender residence. Whether USD to CN returns a corridor is a per-deployment rollout setting; where it is off the list is empty and unavailable_reason is provider_confirmation_pending.
+          schema: { type: string, minLength: 2, maxLength: 2, example: CN }
         - name: provider
           in: query
           required: false
@@ -5779,6 +5784,12 @@ components:
     Rails:
       type: object
       properties:
+        directions:
+          type: array
+          description: Directions permitted by network configuration. Returned rails are filtered for the requested direction; this is discovery, not payment authorization.
+          items:
+            type: string
+            enum: [onramp, offramp]
         slug:
           type: string
           description: Payment rail slug identifier
@@ -8186,6 +8197,10 @@ components:
           type: object
           required: [corridors]
           properties:
+            unavailable_reason:
+              type: string
+              description: Why an explicitly requested corridor is unavailable before capacity lookup.
+              example: provider_confirmation_pending
             corridors:
               type: array
               items: { $ref: '#/components/schemas/SettlementCapacityCorridor' }

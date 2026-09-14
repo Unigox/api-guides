@@ -1,5 +1,7 @@
 # Scheduled settlement (Settlement T+1)
 
+For USD bank payouts to mainland China, see the [route and invoice requirements](china-usd-payments.md). Whether that corridor answers is a per-deployment rollout setting, not a property of this API: where it is off, a USD request naming `country_code=CN` returns no corridors and `unavailable_reason: "provider_confirmation_pending"`. Either way a general USD capacity row does not enable it — the corridor is admitted only by an exact row naming the `usd-wire-china` rail, and it settles on the 48-hour window that row carries.
+
 Use this flow when an off-ramp is larger than a provider will settle instantly,
 or when your customer wants a floor under the payout on a transfer that takes a
 day.
