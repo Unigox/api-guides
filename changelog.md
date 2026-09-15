@@ -2,6 +2,15 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-14
+
+**An on-ramp order can now be paid from the fiat account you issued the customer.** Instead of wiring the order's fiat to a vendor and calling `confirm-payment-sent`, the customer transfers the amount into their own account and the order moves on by itself.
+
+- **The order says which applies.** On-ramp orders carry `fiat_funding_source`: `own_iban` (pay into the customer's own account) or `vendor_details` (pay the vendor, as before). Read it on every order — whether an order is `own_iban` depends on the customer holding a payable account in the order's currency, not on a setting you pass.
+- **On an `own_iban` order** there are no `vendor_payment_details`, `next_action` is `deposit_to_user_account` while the order waits for fiat, and `confirm-payment-sent` is not in `allowed_actions`. Calling it anyway answers `409 OPERATION_NOT_ALLOWED`: confirming by hand would take the order out of the state the incoming transfer is matched against.
+- **Open the order first, then have the customer transfer.** A transfer is matched to an open order of the same customer by amount, to the cent. Two open orders for the same amount are held for review rather than guessed between.
+- **A deposit that matches no open order is handled as before:** it stays on the customer's account, or is collected into your master account with the usual `retail.settlement.completed` webhook if we have switched collection on for you.
+
 ## 2026-09-10
 
 **Fiat accounts are now reached through the customer that holds them, and the flat `/partner/fiat-accounts` tree is gone.** This follows yesterday's entry and replaces the account routes it introduced. An account is not a free-standing thing you own — it belongs to a person, that person is the customer you created with `POST /api/v1/partner/users`, and holding an account id was enough to read an account without holding the relationship behind it.

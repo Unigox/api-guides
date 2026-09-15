@@ -2283,7 +2283,10 @@ paths:
         Once a vendor accepts, the order moves to `awaiting_vendor_escrow_funding`, then
         `awaiting_fiat_transfer` when the crypto is locked in escrow.
 
-        At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order.
+        At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order —
+        unless the order's `fiat_funding_source` is `own_iban`. Then `next_action` is
+        `deposit_to_user_account`: the customer transfers the order's fiat amount into the fiat account
+        issued to them, that transfer confirms the payment, and `confirm-payment-sent` is not used.
         If the order type is `payment_request`, call `submit-payer-details` first before confirming.
 
         **KYC requirement:** The customer must be KYC-cleared, as described on `POST /onramp/quote`.
@@ -6891,8 +6894,11 @@ components:
             - `authorize_refund` — the order ended without a payout and its crypto is still in escrow; only your
               signature can send it back. Note that this appears on an order whose `status` is `cancelled`, which
               is the one case where a terminal status still needs something from you
+            - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_iban` is waiting for the
+              customer to transfer the order's fiat amount into the fiat account issued to them. The transfer
+              itself confirms the payment; there is nothing to call
             - `null` — no required action (waiting for buyer or system)
-          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, null]
+          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, null]
           example: authorize_crypto_transfer
         action_required:
           type: object
@@ -6961,11 +6967,26 @@ components:
               rather than assuming a cancelled order is finished with. `next_action` is
               `authorize_refund` and `action_required` names the endpoint at the same time.
 
+            On-ramp orders with `fiat_funding_source: own_iban` never offer `confirm-payment-sent`: the
+            transfer into the customer's own account is the confirmation.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
             because the crypto is the end user's and every action endpoint answers `404
             ORDER_NOT_FOUND` for it.
           example: ["authorize-crypto-transfer", "cancel"]
+        fiat_funding_source:
+          type: string
+          enum: [vendor_details, own_iban]
+          description: |
+            On-ramp orders only. Where the fiat for this order is paid:
+            - `vendor_details` — to the vendor's bank account in `vendor_payment_details`; then call
+              `confirm-payment-sent`.
+            - `own_iban` — into the fiat account you issued to the customer. There are no
+              `vendor_payment_details` and no `confirm-payment-sent`: the transfer landing on the customer's
+              account is matched to the order by amount and the order proceeds on its own.
+
+            Read it on every order rather than assuming one or the other.
+          example: own_iban
         crypto_transfer_authorization_seconds_left:
           type: integer
           format: int64
@@ -7138,7 +7159,7 @@ components:
         **On-ramp statuses (fiat → crypto):**
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
         - `awaiting_vendor_escrow_funding` — vendor accepted, funding escrow with crypto
-        - `awaiting_fiat_transfer` — crypto locked in escrow, partner must confirm payment sent
+        - `awaiting_fiat_transfer` — crypto locked in escrow; the partner pays the vendor and confirms payment sent (`fiat_funding_source: vendor_details`), or the customer transfers into their own fiat account (`own_iban`)
         - `fiat_transfer_pending` — fiat payment confirmed, awaiting vendor confirmation of receipt
         - `completed` — vendor confirmed fiat received, crypto released to end-user wallet
         - `cancelled` — order cancelled
@@ -7497,24 +7518,20 @@ components:
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
-              enum:
-                - QUOTE_EXPIRED
-                - QUOTE_NOT_FOUND
-                - QUOTE_ALREADY_USED
-                - PRICE_CHANGED_REQUOTE
-                - ORDER_NOT_FOUND
-                - NO_OFFERS_AVAILABLE
-                - INVALID_REQUEST
-                - INVALID_PAYMENT_DETAILS
-                - RAIL_ROUTE_MISMATCH
-                - UNAUTHORIZED
-                - INTERNAL_ERROR
-                - INVALID_STATUS
-                - TRANSACTOR_ERROR
-                - INSUFFICIENT_BALANCE
-                - OPERATION_NOT_ALLOWED
-                - KYC_NOT_CLEARED
-                - SENDER_IDENTITY_REQUIRED
+
+                Fiat account endpoints (`/partner/fiat-accounts/config` and the `/partner/users/{user_uuid}`
+                `identity`, `identification` and `fiat-accounts` routes) answer with their own codes, each
+                described on the response that returns it: `FIAT_ACCOUNT_NOT_FOUND`,
+                `ACCOUNT_HOLDER_NOT_FOUND`, `ACCOUNT_NOT_PROVISIONED`, `CUSTOMER_NOT_FOUND`,
+                `CUSTOMER_NOT_VERIFIED`, `CLIENT_NOT_APPROVED`, `HOLDER_REGISTRATION_IN_PROGRESS`,
+                `IDENTIFICATION_MISSING`, `IDENTIFICATION_ALREADY_LINKED`, `INVALID_DOCUMENT_TYPE`,
+                `POSTAL_CODE_REQUIRED`, `INVALID_POSTAL_CODE`, `MISSING_FIELDS`, `PRODUCT_NOT_ACTIVATED`,
+                `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`,
+                `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY`, `CURRENCY_NOT_PERMITTED`,
+                `CURRENCY_NOT_PRICED`, `RECORD_FAILED`, `BANKING_ERROR`, `BANKING_UNAVAILABLE`.
+
+                This list is not closed: codes are added as endpoints grow. Treat a code you do not recognise
+                as an error of the kind its HTTP status says, rather than rejecting the response.
               example: QUOTE_EXPIRED
             message:
               type: string
