@@ -448,6 +448,24 @@ corridors whose provider reports a fresh ready executor for the requested route.
 Pass the selected row's `provider` into order creation. Legacy creation requests
 that omit it retain the `lightnet` fallback; there is no automatic provider selection.
 
+Operator configuration has two independent levels: provider-wide T+1 permission and
+each Scheduled corridor's `enabled` flag. Both can be set before executor readiness.
+Discovery and creation still require both levels, a fresh ready executor, a supported
+route and capacity checks. An explicitly disabled exact Scheduled rail overrides a
+wildcard for that rail, including a previously returned wildcard `capacity_id`.
+Other supported rails and Instant corridors are unaffected. Provider-wide off closes
+all new Scheduled orders; accepted obligations retain recovery.
+
+For example, `KWD / wamd` configures the existing Kuwait rail for the chosen provider.
+It does not open other currencies or rails. For currencies shared by multiple countries,
+use a country-specific rail; currency alone is not a destination.
+
+Admin `PUT /api/v1/admin/settlement/providers/{provider}` accepts `enabled` and the
+current `revision` even without executor readiness. Stale revisions return 409.
+The first Scheduled corridor saved through `PUT /api/v1/admin/settlement/capacity`
+registers its provider disabled and unready if absent; existing settings are preserved.
+Apply migration `20260915100000` before deploying this behavior.
+
 **`capacity_id`, `revision` and `settlement_sla_hours` are the three values you
 must carry into order creation**, where they are named `capacity_id`,
 `capacity_revision` and `promised_settlement_sla_hours`. They are what freezes
