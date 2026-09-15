@@ -7518,24 +7518,20 @@ components:
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
-              enum:
-                - QUOTE_EXPIRED
-                - QUOTE_NOT_FOUND
-                - QUOTE_ALREADY_USED
-                - PRICE_CHANGED_REQUOTE
-                - ORDER_NOT_FOUND
-                - NO_OFFERS_AVAILABLE
-                - INVALID_REQUEST
-                - INVALID_PAYMENT_DETAILS
-                - RAIL_ROUTE_MISMATCH
-                - UNAUTHORIZED
-                - INTERNAL_ERROR
-                - INVALID_STATUS
-                - TRANSACTOR_ERROR
-                - INSUFFICIENT_BALANCE
-                - OPERATION_NOT_ALLOWED
-                - KYC_NOT_CLEARED
-                - SENDER_IDENTITY_REQUIRED
+
+                Fiat account endpoints (`/partner/fiat-accounts/config` and the `/partner/users/{user_uuid}`
+                `identity`, `identification` and `fiat-accounts` routes) answer with their own codes, each
+                described on the response that returns it: `FIAT_ACCOUNT_NOT_FOUND`,
+                `ACCOUNT_HOLDER_NOT_FOUND`, `ACCOUNT_NOT_PROVISIONED`, `CUSTOMER_NOT_FOUND`,
+                `CUSTOMER_NOT_VERIFIED`, `CLIENT_NOT_APPROVED`, `HOLDER_REGISTRATION_IN_PROGRESS`,
+                `IDENTIFICATION_MISSING`, `IDENTIFICATION_ALREADY_LINKED`, `INVALID_DOCUMENT_TYPE`,
+                `POSTAL_CODE_REQUIRED`, `INVALID_POSTAL_CODE`, `MISSING_FIELDS`, `PRODUCT_NOT_ACTIVATED`,
+                `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`,
+                `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY`, `CURRENCY_NOT_PERMITTED`,
+                `CURRENCY_NOT_PRICED`, `RECORD_FAILED`, `BANKING_ERROR`, `BANKING_UNAVAILABLE`.
+
+                This list is not closed: codes are added as endpoints grow. Treat a code you do not recognise
+                as an error of the kind its HTTP status says, rather than rejecting the response.
               example: QUOTE_EXPIRED
             message:
               type: string
