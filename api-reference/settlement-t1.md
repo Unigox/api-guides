@@ -43,7 +43,7 @@ them can be given back.
 
 | Value | The money is | Refundable by us alone |
 | --- | --- | :---: |
-| `customer_wallet` | still with the customer; nothing was sent | yes |
+| `customer_wallet` | no escrow deposit has been confirmed; a submitted transaction may still be in flight | yes |
 | `escrow` | in the order's escrow Safe | yes |
 | `custody` | on a Unigox custody wallet | yes |
 | `bridge_in_transit` | on a chain, on its way to the provider | **no** |
@@ -464,7 +464,7 @@ Admin `PUT /api/v1/admin/settlement/providers/{provider}` accepts `enabled` and 
 current `revision` even without executor readiness. Stale revisions return 409.
 The first Scheduled corridor saved through `PUT /api/v1/admin/settlement/capacity`
 registers its provider disabled and unready if absent; existing settings are preserved.
-Apply migration `20260915100000` before deploying this behavior.
+Apply the release migrations through `20260915130000` before deploying this behavior.
 
 **`capacity_id`, `revision` and `settlement_sla_hours` are the three values you
 must carry into order creation**, where they are named `capacity_id`,
@@ -803,8 +803,8 @@ half is idempotent and returns the existing order — or by fixing it with
 At **10,000 USD or more**, measured from the server-priced USD value of the crypto
 funding amount. Below that the compliance case still exists —
 it is the record of the decision not to ask, and a reviewer can still request
-documents on it — but `required_action` is empty and your customer is asked for
-nothing.
+documents on it — but there is no automatic `submit_information` action. Other
+actions, including `fund_escrow` before funding, still apply.
 
 The SoF threshold does not decide whether a payment uses scheduled settlement.
 A payment below USD 10,000 can use T+1 when instant liquidity cannot fill it and
@@ -833,6 +833,7 @@ invisible to you except as a longer review.
 | **404** `order not found` | `ORDER_NOT_FOUND` | the order id is not yours, does not exist, or is malformed — all three answer the same way |
 | **422** | `INVALID_REQUEST` | `terms_accepted` not true; a BUY order; terms provenance; the corridor tuple; `minimum_fiat_amount` |
 | **422** `this payout would be X CNY and lightnet cannot settle less than Y CNY` | `INVALID_REQUEST` | the payout is under the corridor's own minimum. The message names the floor, so your customer can send more |
+| **422** `the payout amount or destination is not supported by this provider` | `INVALID_REQUEST` | the selected destination, amount bounds or amount step does not match the executor's capabilities; no settlement order is admitted |
 | **409** `provider capacity is exhausted for this corridor and size` | `INVALID_STATUS` | no reservable inventory left for this size — **or** the ticket is above `max_ticket_usd`. The response does not distinguish them |
 | **409** `provider capacity is unavailable for this corridor right now` | `INVALID_STATUS` | the corridor requires a live provider balance and does not have a fresh one. Retryable; it clears on our side |
 | **409** `this corridor is not configured for crypto-first settlement` | `INVALID_STATUS` | no enabled corridor covers this currency and class, or you named a provider that has none. Not temporary |
@@ -1474,7 +1475,7 @@ What a cancellation does depends on where the money is:
 
 | `financial_location` at cancel | What happens |
 | --- | --- |
-| `customer_wallet` | Nothing was sent, so nothing is refunded. This is a cancellation: the trade is marked cancelled and the order sits at `refund_processing` / `customer_wallet` |
+| `customer_wallet` | No deposit has been confirmed. The trade is marked cancelled and the order remains `refund_processing` / `customer_wallet` while late funding is reconciled |
 | `escrow` | The escrow is refunded to the customer. The order reaches `refunded` / `crypto_refunded` |
 | `custody` | **409** for a customer/partner cancel: final approval already committed the order. An operator recovery can still return technically refundable custody funds. |
 | anything else | **409**, and nothing is queued |
@@ -1484,10 +1485,12 @@ while a funding transaction the customer already broadcast is still pending, and
 that transaction can mine afterwards. When it does, the order stays at
 `refund_processing` but its location becomes `escrow` so the ordinary refund
 path can return the money. While that is still possible the order carries
-`reconciliation_pending_until`, a server-owned deadline 30 minutes after the
-cancellation. **Keep polling until it passes**: treating the cancellation as
-final before then can leave you telling a customer their order was cancelled
-while their crypto is sitting in a Safe.
+`reconciliation_pending_until`. If funding had been enabled, it is 30 minutes
+after cancellation; otherwise it is the cancellation timestamp. It describes the
+initial observation window, **not proof of terminal closure**. The reconciler
+also considers the original funding deadline and a six-hour late-deposit margin.
+Keep reading the order while it remains non-terminal. A later deposit changes
+the location to `escrow` and must be returned before a funded refund is complete.
 
 ### Why a cancel is refused
 
@@ -1961,3 +1964,49 @@ confirm that somebody else's order exists.
 - `GET /api/v1/admin/settlement/overdue?limit=200&offset=0` returns `orders`, the overall `total`, `offset` and `limit`. Results sort by promised completion time, then trade id. Read failures are errors, never an empty queue.
 - Admin `resolve` accepts `retry_payout` after a confirmed bank return and `resume_automation` for eligible escalated executors. Both require an attributed explanation in `reference`. Retry creates an isolated new payout attempt using the same approved bank details and invoice; it does not implement destination replacement. Resume preserves submitted transaction evidence. Neither is permission to move funds from an invented financial location. See the [USD China recovery contract](china-usd-payments.md#recovery-contract-2026-09-14).
 - Provider acceptance and Commit are separate: `/payout-submitted` records `fiat_payout/provider_book`; `/payout-committed` records `fiat_payout/fiat_payout_in_transit` against matching acknowledgement evidence. A delayed acceptance replay preserves the later state. Commit and invoice recovery continue during a Trades reporting outage; the agent retries status reports from durable metadata.
+
+## Multiple providers and compliance metadata — 2026-09-15
+
+Source-of-funds evidence is required at USD 10,000 inclusive, based on the transfer's USD value;
+a smaller transfer may still enter T+1 when liquidity is insufficient. A reviewer may request
+additional information below the threshold. Do not infer a missing declaration from `stage:
+"compliance_review"` alone: use the customer response's `required_action` and funding gate.
+
+An unfunded cancellation can remain `refund_processing` / `customer_wallet` while the funding
+observer checks for an already-submitted transaction. This is a pending cancellation, not proof
+that nothing was sent. Clients must keep it observable until reconciliation closes it. A funded
+refund is finished only at `refunded` / `crypto_refunded`.
+
+Administrative SoF queue rows now include `provider_code`, `fiat_currency`, `rail` and
+`payout_country_code`. `fiat_amount` is the settlement order's accepted `quoted_fiat_amount`,
+falling back to the ordinary trade amount only when no settlement quote exists. The case detail's
+`order` includes the same route fields and `quoted_fiat_amount`. The overdue endpoint includes
+provider, currency, rail and destination country. Empty strings mean a fact was not recorded;
+clients must not substitute Lightnet or China for missing metadata. Supplier destination snapshots
+take precedence over the customer's own payment details; legacy supplier snapshots may use the
+trade request's frozen route country.
+
+Internal executor endpoints require the Trades service credential, not a partner API key:
+
+- `GET /internal/v1/settlement/{trade_id}/payout-details?provider={provider_code}` returns
+  `{ "success": true, "data": { ... } }` containing the selected recipient details, accepted fiat
+  amount/currency, provider, country, network and payment method. It does not return escrow actions,
+  signatures, vendor bank details or agent metadata. An order/provider mismatch returns 404, an
+  invalid identifier 400, unreadable recipient details 422, and a storage failure 503.
+- Provider capability routes may include `country` (ISO alpha-2), `min_amount`, `max_amount` and
+  `amount_step` (positive decimal strings in payout currency). Unsupported amounts are refused
+  before order admission and before custody release; they are never silently rounded by the bank
+  adapter. Integer-only UnitedPay payouts advertise `amount_step: "1"`.
+  A new re-quote may be rounded down to the supported step before it is offered for acceptance;
+  this does not change an already accepted amount when submitting the bank payout.
+- Liquidity `pool_scope` supports `corridor_usd`, `provider_usd` and `provider_currency_usd`.
+  For `provider_currency_usd`, report the payout currency and `rail: "*"` with a USD-equivalent
+  spendable balance. Only that currency's rails share this cash. For `provider_usd`, report
+  `USD` / `*` for the one shared wallet. The same ledger accounts for ordinary Instant reservations.
+- Liquidity `source` identifies the funding wallet. Changing it with unreconciled commitments is
+  refused; older observations cannot replace newer cash state. Reporting a shared balance does
+  not create or enable corridors and is allowed before the first Scheduled capacity row exists.
+
+These capability and metadata fields do not imply a provider has passed a real-bank acceptance
+test. Enabling provider and corridor admission still requires a current ready executor and all
+route, capacity, funding and compliance checks.
