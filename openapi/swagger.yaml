@@ -408,9 +408,15 @@ paths:
         Current partner API omission support is explicitly available for:
         - `iban-sepa`
         - `nip-nigeria`
+        - `faster-payments`
         - `imps-neft-india`
+        - `alipay-wallet`
+        - `wechat-wallet`
+        - `interac-e-transfer`
 
-        For `iban-sepa` and `nip-nigeria`, partners may omit `institution_id` and the backend resolves the generic `other-bank` payment method automatically.
+        For `iban-sepa`, `nip-nigeria` and `faster-payments`, partners may omit `institution_id` and the backend resolves the generic `other-bank` payment method automatically.
+
+        For `alipay-wallet`, `wechat-wallet` and `interac-e-transfer`, an omitted `institution_id` resolves to the rail's own institution (`alipay`, `wechat-pay`, `interac-e-transfers`), which goes through the same checks as if you had sent it. An Interac e-Transfer is addressed to the recipient's `email` or `phone`, not to a bank.
 
         `imps-neft-india` returns `institution_required: false` and has **no** `institution_id` field: the IFSC code encodes both bank and branch and routes the payout on its own. Required fields are `bank_name`, `ifsc_code`, `account_number`, and `full_name`. Sending `institution_id` is accepted but ignored (it resolves to the generic `imps-or-neft-transfer` method); the receiving bank comes from `bank_name` + `ifsc_code`.
 
@@ -1698,11 +1704,12 @@ paths:
 
         Institution handling:
         - for most rails, `institution_id` must be provided from `/api/v1/supported/institutions`
-        - partners may omit `institution_id` only for the explicitly supported rails below; the backend will assign the generic `other-bank` payment method automatically
+        - partners may omit `institution_id` only for the explicitly supported rails below
 
         Currently supported omission rails:
-        - `iban-sepa`
-        - `nip-nigeria`
+        - `iban-sepa`, `nip-nigeria`, `faster-payments` — resolve to the generic `other-bank` payment method
+        - `imps-neft-india` — resolves to the generic `imps-or-neft-transfer` method; the bank comes from `bank_name` + `ifsc_code`
+        - `alipay-wallet`, `wechat-wallet`, `interac-e-transfer` — resolve to the rail's own institution (`alipay`, `wechat-pay`, `interac-e-transfers`) and go through the same checks as if you had sent it
       operationId: createPaymentDetails
       security:
         - ApiKeyAuth: []
