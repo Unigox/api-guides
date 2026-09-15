@@ -5031,7 +5031,8 @@ paths:
       summary: Read currently schedulable corridor capacity
       description: |
         Returns only enabled crypto-first corridors matching the requested fiat currency and optional
-        rail/provider. Carry `capacity_id`, `revision` and `settlement_sla_hours` unchanged into order
+        rail/provider whose registered executor is enabled, ready and has a heartbeat within 180 seconds
+        for that route. Carry the selected `provider`, `capacity_id`, `revision` and `settlement_sla_hours` into order
         creation. `available_usd` is the server-authoritative scheduled headroom; it is `"0.00"` when
         required provider telemetry is absent or stale, and may be null only when no commercial or live
         ceiling is configured. The service returns 503 instead of advertising capacity when any automatic
@@ -5057,7 +5058,7 @@ paths:
         - name: provider
           in: query
           required: false
-          description: Optional exact provider code.
+          description: Optional exact provider code. Without it, discovery can return any eligible registered provider; send the selected row's provider when creating the order.
           schema: { type: string, example: lightnet }
       responses:
         '200':
@@ -8270,7 +8271,7 @@ components:
       required: [order_id, capacity_id, capacity_revision, promised_settlement_sla_hours, terms_accepted, terms_version, terms_locale, terms_content_revision, terms_content]
       properties:
         order_id: { type: string, description: Existing off-ramp partner order ID. }
-        provider: { type: string, description: Optional; omitted uses the corridor default. }
+        provider: { type: string, description: "Optional for compatibility; omitted uses lightnet. Send the selected capacity row's provider to use another adapter." }
         rail: { type: string, description: Optional only when the existing trade has no recorded payout rail. }
         minimum_fiat_amount: { type: string, description: Customer floor; omitted derives the protected server floor. }
         idempotency_key: { type: string, description: "Optional partner key, scoped server-side to this settlement order." }

@@ -1,6 +1,6 @@
 # Scheduled settlement (Settlement T+1)
 
-For USD bank payouts to mainland China, see the [route and invoice requirements](china-usd-payments.md). Whether that corridor answers is a per-deployment rollout setting, not a property of this API: where it is off, a USD request naming `country_code=CN` returns no corridors and `unavailable_reason: "provider_confirmation_pending"`. Either way a general USD capacity row does not enable it — the corridor is admitted only by an exact row naming the `usd-wire-china` rail, and it settles on the 48-hour window that row carries.
+For USD bank payouts to mainland China, see the [route and invoice requirements](china-usd-payments.md). Whether that corridor answers is a per-deployment rollout setting, not a property of this API: where it is off, a USD request naming `country_code=CN` returns no corridors and `unavailable_reason: "provider_confirmation_pending"`. A general USD capacity row does not enable it: admission requires an exact `usd-wire-china` row and a ready enabled provider. Use the row's `settlement_sla_hours` and preserve its revision when creating the order; the API does not hard-code a 48-hour window.
 
 Use this flow when an off-ramp is larger than a provider will settle instantly,
 or when your customer wants a floor under the payout on a transfer that takes a
@@ -104,11 +104,11 @@ because the payout is retried from it.
 `completed` and `refunded`. Nothing else. Two stages that look like endings are
 not:
 
-- **`returned` is not terminal.** The bank sent the payout back — usually a
-  closed, mistyped or name-mismatched account. The order is payable again once
-  the details are corrected, so it goes either back to `fiat_payout` or to
-  `manual_recovery`. An integration that closes the order here will never see
-  the `completed` that follows.
+- **`returned` is not terminal.** The bank sent the payout back. An operator may
+  request a new attempt after confirming the returned funds are available.
+  `retry_payout` reuses the same approved recipient and invoice and restarts at
+  `provider_credit_confirmation`; it cannot correct or replace bank details.
+  A return requiring different details needs a separate reviewed workflow.
 - **`manual_recovery` is not terminal either**, even though the ordinary orders
   endpoint reports it as `failed`. It is being worked by hand and can still
   finish as `completed`, `refunded` or `returned`.
@@ -196,8 +196,10 @@ callback is absorbed.
 
 Note the two edges that surprise people. `completed → returned` exists because a
 bank can return a payout after it settled, and that is not a failure of the
-order — we did pay. `returned → fiat_payout` exists because the ordinary
-resolution of a bank return is to correct the details and pay again.
+order — we did pay. `returned → fiat_payout` is a permitted state-machine edge.
+The administrative retry is a separate transaction: it archives the old attempt,
+allocates a new reference, reserves returned liquidity and restarts at
+`provider_credit_confirmation` with the same approved bank details.
 
 ### Who moves the order
 
@@ -264,13 +266,12 @@ Two consequences worth planning for:
 | `refunded` | `crypto_refunded` | `null` | false |
 | `returned` | `fiat_returned` | `null` | false |
 
-`provider_funding` and `provider_credit_confirmation` carry two possible
-locations because corridors are funded two different ways. On a **bridge**
-corridor the crypto physically leaves custody and `bridge_in_transit` is
-literally true. On a **float** corridor the provider is prefunded, nothing moves
-on any chain, and the value is on their book from the moment we draw it down —
-so the location is `provider_book`. Neither is refundable, which is the part
-that matters to you.
+The state vocabulary accommodates both prefunded float and a future bridge.
+The currently executable model is **float**: provider funding draws on prefunded
+cash, so the location is `provider_book` and no per-order bridge transfer occurs.
+New bridge-funded corridors cannot be enabled until a bridge integration exists.
+`bridge_in_transit` remains a recognized recovery state for recorded obligations;
+neither it nor `provider_book` permits an automatic crypto refund.
 
 `refund_processing` reports `customer_wallet` when the order was cancelled
 before the customer ever sent anything. That is a cancellation rather than a
@@ -433,17 +434,19 @@ X-API-Key: <your key>
 `fiat_currency` is required — without it the call is **400**,
 `fiat_currency is required`.
 
-**It is case-sensitive.** `fiat_currency=cny` returns an empty `corridors`
-array, which is indistinguishable from "we do not offer this currency". Send the
-same upper-case code you send everywhere else.
+`fiat_currency` is trimmed and normalized to uppercase (`cny` becomes `CNY`).
+`rail` accepts a network slug or an unambiguous network display name; it is
+resolved to the slug and matched case-insensitively. Prefer the canonical slug.
 
 `rail` filters to the corridors that can serve that rail: rows pinned to it,
 **plus** every row whose `rail` is `""`, which covers all rails of that
 currency. Omitting `rail` returns every corridor for the currency, rail-specific
 ones included — so a corridor you cannot use may appear in an unfiltered list.
 
-`provider` restricts to one provider. Omitted, you get every enabled corridor,
-and order creation picks the default for the currency.
+`provider` restricts to one provider. Omitted, discovery includes enabled
+corridors whose provider reports a fresh ready executor for the requested route.
+Pass the selected row's `provider` into order creation. Legacy creation requests
+that omit it retain the `lightnet` fallback; there is no automatic provider selection.
 
 **`capacity_id`, `revision` and `settlement_sla_hours` are the three values you
 must carry into order creation**, where they are named `capacity_id`,
@@ -687,8 +690,9 @@ Content-Type: application/json
 `order_id` is the partner order id you already hold — it is the only required
 field in the JSON schema sense, and everything else is validated after it.
 
-`provider` and `rail` are optional; omitting `provider` uses the corridor
-default for the currency.
+`provider` and `rail` are optional for compatibility. Omitting `provider` uses
+`lightnet`; clients using another provider must send the selected capacity row's
+provider, rail, capacity ID, revision and settlement window.
 
 ### `minimum_fiat_amount`, the customer's floor
 
@@ -778,10 +782,16 @@ half is idempotent and returns the existing order — or by fixing it with
 
 ### When we ask for a source of funds at all
 
-At **more than 10,000 USD**. At or below that the compliance case still exists —
+At **10,000 USD or more**, measured from the server-priced USD value of the crypto
+funding amount. Below that the compliance case still exists —
 it is the record of the decision not to ask, and a reviewer can still request
 documents on it — but `required_action` is empty and your customer is asked for
 nothing.
+
+The SoF threshold does not decide whether a payment uses scheduled settlement.
+A payment below USD 10,000 can use T+1 when instant liquidity cannot fill it and
+an enabled, ready provider corridor accepts it, without an automatic SoF
+questionnaire. A case-specific reviewer request can still require information.
 
 Do not build a flow that assumes every scheduled settlement has a
 source-of-funds step. Read `required_action`.
@@ -1925,3 +1935,11 @@ confirm that somebody else's order exists.
 - Build your customer-facing wording on `stage`, not on `status`, and keep a
   default branch for a stage you have not seen. The stage list grows; the status
   list is deliberately frozen.
+
+## Recovery and liquidity API additions — 2026-09-14
+
+- `POST /internal/v1/settlement/provider-liquidity` accepts `observed_at` (RFC3339, the start of the provider balance read). A Lightnet USD report with `rail: "*"` refreshes existing Lightnet capacity rows and its shared USD pool; it creates or enables no corridor. A missing observation time cannot reconcile outstanding commitments. Out-of-order pool observations cannot overwrite a newer balance.
+- The payout queue carries `payout_attempt` and the destination's `payout_country_code`. Payout and preclearance selection persist a next-attempt time and skip rows locked by another worker. Provider waits do not hold a database transaction.
+- `GET /api/v1/admin/settlement/overdue?limit=200&offset=0` returns `orders`, the overall `total`, `offset` and `limit`. Results sort by promised completion time, then trade id. Read failures are errors, never an empty queue.
+- Admin `resolve` accepts `retry_payout` after a confirmed bank return and `resume_automation` for eligible escalated executors. Both require an attributed explanation in `reference`. Retry creates an isolated new payout attempt using the same approved bank details and invoice; it does not implement destination replacement. Resume preserves submitted transaction evidence. Neither is permission to move funds from an invented financial location. See the [USD China recovery contract](china-usd-payments.md#recovery-contract-2026-09-14).
+- Provider acceptance and Commit are separate: `/payout-submitted` records `fiat_payout/provider_book`; `/payout-committed` records `fiat_payout/fiat_payout_in_transit` against matching acknowledgement evidence. A delayed acceptance replay preserves the later state. Commit and invoice recovery continue during a Trades reporting outage; the agent retries status reports from durable metadata.
