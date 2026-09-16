@@ -5470,6 +5470,12 @@ components:
     Rails:
       type: object
       properties:
+        directions:
+          type: array
+          description: Directions permitted by network configuration. Returned rails are filtered for the requested direction; this is discovery, not payment authorization.
+          items:
+            type: string
+            enum: [onramp, offramp]
         slug:
           type: string
           description: Payment rail slug identifier

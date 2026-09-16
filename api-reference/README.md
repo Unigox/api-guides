@@ -11,6 +11,7 @@ Reference groups:
 - [On-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/on-ramp)
 - [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp)
 - [Third-party payouts](./third-party-payouts.md)
+- [USD bank payments to China](./china-usd-payments.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
 - [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
 
