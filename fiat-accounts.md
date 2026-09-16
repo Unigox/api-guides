@@ -5,8 +5,8 @@ paid into — and read what lands on it.
 
 **What you will build.** By the end of this guide one of your customers holds a
 real EUR or GBP account in their own name, you can show them where to send
-money, and you can read the balance, the transaction history and every incoming
-payment.
+money, and you can read the balance, the ledger and the bank transfers in and out
+of the account.
 
 **What you need first.** A partner API key, and the `retail` product activated on
 your partner — plus the `issue_retail_accounts` capability if you want to open
@@ -262,8 +262,8 @@ settles rather than treating it as a failure.
 ```http
 GET /api/v1/partner/users/{user_uuid}/fiat-accounts                        # this customer's accounts
 GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}                   # one account, full details
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/ledger?page=N     # transaction history
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/payments?page=N   # incoming payments
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/ledger?page=N     # every balance change
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/payments?page=N   # bank transfers in and out
 ```
 
 The list carries `iban_last4` (or `account_number_last4` and `sort_code` for a
@@ -275,9 +275,24 @@ read that failed is reported rather than shown as zero.
 remove the account, its history, or any money still behind it. Closed accounts
 keep appearing in the list with `status: "closed"` and answer every read.
 
-Ledger and payment pages carry the upstream `pagination` object when one is
-available. Its **absence means unknown, not "one page"** — fall back to judging
-by the length of the page you got.
+### Ledger and payments
+
+These are two views of the same money, not two copies of it.
+
+- **Ledger** lists every change to the balance: bank transfers, and also
+  conversions and internal transfers such as a deposit collected into your
+  master account. Use it to explain the balance.
+- **Payments** lists bank transfers only, in both directions. `kind` is
+  `incoming` or `outgoing`, and `recipient`, `iban` and `bic` describe the other
+  side: the payer on an incoming payment, the payee on an outgoing one. Use it
+  to show who paid whom.
+
+They link through ids: the ledger entry a payment produced carries the payment's
+`id` in `reference`.
+
+Both are paged with `?page=N`. `pagination` is present only when the bank
+returns it; when it is absent, request the next page until one comes back empty.
+Timestamps on both are Unix seconds.
 
 ## What happens when a deposit lands
 
