@@ -64,7 +64,7 @@ Use the currency agreed with the supplier. CNY and USD require separate saved de
 
 ## Discovery
 
-Payment network configuration can declare `directions: ["offramp"]`. The supported-currencies and supported-payment-rails responses respect that restriction. Omitted or null configuration preserves legacy bidirectional discovery; an explicit empty list permits neither direction. Discovery does not replace execution eligibility checks.
+`usd-wire-china` is a payout (off-ramp) network only. The supported-currencies and supported-payment-rails responses do not filter by direction, so do not offer a rail as an on-ramp option because it is listed. Discovery does not replace execution eligibility checks.
 
 ## Removing bank details
 

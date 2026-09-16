@@ -10,8 +10,6 @@ An existing USD offer does not enable China. See [USD payments to China](api-ref
 for the account and invoice rules and the distinction between storage and
 provider acceptance.
 
-- Payment rails can expose `directions`. Discovery respects a payout-only network;
-  listing an offramp rail does not make it an onramp option.
 - Quote and initiate enforce China USD readiness on the server before a new payment
   is funded. The partner-funded quote/initiate for USD to CN stays closed and answers
   `INVALID_REQUEST` with `provider_confirmation_pending`. No China USD bank list,
