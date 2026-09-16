@@ -2,6 +2,19 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## Unreleased — China USD preparation
+
+**China USD payouts are behind a per-deployment rollout setting.** Where it is
+off, the corridor answers as unavailable with `provider_confirmation_pending`.
+An existing USD offer does not enable China. See [USD payments to China](api-reference/china-usd-payments.md)
+for the account and invoice rules and the distinction between storage and
+provider acceptance.
+
+- Quote and initiate enforce China USD readiness on the server before a new payment
+  is funded. The partner-funded quote/initiate for USD to CN stays closed and answers
+  `INVALID_REQUEST` with `provider_confirmation_pending`. No China USD bank list,
+  price or arrival-time guarantee is published.
+
 ## 2026-09-14
 
 **An on-ramp order can now be paid from the fiat account you issued the customer.** Instead of wiring the order's fiat to a vendor and calling `confirm-payment-sent`, the customer transfers the amount into their own account and the order moves on by itself.
