@@ -6,7 +6,7 @@ USD beneficiary details and private invoices can be saved. Whether a payment can
 
 Use country `CN`, currency `USD`, network `usd-wire-china` and institution `china-usd-wire`. This is one generic bank method: the beneficiary's own `bank_name` and `swift_code` route the payment. Never replace `bank_name` with the catalogue label “Bank in China (USD)”. `bank_code` is not used.
 
-The schema has top-level fields and `beneficiary_type: "business"`; it does not have `formats`. Clients must support this single-shape schema as well as legacy formatted rails.
+The rail lists its fields at the top level and has no `formats`. The rail response carries no beneficiary type: this rail pays business beneficiaries, so treat its top-level fields as the business schema. Clients must support this single-shape schema as well as legacy formatted rails.
 
 | Detail | Constraint |
 | --- | --- |
