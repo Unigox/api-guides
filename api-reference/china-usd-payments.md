@@ -13,7 +13,7 @@ The schema has top-level fields and `beneficiary_type: "business"`; it does not 
 | `company_name` | Required, at most 50 characters |
 | `swift_code` | Required, 8–13 alphanumeric characters; do not restrict to 8 or 11 |
 | `bank_name` | Required, at most 100 characters |
-| `account_number` | Required, 6–20 alphanumeric characters; retain leading zeros and NRA/OSA prefixes |
+| `account_number` | Required, 6–23 letters and digits with no spaces; an NRA/OSA account is its prefix followed by exactly 20 digits (23 characters); retain leading zeros and NRA/OSA prefixes |
 | `recipient_address` | Required, at most 256 characters; beneficiary address, not bank address |
 | `recipient_city` | Required, at most 30 characters |
 | `recipient_state` | Required, at most 20 characters; short province name |
@@ -54,7 +54,7 @@ The provider has supplied these account rules:
 | Onshore account of exactly 20 digits, with no prefix | Domestic USD | Not required upfront; the beneficiary bank contacts the recipient for documents |
 | Another account format | Route has not been confirmed | To be confirmed with the provider |
 
-The 6–20-character field constraint is separate from route eligibility. Numeric accounts of another length may be saved intact, but execution is refused with `china_usd_account_unconfirmed` until their route is confirmed. Never shorten an account or remove a prefix. The account number alone does not prove bank or beneficiary eligibility or give the client a domestic/SWIFT selector. Route selection and the original-invoice upload are still being confirmed with the provider. A receipt parsed to help fill bank details is not automatically an accepted invoice.
+The 6–23-character field constraint is separate from route eligibility. Accounts of another shape may be saved intact, including numeric accounts of another length and an NRA/OSA prefix not followed by exactly 20 digits, but execution is refused with `china_usd_account_unconfirmed` until their route is confirmed. Never shorten an account or remove a prefix. The account number alone does not prove bank or beneficiary eligibility or give the client a domestic/SWIFT selector. Route selection and the original-invoice upload are still being confirmed with the provider. A receipt parsed to help fill bank details is not automatically an accepted invoice.
 
 Provider delivery clarification (15 September 2026): domestic USD to a supported onshore account usually arrives the same working day when sent before about 3pm Singapore time; public holidays in Singapore or China move it to the next working day. SWIFT usually takes two working days; a small rural or other bank without a direct SWIFT connection can take 2–3 days. These are payout timings reported by the provider. They do not authorize routing an unconfirmed account through domestic USD. Provider acceptance of a payout is not bank finality. A payment returned by the beneficiary's bank is refunded through a manual process that can take up to 7 days.
 
