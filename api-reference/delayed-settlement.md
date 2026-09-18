@@ -111,9 +111,21 @@ buyer has not paid yet. What tells them apart is `next_action`:
 `allowed_actions` is rewritten to match. On a parked delayed order whose crypto
 you hold, `confirm-fiat-received` is **removed** — the fiat has not been paid
 and cannot have been, and the endpoint behind it refuses a delayed order for
-that reason — and `settlement-consent` takes its place. Once the consent is in,
-`settlement-consent` is withdrawn: what is left is a review nobody on this API
-can hurry, and a second POST would be refused as already-consented.
+that reason — and two actions take its place: `settlement-consent` and `cancel`.
+
+**`cancel` is the one you would not otherwise find.** A parked delayed order is
+the only funded state any order can be cancelled from, through an edge opened
+for this class alone; every other funded order answers "cannot be cancelled", so
+nothing else in this API suggests trying. `POST /api/v1/partner/orders/{order_id}/cancel`
+is the ordinary endpoint, unchanged — it refunds the escrow to you while the
+crypto is still in it.
+
+**Both are withdrawn the moment the consent is signed.** After the signature the
+crypto is on its way to the vendor: a second consent is refused as
+already-consented, and a cancel is refused because the guarded edge requires that
+no seller signature exist. Both answer `409 OPERATION_NOT_ALLOWED`, and the cancel
+loses that race in the database rather than in a check, so it is safe to call
+against an order that is being released — it will not half-cancel it.
 
 `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute
 both fields identically, so a list row and the order page never disagree about
@@ -167,6 +179,7 @@ X-API-Key: <api-key>
       ]
     },
     "settlement_hours": 24,
+    "consent_deadline_at": "2026-09-21T11:58:30Z",
     "authorization_path": "/api/v1/partner/orders/b2c3d4e5-f6a7-8901-bcde-f12345678901/settlement-consent"
   }
 }
@@ -174,8 +187,15 @@ X-API-Key: <api-key>
 
 This is the same shape as `refund-authorization-parameters`, with three
 differences: `direction` is `to_buyer` rather than `to_seller`, `tx_hash` is
-present, and `settlement_hours` is echoed beside the payload because this is the
-moment the promise is accepted.
+present, and `settlement_hours` and `consent_deadline_at` are echoed beside the
+payload because this is the moment the promise is accepted and the moment it
+stops being available.
+
+`consent_deadline_at` says how long this signature is still worth producing.
+There is no `payout_deadline_at` here, deliberately: that one is measured from
+the release, and this endpoint only ever serves an order that has not released —
+signing is what releases it. It appears on the order payload from the moment
+there is one.
 
 **Who signs.** The escrow is a 2-of-3 Safe. On an order you opened, its
 seller-side owner is *your* wallet; your customer holds no key. `signer_address`
@@ -548,6 +568,7 @@ response — `null` on an ordinary order, and `null` on a delayed one is a fact
 | --- | --- | --- |
 | `delayed_settlement` | boolean | Whether this order settles T+1. Fixed when the order is created; a vendor changing their offer later does not change the order's class. |
 | `settlement_hours` | integer \| null | The promised window in whole hours. `null` on an instant order. |
+| `consent_deadline_at` | string \| null | When a **parked** order stops waiting for its consent — funding time plus the consent window. After it the ordinary payment-window sweep refunds the escrow. This is the only deadline that exists *before* the release, and the one to show your customer while asking them to sign. `null` on any order that is not parked, because by then the window has stopped meaning anything: it either released or it was refunded. |
 | `payout_deadline_at` | string \| null | `escrow_released_to_buyer_at` + the window: when the customer was told the money would be there by. `null` until the crypto has actually left escrow — a parked order waiting on a signature is not running late. |
 | `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto left the vendor's wallet for the payout provider. **A refund to the customer stops being possible at this mark.** |
 | `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox authorised the vendor to send the fiat. Never set before the mark above. |
@@ -645,11 +666,15 @@ Emission points:
 | Bank returned the payout | `returned` |
 | Crypto refunded to the customer | `cancelled` |
 
-On a delayed order `data` carries the same nine fields as the order payload —
+On a delayed order `data` carries nine of the order payload's T+1 fields —
 `delayed_settlement`, `settlement_hours`, `payout_deadline_at` and the six
 `delayed_settlement_*_at` marks — on **every** event for that order, not only
 the one each mark triggered. Four of them report the same status, so without the
 timestamps three `settlement_in_progress` events in a day are indistinguishable.
+
+`consent_deadline_at` is **not** among them: every one of these events fires
+after the release, and the consent window is `null` by then on every order that
+could produce one. Read it on the order while the order is parked.
 
 ```json
 {

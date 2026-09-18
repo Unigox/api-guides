@@ -4349,8 +4349,13 @@ paths:
 
         Same shape as `refund-authorization-parameters`, with three differences: `direction` is
         `to_buyer`, `tx_hash` is present because the consent is checked against the release
-        transaction, and `settlement_hours` is echoed beside the payload because signing is the moment
-        that promise is accepted.
+        transaction, and `settlement_hours` and `consent_deadline_at` are echoed beside the payload
+        because signing is the moment that promise is accepted and the moment it stops being available.
+
+        There is no `payout_deadline_at` here, deliberately, though the order payload carries one: that
+        deadline is measured from the release, and this endpoint only ever serves an order that has not
+        released — signing is what releases it. The key would be `null` on every response this endpoint
+        can produce, and one that can never carry a value is a worse contract than its absence.
 
         **Who signs.** The escrow is a 2-of-3 Safe. On an order you opened, its seller-side owner is
         *your* wallet — your customer holds no key with us, which is why delayed settlement is offered
@@ -4469,6 +4474,14 @@ paths:
                             description: >-
                               The payout window your customer is agreeing to, in whole hours, counted
                               from the release.
+                          consent_deadline_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: >-
+                              How long this signature is still worth producing: after it the consent
+                              window closes and the crypto is refunded out of escrow by the ordinary
+                              sweep.
                           authorization_path:
                             type: string
                             description: The endpoint to POST the signature to
@@ -4506,6 +4519,7 @@ paths:
                       - name: "value"
                         type: "uint256"
                   settlement_hours: 24
+                  consent_deadline_at: "2026-09-21T11:58:30Z"
                   authorization_path: "/api/v1/partner/orders/b2c3d4e5-f6a7-8901-bcde-f12345678901/settlement-consent"
         '400':
           description: Malformed `order_id`.
@@ -7956,11 +7970,20 @@ components:
             transfer into the customer's own account is the confirmation.
 
             On a parked **delayed settlement (T+1)** order whose crypto you hold, `confirm-fiat-received`
-            is **removed** and `settlement-consent` takes its place. The fiat has not been paid and
-            cannot have been — that is the whole product — and the endpoint behind that action refuses a
-            delayed order for exactly that reason. `settlement-consent` is withdrawn once the consent is
-            in — what is left is a review nobody on this API can hurry — and the list and the
-            single-order read agree about that, so a listed action is one the endpoint will accept.
+            is **removed** — the fiat has not been paid and cannot have been, that being the whole
+            product, and the endpoint behind that action refuses a delayed order for exactly that
+            reason — and `["settlement-consent", "cancel"]` take its place.
+
+            `cancel` is the entry you would not otherwise find: a parked delayed order is the **only**
+            funded state any order can be cancelled from, through an edge opened for this class alone,
+            and every other funded order answers "cannot be cancelled". The endpoint is the ordinary
+            `POST /api/v1/partner/orders/{order_id}/cancel`.
+
+            **Both are withdrawn the moment the consent is signed.** After the signature the crypto is
+            on its way to the vendor: a second consent is refused as already-consented, and a cancel is
+            refused because the guarded edge requires that no seller signature exist. Both answer
+            `409 OPERATION_NOT_ALLOWED`. The list and the single-order read agree about all of this, so
+            a listed action is one the endpoint will accept.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
             because the crypto is the end user's and every action endpoint answers `404
@@ -8076,6 +8099,21 @@ components:
           nullable: true
           description: The promised payout window in whole hours. `null` on an instant order.
           example: 24
+        consent_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When a **parked** delayed order stops waiting for its consent: funding time plus the consent
+            window. After it the ordinary payment-window sweep refunds the escrow.
+
+            This is the only deadline that exists *before* the release — `payout_deadline_at` starts at
+            the release, which has not happened yet — so it is the one to show your customer while
+            asking them to sign.
+
+            `null` on any order that is not parked, because by then the window has stopped meaning
+            anything: the order either released or it was refunded.
+          example: "2026-09-21T11:58:30Z"
         payout_deadline_at:
           type: string
           format: date-time
