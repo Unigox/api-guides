@@ -40,7 +40,7 @@ The response carries two new fields:
     "crypto_amount": "3000.00",
     "fiat_amount": "21540.00",
     "anchor_type": "fiat",
-    "expires_at": "2026-09-18T12:00:30Z",
+    "expires_at": "2026-09-18T12:01:00Z",
     "delayed_settlement": true,
     "settlement_hours": 24
   }
@@ -53,6 +53,10 @@ The response carries two new fields:
 | `settlement_hours` | integer \| null | The payout window, counted from the release — not from now. Rounded to the nearest whole hour, never below `1`. `null` on an instant quote. |
 
 There is no second endpoint that reveals this later: by then the order is open.
+
+`POST /api/v1/partner/offramp/estimate` reports the same two fields, so you can find where a corridor
+stops settling instantly without burning quotes. It is indicative: the quote decides, and the quote is
+what your customer must be shown.
 
 `POST /api/v1/partner/offramp/initiate` and the escrow funding pair
 (`transfer-authorization-parameters` → `authorize-crypto-transfer`) are

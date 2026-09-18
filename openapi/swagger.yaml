@@ -2878,6 +2878,10 @@ paths:
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
+        It also reports `delayed_settlement` and `settlement_hours`, so you can discover at which
+        amounts a corridor stops settling instantly without burning quotes. Indicative like the rest
+        of this response: the quote decides, and is what your customer must be shown.
+
         **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
@@ -2924,10 +2928,15 @@ paths:
                     partner_fee: "0.975610"
                     partner_fee_pct: 1
                     total_fee: "2.439025"
+                    fiat_rail_fee: "0.00"
                   payment_method_slug: access-bank
                   payment_network_slug: nibss
                   provider_scope: all
                   is_indicative: true
+                  matching_type: network
+                  network_matching_available: true
+                  delayed_settlement: false
+                  settlement_hours: null
         '400':
           description: |
             Bad request — invalid parameters, missing required fields, 
@@ -3371,10 +3380,15 @@ paths:
                         partner_fee: "0.975610"
                         partner_fee_pct: 1
                         total_fee: "2.439025"
+                        fiat_rail_fee: "0.00"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
-                      expires_at: "2026-02-01T12:00:30Z"
+                      matching_type: network
+                      network_matching_available: true
+                      expires_at: "2026-02-01T12:01:00Z"
+                      delayed_settlement: false
+                      settlement_hours: null
                 fiat_anchored:
                   summary: Fiat-anchored quote
                   value:
@@ -3391,10 +3405,15 @@ paths:
                         partner_fee: "3.23"
                         partner_fee_pct: 1
                         total_fee: "8.15"
+                        fiat_rail_fee: "0.00"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
-                      expires_at: "2026-02-01T12:00:30Z"
+                      matching_type: network
+                      network_matching_available: true
+                      expires_at: "2026-02-01T12:01:00Z"
+                      delayed_settlement: false
+                      settlement_hours: null
         '400':
           description: Bad request — invalid parameters or missing required fields
           content:
@@ -3701,9 +3720,18 @@ paths:
 
         The `allowed_actions` array lists all API actions the partner **can** perform at the current
         status. An action can be in `allowed_actions` even when `next_action` is `null` — this means
-        the action is optional. For example, `confirm-fiat-received` is available at `crypto_received`
-        as a fast-track: if you already know the fiat has arrived (via your own systems), you can
-        confirm immediately without waiting for the buyer's payment proof flow to complete.
+        the action is optional. For example, on an ordinary off-ramp order `confirm-fiat-received` is
+        available at `crypto_received` as a fast-track: if you already know the fiat has arrived (via
+        your own systems), you can confirm immediately without waiting for the buyer's payment proof
+        flow to complete.
+
+        **That fast-track does not exist on a delayed settlement (T+1) order.** There the crypto
+        leaves escrow before the customer is paid, so at `crypto_received` `confirm-fiat-received` is
+        **removed** from `allowed_actions` and the endpoint refuses the order; `["settlement-consent",
+        "cancel"]` take its place and `next_action` is `sign_settlement_consent`, then
+        `submit_source_of_funds` or `await_review` while a source-of-funds review runs. Branch on
+        `delayed_settlement` — the two orders share a status and differ in everything you may do with
+        it. See the Delayed settlement (T+1) reference.
 
         `allowed_actions` is `[]` for a **widget order** — one your customer created through the
         embedded widget under your `widgetKey`. Those orders are attributed to you, and readable
@@ -3733,13 +3761,27 @@ paths:
         | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
         | `completed` | — | — |
 
+        A **delayed settlement (T+1)** order replaces the `crypto_received` row — no buyer submits
+        proof, because the fiat is paid after the release, not before:
+
+        | Status | next_action | Who acts |
+        |---|---|---|
+        | `crypto_received` | `sign_settlement_consent` | **Partner** signs the release |
+        | `crypto_received` | `submit_source_of_funds` | **Partner** supplies the dossier |
+        | `crypto_received` | `await_review` | Unigox reviewer decides |
+        | `crypto_received` | — | Held: flagged, or a failed payout whose escrow refund is in flight |
+        | `settlement_in_progress` | — | Payout in flight; the fiat has not arrived |
+        | `returned` | — | The bank sent the payout back; it will be paid again |
+
         The "Who acts" column describes an order **you** created. On a widget order the rows
         reading **Partner** are your customer's step, not yours — `next_action` is populated the
         same way for both, because it describes where the order stands rather than who may move
         it. `allowed_actions` is what tells you apart: `[]` on a widget order at every status.
-        Acting on a `next_action` for a widget order returns `404 ORDER_NOT_FOUND`.
+        Acting on a `next_action` for a widget order returns `404 ORDER_NOT_FOUND`. A delayed order
+        is never a widget order: the wallet must be yours for anyone on this API to sign the release.
 
-        **Fiat settlement and confirmation:**
+        **Fiat settlement and confirmation** (ordinary orders; a delayed order never takes a fiat
+        confirmation)**:**
 
         You can call `confirm-fiat-received` at any time after crypto is in escrow.
         You do not need to wait for a system notification. If you know through your
@@ -3760,8 +3802,10 @@ paths:
           know fiat has been received.
         - Do not wait for `next_action` if you already have confirmation from your
           own banking or payment systems.
+        - On a delayed order implement `settlement-consent` instead, and treat `completed` as
+          meaning the fiat actually reached the customer.
 
-        **Possible statuses:** `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `awaiting_fiat_received_confirmation`, `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`.
+        **Possible statuses:** see `PartnerOrderStatus`. Off-ramp: `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `fiat_payment_review_started`, `dispute_started`, `awaiting_fiat_received_confirmation`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`, plus `settlement_in_progress` and `returned` on a delayed order. On-ramp: `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer`, `fiat_transfer_pending`, `send_out_pending`, `send_out_completed`, `send_out_failed`.
       operationId: getOrder
       security:
         - ApiKeyAuth: []
@@ -5400,7 +5444,13 @@ paths:
           in: query
           required: false
           description: |
-            Filter by partner order status.
+            Filter by partner order status. Every status this API emits is accepted, on-ramp and
+            off-ramp alike; an unrecognised value is a `400`.
+
+            Three are accepted but return nothing. `awaiting_liquidity_provider` describes an order
+            that has no trade row yet, and this list reads trades; `fiat_received_confirmed` and
+            `crypto_release_pending` are timeline vocabulary that no order reports as its own
+            `status`. Filter on a status a listed order actually reports.
 
             On **delayed settlement (T+1)** orders the four release-bearing filters mean:
 
@@ -5419,8 +5469,7 @@ paths:
             still sitting in a release state internally, and is returned under `status=cancelled` like
             any other stopped order.
           schema:
-            type: string
-            enum: [created, awaiting_liquidity_provider, awaiting_crypto_transfer_authorization, crypto_transfer_authorization_pending, crypto_received, awaiting_fiat_received_confirmation, fiat_received_confirmed, crypto_release_pending, completed, cancelled, failed, price_changed_requote_needed, settlement_in_progress, returned]
+            $ref: '#/components/schemas/PartnerOrderStatus'
           example: "completed"
         - name: page
           in: query
@@ -5552,24 +5601,36 @@ paths:
                   url: "https://partner.example.com/webhooks/unigox"
                   enabled: true
         '400':
-          description: Bad request — missing or invalid URL
+          description: |
+            Bad request — missing or invalid URL.
+
+            This endpoint answers with a bare message string under `error`, not the
+            `{"success": false, "error": {"code", "message"}}` object the off-ramp and order
+            endpoints use, and not the `data.error_key` shape. Read `error` as text; there is no code
+            to branch on.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                required: [success, error]
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    description: Human-readable message. Not an object, and not a stable key.
               examples:
                 url_required:
                   summary: URL is required
                   value:
                     success: false
-                    data:
-                      error_key: "webhook URL is required"
+                    error: "webhook URL is required"
                 url_not_https:
                   summary: URL must use HTTPS
                   value:
                     success: false
-                    data:
-                      error_key: "webhook URL must use HTTPS"
+                    error: "webhook URL must use HTTPS"
         '401':
           description: Unauthorized — invalid or missing API key
 
@@ -7380,6 +7441,34 @@ components:
           type: boolean
           description: True when response is an estimate and not a reserving quote
           example: true
+        matching_type:
+          type: string
+          enum: [network, exact_payment_method]
+          description: >-
+            How the priced offer matched. `network` — standard payment-network matching.
+            `exact_payment_method` — the offer only matches a counterparty on one of the listed exact
+            payment methods. Omitted when no offer was matched.
+          example: network
+        network_matching_available:
+          type: boolean
+          description: >-
+            `true` when `matching_type` is `network`. `false` means this price is reachable only
+            through exact payment-method matching.
+          example: true
+        delayed_settlement:
+          type: boolean
+          description: >-
+            Whether pricing at this amount would open a **delayed settlement (T+1)** order. Always
+            present, and carries the same meaning as on the quote — an estimate is indicative, so
+            re-read it on the quote before initiating.
+          example: false
+        settlement_hours:
+          type: integer
+          nullable: true
+          description: >-
+            The payout window that would be promised, counted from the release. Rounded to the
+            nearest whole hour and never below `1`. `null` on an instant estimate.
+          example: 24
 
     PartnerRecipientDestinationInput:
       type: object
@@ -7768,11 +7857,28 @@ components:
           format: int64
           description: Matched payment network ID
           example: 12
+        matching_type:
+          type: string
+          enum: [network, exact_payment_method]
+          description: >-
+            How the matched offer was reached. `network` — standard payment-network matching.
+            `exact_payment_method` — the offer only matches a counterparty on one of the exact
+            payment methods listed in `exact_payment_method_matching_offers`. Omitted when no offer
+            was matched.
+          example: network
+        network_matching_available:
+          type: boolean
+          description: >-
+            `true` when `matching_type` is `network`. `false` means this quote is reachable only
+            through exact payment-method matching.
+          example: true
         expires_at:
           type: string
           format: date-time
-          description: Quote expiration timestamp (30 seconds from creation)
-          example: "2026-02-01T12:00:30Z"
+          description: >-
+            Quote expiration timestamp: 60 seconds from creation, in UTC (`Z`). Initiate before it,
+            or request a fresh quote.
+          example: "2026-02-01T12:01:00Z"
         has_fiat_settlement_notification:
           type: boolean
           description: |
@@ -8258,6 +8364,26 @@ components:
           type: string
           description: Total fee in crypto (platform_fee + partner_fee)
           example: "16.30"
+        fiat_rail_fee:
+          type: string
+          description: |
+            What the payout rail itself charges, in the order's **fiat** currency — every field above
+            is in crypto. It is the gap between `rate × crypto_amount` and the money that actually
+            moves on the bank or wallet rail, and it is already reflected in `fiat_amount`.
+
+            Deliberately **not** summed into `total_fee`: that is a crypto figure, and adding a fiat
+            amount to it would produce a number that means nothing. Reconciling a payout, add this to
+            `fiat_amount` to get the gross the rate implies.
+
+            Always present; `"0.00"` on a rail that charges nothing.
+          example: "0.00"
+        fiat_rail_fee_currency:
+          type: string
+          description: >-
+            The currency `fiat_rail_fee` is denominated in, so a breakdown read on its own is never
+            ambiguous about which of the order's two currencies a fee is in. Omitted when there is no
+            rail fee to denominate.
+          example: CNY
 
     PartnerOrderStatus:
       type: string
@@ -8271,9 +8397,12 @@ components:
         - `crypto_transfer_authorization_pending` — authorization submitted, awaiting on-chain confirmation
         - `crypto_received` — crypto locked in escrow
         - `fiat_payment_started` — buyer submitted fiat payment proof
+        - `fiat_payment_review_started` — the proof is under review
+        - `dispute_started` — a dispute was raised on the order
         - `awaiting_fiat_received_confirmation` — waiting for partner to confirm fiat receipt
-        - `fiat_received_confirmed` — fiat confirmed, crypto release pending
-        - `crypto_release_pending` — escrow release in progress
+        - `fiat_received_confirmed`, `crypto_release_pending` — timeline vocabulary. They appear in
+          `timeline[].status`; no order reports either as its own `status`, and filtering on them
+          returns nothing
         - `completed` — order fully completed
         - `cancelled` — order cancelled
         - `failed` — terminal error
@@ -8330,6 +8459,8 @@ components:
         - crypto_transfer_authorization_pending
         - crypto_received
         - fiat_payment_started
+        - fiat_payment_review_started
+        - dispute_started
         - awaiting_fiat_received_confirmation
         - fiat_received_confirmed
         - crypto_release_pending
