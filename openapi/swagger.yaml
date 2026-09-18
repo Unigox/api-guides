@@ -5448,10 +5448,21 @@ paths:
             Filter by partner order status. Every status this API emits is accepted, on-ramp and
             off-ramp alike; an unrecognised value is a `400`.
 
-            Three are accepted but return nothing. `awaiting_liquidity_provider` describes an order
-            that has no trade row yet, and this list reads trades; `fiat_received_confirmed` and
-            `crypto_release_pending` are timeline vocabulary that no order reports as its own
-            `status`. Filter on a status a listed order actually reports.
+            Four are accepted but can never match. `awaiting_liquidity_provider` and
+            `price_changed_requote_needed` live on a trade request, and this list reads trades;
+            `fiat_received_confirmed` and `crypto_release_pending` are timeline vocabulary, shadowed
+            by `completed` on the order itself. An empty page from one of these is the filter working,
+            not an outage.
+
+            A ramp-specific status implies its trade type, so `status` and `type` need not be paired.
+            Passing a `type` that contradicts the status is not an error either — it is simply a
+            filter nothing satisfies, and answers an empty page. `send_out_pending`,
+            `send_out_completed` and `send_out_failed` narrow on an on-ramp order's send-out
+            sub-state, which lives beside `completed` rather than in the trade status. The same fact
+            runs the other way: `status=completed` can return an on-ramp row whose own `status` reads
+            `send_out_pending`, `send_out_completed` or `send_out_failed`, because the trade did
+            complete and the bridge-out is a later step — a failed one stays visible instead of
+            hiding as "completed".
 
             On **delayed settlement (T+1)** orders the four release-bearing filters mean:
 
@@ -5472,6 +5483,16 @@ paths:
           schema:
             $ref: '#/components/schemas/PartnerOrderStatus'
           example: "completed"
+        - name: type
+          in: query
+          required: false
+          description: >-
+            Restrict to one ramp: `onramp` or `offramp`. Omit for both. Any other value is ignored
+            rather than refused, so a typo widens the page instead of failing it.
+          schema:
+            type: string
+            enum: [onramp, offramp]
+          example: offramp
         - name: page
           in: query
           required: false
@@ -8457,7 +8478,9 @@ components:
         - `completed` — order fully completed
         - `cancelled` — order cancelled
         - `failed` — terminal error
-        - `price_changed_requote_needed` — slippage exceeded at initiation (not a trade status)
+        - `price_changed_requote_needed` — slippage exceeded at initiation. Like
+          `awaiting_liquidity_provider`, it belongs to a trade request rather than a trade, so
+          `GET /partner/orders?status=` accepts it and returns nothing
 
         **Delayed settlement (T+1) statuses:**
 
