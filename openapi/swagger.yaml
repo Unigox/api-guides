@@ -4428,8 +4428,8 @@ paths:
                           tx_hash:
                             type: string
                             description: >-
-                              The release transaction's hash. Send this back verbatim as `signed_data`
-                              on the POST — it is what the consent is checked against.
+                              The release transaction's Safe hash. Accepted as `signed_data` on the
+                              POST, alongside `safe_params.data`.
                           safe_params:
                             type: object
                             description: The Safe transaction fields to sign
@@ -4522,7 +4522,7 @@ paths:
                   consent_deadline_at: "2026-09-21T11:58:30Z"
                   authorization_path: "/api/v1/partner/orders/b2c3d4e5-f6a7-8901-bcde-f12345678901/settlement-consent"
         '400':
-          description: Malformed `order_id`.
+          description: Malformed `order_id`, or the order is an on-ramp order.
           content:
             application/json:
               schema:
@@ -4531,8 +4531,8 @@ paths:
           description: Unauthorized
         '404':
           description: >-
-            No order with this id belongs to your partner account, it is not an off-ramp order, or its
-            crypto is not yours to move. One code for all three, so ids cannot be probed.
+            No order with this id belongs to your partner account, or its crypto is not yours to move.
+            One code for both, so ids cannot be probed.
           content:
             application/json:
               schema:
@@ -4571,14 +4571,15 @@ paths:
         `GET /settlement-consent-parameters` to let the order's crypto leave escrow ahead of the payout.
         Unigox adds the second of the two signatures the Safe requires and executes.
 
-        **Both fields are required**, which is where this differs from `authorize-refund`. What you
-        signed is a Safe transaction, and only its hash distinguishes "send the crypto to the vendor"
-        from "send it back to me" — so without `signed_data` there is nothing to check the signature
-        against, and storing a refund signature as a consent would release an order somebody was trying
-        to unwind.
+        **Both fields are required**, which is where this differs from `authorize-refund`. Only the
+        artefact you signed distinguishes "send the crypto to the vendor" from "send it back to me" —
+        so without `signed_data` there is nothing to check the signature against, and storing a refund
+        signature as a consent would release an order somebody was trying to unwind.
 
-        `signed_data` is the `tx_hash` the GET returned, verbatim. It is compared case-insensitively
-        and with surrounding quotes stripped.
+        Two artefacts identify the same release, and **either** is accepted as `signed_data`:
+        `safe_params.data` — the release calldata, which is what our own clients send and what the
+        escrow files the signature under — or `tx_hash`. Both are compared case-insensitively and with
+        surrounding quotes stripped.
 
         **Security note:** your private key is never sent to the API. Sign the typed data locally and
         submit only the resulting signature.
@@ -4613,11 +4614,11 @@ paths:
                 signed_data:
                   type: string
                   description: >-
-                    The release transaction's hash — the `tx_hash` from
-                    `GET /settlement-consent-parameters`, verbatim. Required.
+                    What you signed, taken from `GET /settlement-consent-parameters`: either
+                    `safe_params.data` (the release calldata) or `tx_hash`. Required.
             example:
               signature: "0xabc123..."
-              signed_data: "0x4c8f9b2a7e1d05c3ab84f6d29e7c1130bb5a4f8e6c2d9017a3b5e8f1c4d70a9d1"
+              signed_data: "0xa9059cbb000000000000000000000000..."
       responses:
         '200':
           description: Consent recorded
@@ -4641,8 +4642,10 @@ paths:
                             nullable: true
                             description: >-
                               What is still owed — `submit_source_of_funds` or `await_review` when the
-                              release is waiting on a dossier.
-                            enum: [submit_source_of_funds, await_review, null]
+                              release is waiting on a dossier, and `null` once it has started. It falls
+                              back to `sign_settlement_consent` if the consent lookup behind the hint
+                              fails; the consent is stored either way.
+                            enum: [sign_settlement_consent, submit_source_of_funds, await_review, null]
                           consent_signed:
                             type: boolean
                             description: Always `true` on a 200 — the signature is stored.
@@ -4665,8 +4668,8 @@ paths:
                   release_started: false
         '400':
           description: >-
-            Malformed `order_id` or body; `signature` or `signed_data` missing or blank; or `signed_data`
-            is not this order's release transaction.
+            Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data`
+            is not this order's release transaction; or the order is an on-ramp order.
           content:
             application/json:
               schema:
@@ -4680,8 +4683,7 @@ paths:
           description: Unauthorized
         '404':
           description: >-
-            No order with this id belongs to your partner account, it is not an off-ramp order, or its
-            crypto is not yours to move.
+            No order with this id belongs to your partner account, or its crypto is not yours to move.
           content:
             application/json:
               schema:
@@ -4716,6 +4718,12 @@ paths:
                 error:
                   code: TRANSACTOR_ERROR
                   message: "the settlement consent signature could not be accepted, please retry"
+        '500':
+          description: The release transaction could not be prepared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
 
   /api/v1/partner/orders/{order_id}/source-of-funds:
     get:
@@ -4723,10 +4731,12 @@ paths:
         - Orders
       summary: Get the source-of-funds dossier
       description: |
-        **Delayed settlement (T+1) only.** An order whose fiat leg is worth **USD 50 000 or more** does
-        not release until a reviewer has decided where the money came from. Your customer supplies that
-        evidence on *your* screens and you post it here; below the authorization line these are the same
-        endpoints our own app uses, so the two sides of one review cannot disagree about what is owed.
+        **Delayed settlement (T+1) only.** An order whose fiat leg is worth at least `threshold_usd` —
+        **USD 50 000** today, and an order whose USD equivalent cannot be computed counts as above it —
+        does not release until a reviewer has decided where the money came from. Your customer supplies
+        that evidence on *your* screens and you post it here; below the authorization line these are the
+        same endpoints our own app uses, so the two sides of one review cannot disagree about what is
+        owed.
 
         Returns the whole case: its review status, the declaration, the documents on file, anything a
         reviewer has come back and asked for, and `requirements_snapshot` — the requirement contract
@@ -4734,15 +4744,17 @@ paths:
         so that snapshot, not today's catalogue, is the list to render.
 
         `requirements_snapshot.documents[].mode` is `one_of` (any single document satisfies the group)
-        or `all_of` (every listed document is owed); `documents[].documents` holds the `document_type`
-        keys to upload under. Before a declaration exists there is no frozen contract to read — render
-        the form from `GET …/source-of-funds/requirements` until there is one.
+        or `all_of` (the document is owed outright; such a group always carries exactly one);
+        `documents[].documents` holds the `document_type` keys to upload under. Before a declaration
+        exists there is no frozen contract to read — render the form from
+        `GET …/source-of-funds/requirements` until there is one.
 
         Several fields are served under two spellings (`documents` / `documents_provided`,
         `requested_documents` / `documents_requested`, `funds_flow_description` / `funds_flow`,
         `purpose_of_payment` / `purpose`, `sender_recipient_relationship` / `relationship`,
-        `source_wallet_address` / `wallet_address`, `source_wallet_network` / `wallet_network`). Both
-        carry the same value; prefer the long ones.
+        `source_wallet_address` / `wallet_address`, `source_wallet_network` / `wallet_network`, and
+        `document_type` / `document_key` inside a `requested_documents` entry). Both carry the same
+        value; prefer the long ones.
 
         **The read is never fenced.** A case that has just been decided still answers, because you still
         have to show your customer the decision.
@@ -4820,9 +4832,13 @@ paths:
                         mode: "one_of"
                         documents: ["employment_contract", "payslips", "employer_letter"]
                         minimum_files:
+                          employment_contract: 1
                           payslips: 2
+                          employer_letter: 1
                         maximum_files:
+                          employment_contract: 1
                           payslips: 3
+                          employer_letter: 1
                     requires_statement: true
                     statement_months: 3
                     statement_max_age_days: 31
@@ -4833,7 +4849,7 @@ paths:
                   rejection_reason_code: ""
                   created_at: "2026-09-18T12:00:09Z"
         '400':
-          description: Malformed `order_id`.
+          description: Malformed `order_id`, or the order is an on-ramp order.
           content:
             application/json:
               schema:
@@ -4843,9 +4859,8 @@ paths:
         '404':
           description: >-
             **An answer, not a failure:** this order never crossed the threshold and owes no dossier. It
-            is also the answer for an order that is not yours, is not an off-ramp order, or is not one
-            whose crypto you hold — one code for all four, so ids cannot be probed. Read it as "nothing
-            owed" and stop polling.
+            is also the answer for an order that is not yours or is not one whose crypto you hold — one
+            code for all three, so ids cannot be probed. Read it as "nothing owed" and stop polling.
           content:
             application/json:
               schema:
@@ -4895,8 +4910,9 @@ paths:
         always empty: published to an integrator it is a specification for passing a check rather than
         for meeting one.
 
-        Keyed by order id like its siblings, so it answers only for an order that owes a dossier. It is
-        a read of a static catalogue: safe to poll, and safe to cache against `revision`.
+        Keyed by order id like its siblings, so it answers for any delayed order of yours — including
+        one below the threshold, which owes no dossier and whose three sibling endpoints answer `404`.
+        It is a read of a static catalogue: safe to poll, and safe to cache against `revision`.
       operationId: getPartnerSourceOfFundsRequirements
       security:
         - ApiKeyAuth: []
@@ -4949,7 +4965,10 @@ paths:
                       statement:
                         minMonths: 3
                         maxAgeDays: 31
-                      baseDocuments: []
+                      baseDocuments:
+                        - key: "bank_statement"
+                          label: "Personal account statement"
+                          hint: "A PDF from your bank. It must show your name, the bank, the account number, dates including the year, and the balance."
                       groups:
                         - mode: "one_of"
                           documents:
@@ -4964,7 +4983,7 @@ paths:
                               label: "Letter from your employer"
                       revision: 5
         '400':
-          description: Malformed `order_id`.
+          description: Malformed `order_id`, or the order is an on-ramp order.
           content:
             application/json:
               schema:
@@ -4973,8 +4992,8 @@ paths:
           description: Unauthorized
         '404':
           description: >-
-            No such order, not yours, or an order that owes no dossier — or `source_of_funds` names a
-            category that does not exist.
+            No such order, not yours, or not a delayed order — or `source_of_funds` names a category
+            that does not exist.
           content:
             application/json:
               schema:
@@ -5049,7 +5068,7 @@ paths:
                       data:
                         $ref: '#/components/schemas/PartnerSourceOfFundsCase'
         '400':
-          description: Malformed `order_id` or request body.
+          description: Malformed `order_id` or request body, or the order is an on-ramp order.
           content:
             application/json:
               schema:
@@ -5190,7 +5209,7 @@ paths:
                   superseded_count: 0
                   case_status: "documents_submitted"
         '400':
-          description: Malformed `order_id`, or the file could not be read.
+          description: Malformed `order_id`, the order is an on-ramp order, or the file could not be read.
           content:
             application/json:
               schema:
@@ -5246,7 +5265,7 @@ paths:
         '422':
           description: >-
             `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts;
-            or the file is under 4096 bytes, which is too little to be a document.
+            or the file is empty or under 4096 bytes, which is too little to be a document.
           content:
             application/json:
               schema:
@@ -7787,8 +7806,9 @@ components:
           type: integer
           nullable: true
           description: |
-            The promised payout window in whole hours, counted from the release — not from now.
-            `null` on an instant quote, where there is no such promise to make.
+            The promised payout window, counted from the release — not from now. Rounded to the
+            nearest whole hour and never below `1`. `null` on an instant quote, where there is no such
+            promise to make.
           example: 24
 
     PartnerInitiateRequest:
@@ -7890,7 +7910,9 @@ components:
             - `await_review` — everything owed on a delayed order has been supplied and a reviewer is
               deciding. Named as an action rather than left `null` so a poller has an unambiguous
               "nothing to do"
-            - `null` — no required action (waiting for buyer or system)
+            - `null` — no required action (waiting for buyer or system). On a parked delayed order this
+              means the order is held for review, or a payout of yours failed and its escrow refund is
+              in flight: both consent endpoints then answer `409 OPERATION_NOT_ALLOWED`
 
             `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute this
             identically, so a list row and the order page never disagree about what an order is waiting
@@ -7984,6 +8006,11 @@ components:
             refused because the guarded edge requires that no seller signature exist. Both answer
             `409 OPERATION_NOT_ALLOWED`. The list and the single-order read agree about all of this, so
             a listed action is one the endpoint will accept.
+
+            The one exception is a parked delayed order that is **held** — flagged for review, or with
+            a failed payout whose escrow refund is in flight. There the list is left as the ordinary
+            mapping produced it (`["confirm-fiat-received"]`), `next_action` is `null`, and neither
+            that action nor a consent is accepted.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
             because the crypto is the end user's and every action endpoint answers `404
@@ -8090,14 +8117,16 @@ components:
             the fiat follows within `settlement_hours`. Fixed when the order is created — a vendor
             changing their offer afterwards does not change the order's class.
 
-            This and the eight fields below are **always present** on every order, `null` on an ordinary
-            one. A `null` mark on a delayed order is a fact — that step has not happened — rather than
-            an absent field.
+            This field and the eight below are **always present** on every order. This one is `false`
+            on an ordinary order; the other eight are `null` there, and a `null` mark on a delayed
+            order is a fact — that step has not happened — rather than an absent field.
           example: false
         settlement_hours:
           type: integer
           nullable: true
-          description: The promised payout window in whole hours. `null` on an instant order.
+          description: >-
+            The promised payout window, rounded to the nearest whole hour and never below `1`. `null`
+            on an instant order.
           example: 24
         consent_deadline_at:
           type: string
@@ -8336,7 +8365,7 @@ components:
             On a **delayed settlement (T+1)** order the release entry reads
             `Crypto released to the liquidity provider, ahead of the payout` under
             `settlement_in_progress`, not `Order completed`: the crypto leaving escrow is the middle of
-            that order's story, not its end. Five more entries follow it —
+            that order's story, not its end. Six more entries follow it —
             `Crypto transferred to the payout provider`, `Fiat payout authorized` and
             `Fiat payout submitted by the provider` (all `settlement_in_progress`),
             `Fiat paid to the customer` (`completed`), `Fiat returned by the bank` (`returned`) and
@@ -8713,8 +8742,9 @@ components:
                     type: string
                     enum: [one_of, all_of]
                     description: >-
-                      `one_of` — any single document in the group satisfies it. `all_of` — every listed
-                      document is owed.
+                      `one_of` — any single document in the group satisfies it. `all_of` — the document
+                      is owed outright; an `all_of` group in the frozen snapshot always carries exactly
+                      one.
                   documents:
                     type: array
                     items:
@@ -8725,12 +8755,15 @@ components:
                     additionalProperties:
                       type: integer
                     description: >-
-                      For evidence that is a pack rather than a file — two or three payslips establish a
-                      pattern one cannot.
+                      One entry per key in the group. `1` unless the catalogue asks for a pack — two or
+                      three payslips establish a pattern one cannot.
                   maximum_files:
                     type: object
                     additionalProperties:
                       type: integer
+                    description: >-
+                      One entry per key in the group. Equal to the minimum unless the document is a
+                      pack; a `multiple` document with no published ceiling gets `10`.
             requires_statement:
               type: boolean
               description: >-
@@ -8949,8 +8982,11 @@ components:
                 payment.
 
                 All nine travel on **every** event for that order, not only the one each mark triggered:
-                four of the six report the same status, so without the timestamps three
+                three of the six report the same status, so without the timestamps three
                 `settlement_in_progress` events in a day are indistinguishable.
+
+                A mark that has not happened is **absent** here, not `null` — the opposite of the order
+                payload, where these fields are always present.
 
                 **A bank return can recur** — returned, re-authorized, returned again is a normal
                 sequence — and `event_id` is unique **per emission**, not per mark. De-duplicate on
@@ -8958,49 +8994,47 @@ components:
               example: true
             settlement_hours:
               type: integer
-              nullable: true
-              description: The promised payout window in whole hours.
+              description: >-
+                The promised payout window, rounded to the nearest whole hour and never below `1`.
               example: 24
             payout_deadline_at:
               type: string
               format: date-time
-              nullable: true
-              description: Release plus the promised window. `null` until the crypto has left escrow.
+              description: >-
+                Release plus the promised window. Absent until the crypto has left escrow.
               example: "2026-09-19T12:07:55Z"
             delayed_settlement_crypto_sent_to_provider_at:
               type: string
               format: date-time
-              nullable: true
               description: >-
                 The crypto left the vendor's wallet for the payout provider. A refund to the customer
-                stops being possible at this mark.
+                stops being possible at this mark. Absent until it happens.
             delayed_settlement_fiat_payout_authorized_by_admin_at:
               type: string
               format: date-time
-              nullable: true
-              description: Unigox authorized the vendor to send the fiat.
+              description: Unigox authorized the vendor to send the fiat. Absent until it happens.
             delayed_settlement_fiat_payout_submitted_by_provider_at:
               type: string
               format: date-time
-              nullable: true
-              description: The provider accepted the payout and put it on the banking rail.
+              description: >-
+                The provider accepted the payout and put it on the banking rail. Absent until it
+                happens.
             delayed_settlement_fiat_paid_to_customer_at:
               type: string
               format: date-time
-              nullable: true
-              description: The fiat reached the recipient. The real completion of a delayed order.
+              description: >-
+                The fiat reached the recipient — the real completion of a delayed order. Absent until
+                it happens.
             delayed_settlement_fiat_returned_by_bank_at:
               type: string
               format: date-time
-              nullable: true
               description: >-
                 The bank sent the payout back; the paid, submitted and authorized marks are cleared in
-                the same statement and the order will be paid again.
+                the same statement and the order will be paid again. Absent until it happens.
             delayed_settlement_crypto_refunded_to_customer_at:
               type: string
               format: date-time
-              nullable: true
-              description: The crypto went back to the customer instead.
+              description: The crypto went back to the customer instead. Absent until it happens.
 
     PartnerOnRampQuoteRequest:
       type: object

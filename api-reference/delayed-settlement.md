@@ -2,31 +2,10 @@
 
 Some off-ramp quotes come back as **delayed settlement**: the crypto leaves
 escrow on your own release signature, and the fiat reaches the recipient within
-a stated window afterwards, instead of both legs completing together.
+`settlement_hours` afterwards, instead of both legs completing together.
 
-**What you will build.** An off-ramp integration that reads one flag on the
-quote, shows your customer the wait before the order exists, signs the release
-when they accept it, supplies a source-of-funds dossier on large orders, and
-tracks the payout for the days it takes to land.
-
-**What you need first.** Nothing to activate. Delayed settlement is a property
-of the liquidity that matched, not a product on your partner account. It
-appears on its own when the conditions below are met, which is why the flag has
-to be read on every quote rather than assumed absent.
-
-## The one idea to hold on to
-
-On an ordinary off-ramp order the crypto leaves escrow **after** the fiat is
-confirmed. On a delayed one it leaves **before**, and the promise that replaces
-the confirmation is `settlement_hours`.
-
-Everything follows from that. Only you can release the crypto, because on an
-order you opened the escrow's seller-side owner is your wallet — so delayed
-settlement is offered only where you hold the crypto. `completed` no longer
-means the money arrived, so two new statuses exist to say what it used to
-imply. And the order keeps moving for days after the release with no change to
-`status` at all, which is why six timestamps and a webhook on each of them ship
-alongside it.
+Nothing activates it. It is a property of the liquidity that matched, not of your
+account, so read the flag on every quote.
 
 ## When a quote is delayed
 
@@ -35,9 +14,8 @@ Three conditions, all of them ours rather than yours:
 - **No instant offer covers the amount.** An instant offer that covers it always
   wins, whatever its rate. Delayed offers are considered only when none does —
   typically above a provider's instant ceiling.
-- **You hold the crypto.** Delayed settlement is never offered on a widget
-  order, where the wallet belongs to your customer and nobody on this API can
-  sign the release.
+- **You hold the crypto.** Never a widget order, where the wallet belongs to your
+  customer and nobody on this API can sign the release.
 - **The matched vendor settles this way.** It is a property of their offer.
 
 You cannot request delayed settlement and cannot decline it for a given amount.
@@ -71,16 +49,14 @@ The response carries two new fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `delayed_settlement` | boolean | `true` when this quote would open a delayed order. **Always present**, never omitted, so a client can tell "this build does not know about T+1" from "this quote is not T+1". |
-| `settlement_hours` | integer \| null | The payout window in whole hours, counted from the release — not from now. `null` on an instant quote, where there is no such promise. |
+| `delayed_settlement` | boolean | `true` when this quote would open a delayed order. **Always present**, so a client can tell "this build does not know about T+1" from "this quote is not T+1". |
+| `settlement_hours` | integer \| null | The payout window, counted from the release — not from now. Rounded to the nearest whole hour, never below `1`. `null` on an instant quote. |
 
-A quote you initiate without showing your customer the wait has sold them a
-different product. There is no second endpoint that reveals this later: the
-order is already open by then.
+There is no second endpoint that reveals this later: by then the order is open.
 
 `POST /api/v1/partner/offramp/initiate` and the escrow funding pair
 (`transfer-authorization-parameters` → `authorize-crypto-transfer`) are
-unchanged. The order behaves exactly like any other until the escrow is funded.
+unchanged. The order behaves like any other until the escrow is funded.
 
 ## End-to-end flow
 
@@ -92,48 +68,40 @@ unchanged. The order behaves exactly like any other until the escrow is funded.
 4. Sign the release:
    `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
    `POST /api/v1/partner/orders/{order_id}/settlement-consent`.
-5. If the order is at or above the source-of-funds threshold, supply the
-   dossier and wait for the review. Below it, the crypto goes as soon as the
-   consent lands.
+5. If the order is at or above the source-of-funds threshold, supply the dossier
+   and wait for the review. Below it, the crypto goes as soon as the consent
+   lands.
 6. Follow the payout on `status`, the six timestamps, and the webhooks.
 
 ### 1. Read what the order is waiting for
 
 A parked delayed order is `crypto_received`, exactly like an instant one whose
-buyer has not paid yet. What tells them apart is `next_action`:
+buyer has not paid yet. `next_action` is what tells them apart:
 
-| `next_action` | What is owed |
-| --- | --- |
-| `sign_settlement_consent` | Nobody has signed the release yet. |
-| `submit_source_of_funds` | The consent is in; this order needs a dossier and it is not complete. |
-| `await_review` | Everything owed has been supplied. A reviewer decides; there is nothing to call. |
+| `next_action` | What is owed | `allowed_actions` |
+| --- | --- | --- |
+| `sign_settlement_consent` | Nobody has signed the release yet. | `["settlement-consent", "cancel"]` |
+| `submit_source_of_funds` | The consent is in; this order needs a dossier and it is not complete. | `[]` |
+| `await_review` | Everything owed has been supplied. A reviewer decides; there is nothing to call. | `[]` |
+| absent | The order is held for review, or a payout of yours failed and its escrow refund is in flight. Both consent endpoints answer `409 OPERATION_NOT_ALLOWED`. | not rewritten: `["confirm-fiat-received"]`, which this order does not take either |
 
-`allowed_actions` is rewritten to match. On a parked delayed order whose crypto
-you hold, `confirm-fiat-received` is **removed** — the fiat has not been paid
-and cannot have been, and the endpoint behind it refuses a delayed order for
-that reason — and two actions take its place: `settlement-consent` and `cancel`.
+The list is rewritten only on an order whose crypto you hold.
+`confirm-fiat-received` is **removed**: the endpoint behind it refuses a delayed
+order, the fiat not having been paid.
 
 **`cancel` is the one you would not otherwise find.** A parked delayed order is
-the only funded state any order can be cancelled from, through an edge opened
-for this class alone; every other funded order answers "cannot be cancelled", so
-nothing else in this API suggests trying. `POST /api/v1/partner/orders/{order_id}/cancel`
-is the ordinary endpoint, unchanged — it refunds the escrow to you while the
-crypto is still in it.
-
-**Both are withdrawn the moment the consent is signed.** After the signature the
-crypto is on its way to the vendor: a second consent is refused as
-already-consented, and a cancel is refused because the guarded edge requires that
-no seller signature exist. Both answer `409 OPERATION_NOT_ALLOWED`, and the cancel
-loses that race in the database rather than in a check, so it is safe to call
-against an order that is being released — it will not half-cancel it.
+the only funded state any order can be cancelled from; every other funded order
+answers "cannot be cancelled". `POST /api/v1/partner/orders/{order_id}/cancel` is
+the ordinary endpoint, unchanged — it refunds the escrow to you while the crypto
+is still in it. Both actions are withdrawn the moment the consent is signed. The
+cancel loses that race in the database rather than in a check, so calling it
+against an order that is already releasing cannot half-cancel it.
 
 `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute
-both fields identically, so a list row and the order page never disagree about
-what an order is waiting for. If either lookup behind the hint fails, both fall
-back to `sign_settlement_consent` and leave `settlement-consent` advertised —
-the safe direction, since a partner who has already signed learns nothing new
-from being asked again, whereas `await_review` on an order nobody signed waits
-forever.
+both fields identically. If either lookup behind the hint fails, both fall back to
+`sign_settlement_consent` and leave `settlement-consent` advertised — the safe
+direction: being asked again for a signature you have given costs a refused POST,
+while `await_review` on an order nobody signed waits forever.
 
 ### 2. Get the consent parameters
 
@@ -185,31 +153,23 @@ X-API-Key: <api-key>
 }
 ```
 
-This is the same shape as `refund-authorization-parameters`, with three
-differences: `direction` is `to_buyer` rather than `to_seller`, `tx_hash` is
-present, and `settlement_hours` and `consent_deadline_at` are echoed beside the
-payload because this is the moment the promise is accepted and the moment it
-stops being available.
+Same shape as `refund-authorization-parameters`, with three differences:
+`direction` is `to_buyer` rather than `to_seller`, `tx_hash` is present, and
+`settlement_hours` and `consent_deadline_at` are echoed beside the payload,
+signing being the moment the promise is accepted and the moment it stops being
+available. `payout_deadline_at` is not here: it is measured from the release,
+which has not happened. It appears on the order payload from the moment there is
+one.
 
-`consent_deadline_at` says how long this signature is still worth producing.
-There is no `payout_deadline_at` here, deliberately: that one is measured from
-the release, and this endpoint only ever serves an order that has not released —
-signing is what releases it. It appears on the order payload from the moment
-there is one.
+The escrow is a 2-of-3 Safe whose seller-side owner is *your* wallet — your
+customer holds no key. `signer_address` names it; sign with that key and no other.
 
-**Who signs.** The escrow is a 2-of-3 Safe. On an order you opened, its
-seller-side owner is *your* wallet; your customer holds no key. `signer_address`
-names it. Sign with that key and no other.
+`recipient_address` is read from the escrow on the server: the vendor providing
+the fiat. It and `amount_human` — what that vendor receives, after the platform
+fee is split off by the same release — are returned so you can verify both before
+signing. No parameter changes either.
 
-**Where the money goes is not yours to choose.** `recipient_address` is read
-from the escrow on the server — it is the vendor providing the fiat.
-`recipient_address` and `amount_human` are returned so you can verify both
-before signing; no parameter changes either. `amount_human` is what the vendor
-receives, after the platform fee is split off by the same release.
-
-**This GET runs the same gate as the POST.** An order that would be refused a
-signature is refused the payload too, so you can never be handed something you
-would then be turned away for.
+This GET runs the same gate as the POST.
 
 ### 3. Submit the signature
 
@@ -222,23 +182,23 @@ Content-Type: application/json
 ```json
 {
   "signature": "0xabc123...",
-  "signed_data": "0x4c8f...9ad1"
+  "signed_data": "0xa9059cbb000000000000000000000000..."
 }
 ```
 
 **Both fields are required**, which is where this differs from
-`authorize-refund`. What you signed is a Safe transaction, and only its hash
-distinguishes "send the crypto to the vendor" from "send it back to me".
-Without `signed_data` there is nothing to check the signature against, and
-storing a refund signature as a consent would release an order somebody was
-trying to unwind.
+`authorize-refund`: only the artefact you signed distinguishes "send the crypto
+to the vendor" from "send it back to me", and storing a refund signature as a
+consent would release an order somebody was trying to unwind.
 
-`signed_data` is **the `tx_hash` the GET returned**, verbatim. It is compared
+Two artefacts identify the same release, and either is accepted as `signed_data`:
+**`safe_params.data`** — the calldata, which is what our own clients send and what
+the escrow files the signature under — or **`tx_hash`**. Both are compared
 case-insensitively and with surrounding quotes stripped; anything else answers
 `400 INVALID_REQUEST` naming the endpoint to take it from.
 
-Your private key never reaches the API. Sign the returned typed data
-(`domain`, `types`, `safe_params`) locally and submit only the signature.
+Your private key never reaches the API. Sign the returned typed data (`domain`,
+`types`, `safe_params`) locally and submit only the signature.
 
 ```json
 {
@@ -253,25 +213,28 @@ Your private key never reaches the API. Sign the returned typed data
 }
 ```
 
-**`release_started: false` is a success, not a failure.** Above the
+**`release_started: false` is a success, not a failure.** At or above the
 source-of-funds threshold the release waits for a reviewer, and on that class of
-order this is the normal outcome. `next_action` then says what is still owed.
+order this is the normal outcome; `next_action` then says what is still owed.
 Below the threshold the crypto goes immediately and `release_started` is `true`.
 
-A consent is recorded once. A second call answers `409
-OPERATION_NOT_ALLOWED` — the release runs on its own once the review, if any,
-is decided.
+A consent is recorded once. A second call answers `409 OPERATION_NOT_ALLOWED` —
+the release runs on its own once the review, if any, is decided.
 
 ### 4. Source of funds
 
-An order whose fiat leg is worth **USD 50 000 or more** does not release until a
-reviewer has decided where the money came from. Below that there is no dossier
-and the three endpoints below answer `404 ORDER_NOT_FOUND`.
+An order whose fiat leg is worth at least `threshold_usd` — **USD 50 000**
+today — does not release until a reviewer has decided where the money came from.
+An order whose USD equivalent cannot be computed is treated as above it.
 
-Your customer supplies this on *your* screens, and you post it here. Below the
-authorisation line these are the same endpoints our own app uses: the same
-validation, the same store, the same case the reviewer reads. Two collectors
-feeding one review must not disagree about what the review is owed.
+Below the threshold there is no dossier: `source-of-funds`,
+`…/source-of-funds/declaration` and `…/source-of-funds/documents` answer
+`404 ORDER_NOT_FOUND`. `…/source-of-funds/requirements` still serves the
+catalogue, for any delayed order of yours.
+
+Your customer supplies the evidence on *your* screens and you post it here. Below
+the authorisation line these are the endpoints our own app uses: the same
+validation, the same store, the same case the reviewer reads.
 
 #### Read the dossier
 
@@ -334,8 +297,8 @@ X-API-Key: <api-key>
           "source_code": "salary",
           "mode": "one_of",
           "documents": ["employment_contract", "payslips", "employer_letter"],
-          "minimum_files": { "payslips": 2 },
-          "maximum_files": { "payslips": 3 }
+          "minimum_files": { "employment_contract": 1, "payslips": 2, "employer_letter": 1 },
+          "maximum_files": { "employment_contract": 1, "payslips": 3, "employer_letter": 1 }
         }
       ],
       "requires_statement": true,
@@ -352,26 +315,28 @@ X-API-Key: <api-key>
 }
 ```
 
+`requested_at` and `request_expires_at` appear at the top level while a reviewer
+has an open request: when they last asked for more, and when that request lapses.
+
 **`404` is an answer, not a failure.** It means this order never crossed the
 threshold and owes no dossier. It is also the answer for an order that is not
-yours, is not an off-ramp order, or is not one whose crypto you hold — one code
-for all four, so ids cannot be probed.
+yours or is not one whose crypto you hold — one code for all three, so ids cannot
+be probed. An on-ramp order answers `400 INVALID_REQUEST` instead.
 
-Some fields are served under two spellings (`documents` /
-`documents_provided`, `requested_documents` / `documents_requested`,
-`funds_flow_description` / `funds_flow`, `purpose_of_payment` / `purpose`,
-`sender_recipient_relationship` / `relationship`, `source_wallet_address` /
-`wallet_address`, `source_wallet_network` / `wallet_network`). Both carry the
-same value. Prefer the long spellings above; they are the column names and are
-what the reviewer's own screens use.
+Some fields are served under two spellings (`documents` / `documents_provided`,
+`requested_documents` / `documents_requested`, `funds_flow_description` /
+`funds_flow`, `purpose_of_payment` / `purpose`, `sender_recipient_relationship` /
+`relationship`, `source_wallet_address` / `wallet_address`,
+`source_wallet_network` / `wallet_network`, and `document_type` / `document_key`
+inside a `requested_documents` entry). Both carry the same value. Prefer the long
+spellings above; they are the column names the reviewer's own screens use.
 
 **The read is never fenced.** A case that has just been decided still answers,
 because you still have to show your customer the decision.
 
 #### The requirements catalogue
 
-Before a declaration exists there is no frozen contract to read, and you still
-have to render the form. Ask the catalogue:
+Render your form from the catalogue until a declaration exists and freezes one:
 
 ```http
 GET /api/v1/partner/orders/{order_id}/source-of-funds/requirements
@@ -391,7 +356,9 @@ X-API-Key: <api-key>
         "requiresExplanation": true,
         "requiresBankStatement": true,
         "statement": { "minMonths": 3, "maxAgeDays": 31 },
-        "baseDocuments": [],
+        "baseDocuments": [
+          { "key": "bank_statement", "label": "Personal account statement", "hint": "A PDF from your bank. It must show your name, the bank, the account number, dates including the year, and the balance." }
+        ],
         "groups": [
           {
             "mode": "one_of",
@@ -411,41 +378,42 @@ X-API-Key: <api-key>
 
 `?source_of_funds=salary` narrows it to one category; a code that does not exist
 answers `404 ORDER_NOT_FOUND`. Field names here are `camelCase` — this is the
-catalogue's own contract, not the dossier's.
+catalogue's own contract, not the dossier's. `requiresAddressScreening` is set on
+`crypto_assets` alone, and is why `source_wallet_address` is required there.
+Categories carrying `"legacy": true` are refused by the declaration endpoint and
+are served only so a dossier frozen under one can resolve its own label: drop them
+from your picker.
 
-Categories carrying `"legacy": true` are no longer offered and are refused by
-the declaration endpoint. They are served so a dossier frozen under one can
-still resolve its own label; drop them from your picker.
-
-The endpoint is keyed by order id like its siblings, so it answers only for an
-order that owes a dossier. It is a read of a static catalogue: safe to poll,
-and safe to cache against `revision`.
+This is a read of a static catalogue — safe to poll, and safe to cache against
+`revision`.
 
 `requirements_snapshot` on the dossier is the same catalogue **frozen** to what
 this case was opened under, and once a declaration exists that is the list to
-render instead. A case is judged by the rules it was opened under, not by
-today's catalogue: an operator editing a rule while cases are open cannot loosen
-an open one into approvable, nor tighten one into refusing a customer for a
-document that was never on their screen.
+render instead. An operator editing a rule while cases are open can therefore
+neither loosen an open one into approvable nor refuse a customer for a document
+that was never on their screen.
 
-- `documents[].mode` is `one_of` (any single document satisfies the group) or
-  `all_of` (every listed document is owed).
+- `documents[].mode` is `one_of` (any single document in the group satisfies it)
+  or `all_of` (every listed document is owed; such a group carries exactly one).
 - `documents[].documents` holds the `document_type` keys to upload under.
-- `minimum_files` / `maximum_files` apply to the evidence that is a pack rather
-  than a file — two or three payslips establish a pattern one cannot.
-- `requires_statement`, `statement_months`, `statement_max_age_days` describe the
+- `minimum_files` / `maximum_files` carry an entry for **every** key in the group.
+  Both are `1` unless the catalogue asks for a pack — two or three payslips
+  establish a pattern one cannot — and a `multiple` document with no published
+  ceiling gets `10`.
+- `requires_statement`, `statement_months`, `statement_max_months` (when the
+  category publishes an upper end) and `statement_max_age_days` describe the
   personal account statement (`bank_statement`), owed on every category except
   `crypto_assets`.
-- `requested_documents` is what a reviewer came back and asked for on top. Each
-  entry carries `document_type`, `label`, `reason` and `satisfied`.
-- `review_checks` is **always `[]`**. It is the reviewer's own checklist — what a
-  document is tested against — and published to an integrator it would be a
-  specification for passing a check rather than for meeting one. The key is kept
-  and emptied rather than dropped, so consumers mapping over it never meet a
-  second shape.
+- `requested_documents` is what a reviewer came back and asked for on top. Open
+  requests only; each entry carries `document_type`, `document_key`, `label`,
+  `reason`, `requested_at`, `satisfied`, and `policy` when that document has a
+  format or window rule of its own.
+- `review_checks` is **always `[]`** — the reviewer's checklist stays on the admin
+  plane. The key is kept and emptied rather than dropped, so consumers mapping
+  over it never meet a second shape.
 
-Upload against the keys in the snapshot, and read `expected_document_types` on
-an upload response if a key does not match.
+Upload against the keys in the snapshot, and read `expected_document_types` on an
+upload response if a key does not match.
 
 #### Submit the declaration
 
@@ -479,8 +447,8 @@ Answers with the whole dossier, in the shape above.
 | `sender_recipient_relationship` | no | Max 4000 characters. |
 
 `catalogue_revision` and the requirement contract are computed on the server and
-are never read from the request. Re-posting the declaration is allowed while the
-case is undecided and re-freezes the contract.
+are never read from the request. Re-posting is allowed while the case is
+undecided, and re-freezes the contract.
 
 #### Upload a document
 
@@ -493,20 +461,20 @@ Content-Type: multipart/form-data
 | Part | Required | Notes |
 | --- | --- | --- |
 | `file` | yes | The bytes. Max 15 MB, min 4096 bytes. |
-| `document_type` | yes | A key from `requirements_snapshot`, or from a `requested_documents` entry. |
+| `document_type` | yes | A key from `requirements_snapshot`, or from a `requested_documents` entry. An unrecognised key is **stored, not refused** — evidence in an AML case is not thrown away over its label — and `satisfies_requirement` reports what happened. |
 | `period_start` | no | `YYYY-MM-DD`. The period a statement covers. |
 | `period_end` | no | `YYYY-MM-DD`. Must not precede `period_start`. |
 
 **Bytes, not a reference.** A document named in a bucket of your own is evidence
-the reviewer who signs the case off can never open, so the file travels here and
-lands in the same private store our own uploads use.
+the reviewer who signs the case off can never open, so the file itself travels
+here and lands in the private store our own uploads use.
 
-Accepted formats are PDF, JPEG, PNG, HEIC, HEIF and WebP. The file is validated
-against **its own bytes**, not its declared type: a renamed archive, a document
-whose content type disagrees with its content, and anything a browser would
-execute are all refused. A personal account statement (`bank_statement`) must be
-the bank-issued PDF — a photograph of a screen cannot be checked for the account
-number, the period or the balance the requirement is written about.
+Accepted formats are PDF, JPEG, PNG, HEIC, HEIF and WebP, and each file is
+validated against **its own bytes**: a renamed archive, a file whose content type
+disagrees with its content, and anything a browser would execute are all refused.
+A personal account statement (`bank_statement`) must be the bank-issued PDF — a
+photograph of a screen cannot be checked for the account number, the period or the
+balance the requirement is written about.
 
 ```json
 {
@@ -524,22 +492,22 @@ number, the period or the balance the requirement is written about.
 }
 ```
 
+- `content_type` is read from the file's own bytes, not from what the request
+  called it.
 - `satisfies_requirement` answers whether this file moved the case forward.
   `false` is not an error — the file is stored either way — and
-  `expected_document_types` then lists what the case is actually waiting for.
-  The field is **absent** when nothing has been declared yet, because there is
-  no requirement to match against.
+  `expected_document_types` then lists what the case is waiting for. The field is
+  **absent** when nothing has been declared yet, there being no requirement to
+  match against.
 - `superseded_count` names how many earlier files of the same type this one
   replaced. A superseded file is kept, not deleted.
 - `case_status` is where the case landed; the last upload may have completed it.
-- Uploading the **same bytes under the same `document_type`** twice answers
+- The **same bytes under the same `document_type`** twice answers
   `409 INVALID_STATUS`.
 
 #### What the review decides
 
-`status` on the case moves through:
-
-| `status` | Meaning |
+| Case `status` | Meaning |
 | --- | --- |
 | `documents_required` | The declaration or its documents are still owed. |
 | `documents_submitted` | Everything the frozen contract asks for is in. |
@@ -550,26 +518,25 @@ number, the period or the balance the requirement is written about.
 | `rejected` | The crypto is returned to the customer; the order ends `cancelled`. |
 | `escalated` | Moved out of the ordinary queue. |
 
-Approval and your consent are two halves of one release, and **whichever
-arrives last performs it**. There is nothing to call after either.
+Approval and your consent are two halves of one release, and **whichever arrives
+last performs it**. There is nothing to call after either.
 
-**Writes are fenced; reads are not.** A declaration or an upload is accepted
-only while the order is still parked and the case is undecided. Outside that
-window both answer `409 INVALID_STATUS`.
+**Writes are fenced; reads are not.** A declaration or an upload is accepted only
+while the order is still parked and the case is undecided. Outside that window
+both answer `409 INVALID_STATUS`.
 
 ### 5. Follow the payout
 
-The release is the middle of a delayed order, not the end. `status` and six
-timestamps carry the rest. Every one of them is present on every off-ramp order
-response — `null` on an ordinary order, and `null` on a delayed one is a fact
-(that mark has not happened) rather than an absent field.
+The release is the middle of a delayed order, not the end. Every field below is
+present on every off-ramp order response, and a `null` mark is a fact — that step
+has not happened — rather than an absent field.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `delayed_settlement` | boolean | Whether this order settles T+1. Fixed when the order is created; a vendor changing their offer later does not change the order's class. |
-| `settlement_hours` | integer \| null | The promised window in whole hours. `null` on an instant order. |
-| `consent_deadline_at` | string \| null | When a **parked** order stops waiting for its consent — funding time plus the consent window. After it the ordinary payment-window sweep refunds the escrow. This is the only deadline that exists *before* the release, and the one to show your customer while asking them to sign. `null` on any order that is not parked, because by then the window has stopped meaning anything: it either released or it was refunded. |
-| `payout_deadline_at` | string \| null | `escrow_released_to_buyer_at` + the window: when the customer was told the money would be there by. `null` until the crypto has actually left escrow — a parked order waiting on a signature is not running late. |
+| `delayed_settlement` | boolean | Whether this order settles T+1. `false`, not `null`, on an ordinary order. Fixed at creation; a vendor changing their offer later does not change the order's class. |
+| `settlement_hours` | integer \| null | The promised window, rounded to the nearest whole hour, never below `1`. `null` on an instant order. |
+| `consent_deadline_at` | string \| null | When a **parked** order stops waiting for its consent — funding time plus the consent window, after which the ordinary payment-window sweep refunds the escrow. The only deadline that exists *before* the release, and the one to show your customer while asking them to sign. `null` on any order that is not parked, because by then it either released or it was refunded. |
+| `payout_deadline_at` | string \| null | `escrow_released_to_buyer_at` + the window: when the customer was told the money would be there by. `null` until the crypto has left escrow — a parked order waiting on a signature is not running late. |
 | `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto left the vendor's wallet for the payout provider. **A refund to the customer stops being possible at this mark.** |
 | `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox authorised the vendor to send the fiat. Never set before the mark above. |
 | `delayed_settlement_fiat_payout_submitted_by_provider_at` | string \| null | The provider accepted the payout and put it on the banking rail. |
@@ -583,17 +550,16 @@ refunded **or** sent to the provider. A new payment after a return clears
 
 ## Status on a delayed order
 
-Two values are added to the order status enum. Both are unreachable for an
-ordinary order, so an integration that never opens a delayed order will never
-see either.
+Two values are added to the order status enum, both unreachable for an ordinary
+order.
 
 | Status | Meaning |
 | --- | --- |
 | `settlement_in_progress` | The crypto has left escrow and the fiat has not arrived. `completed` here would be a lie you would act on. |
 | `returned` | The bank sent the payout back and no fresh authorisation stands. Distinct from `cancelled`: nothing has been given back to anyone and the order is going to be paid again. |
 
-**Precedence.** More than one mark can be set at once, and the order they are
-read in is the whole meaning. On a delayed order the status is decided as:
+**Precedence.** More than one mark can be set at once, and the order they are read
+in is the whole meaning:
 
 1. `delayed_settlement_fiat_paid_to_customer_at` set → **`completed`**
 2. else `delayed_settlement_crypto_refunded_to_customer_at` set → **`cancelled`**
@@ -603,9 +569,9 @@ read in is the whole meaning. On a delayed order the status is decided as:
 5. before the release, the ordinary mapping applies — a parked delayed order is
    `crypto_received` like any other.
 
-Step 3 is conditioned on the authorisation being absent on purpose. A standing
-return with a fresh authorisation on top of it is not a returned order; it is an
-order being paid a second time, which reads as `settlement_in_progress`.
+Step 3 is conditioned on the authorisation being absent on purpose: a standing
+return with a fresh authorisation on top of it is an order being paid a second
+time, which reads as `settlement_in_progress`.
 
 ### Filtering the list
 
@@ -615,16 +581,12 @@ the four release-bearing filters mean:
 | `status=` | Returns |
 | --- | --- |
 | `completed` | Ordinary released orders, and delayed orders whose fiat actually reached the customer. A delayed order that has released but not paid is **not** here — that is the point. |
-| `settlement_in_progress` | Delayed, released, not yet resolved either way. A standing bank return with no fresh authorisation belongs under `returned`. |
+| `settlement_in_progress` | Delayed, released, not yet resolved either way. |
 | `returned` | The bank sent the payout back and nobody has authorised another attempt yet. |
-| `cancelled` | Orders that stopped before settlement, as before, **plus** delayed orders whose crypto was refunded to the customer after the release. |
+| `cancelled` | Orders that stopped before settlement, as before, **plus** delayed orders whose crypto was refunded after the release. Such an order reports `cancelled` while still sitting in a release state internally. |
 
-The four are disjoint, and between them they cover every released delayed order:
-the set a filter returns is exactly the set whose own `status` field reports
-that value. The last row is the one worth saying out loud — a delayed order
-refunded after the release reports `cancelled` while still sitting in a release
-state internally, and is returned under `status=cancelled` like any other
-stopped order.
+The four are disjoint and cover every released delayed order: the set a filter
+returns is exactly the set whose own `status` field reports that value.
 
 ### Timeline
 
@@ -641,21 +603,16 @@ timeline is unchanged, entry for entry.
 | `returned` | `Fiat returned by the bank` |
 | `cancelled` | `Crypto refunded to the customer` |
 
-The release entry reads `settlement_in_progress` rather than `Order completed`:
-on a delayed order the crypto leaving escrow is the middle of the story, and an
-entry saying otherwise three days before the customer is paid is the same wrong
-answer the status is fenced against. Consecutive entries are collapsed by status
-**and** description here, so the three intermediate facts — all of which carry
-`settlement_in_progress` — each keep their own line.
+The release entry reads `settlement_in_progress` rather than `Order completed`.
+Consecutive entries are collapsed by status **and** description here, so the three
+intermediate facts — all carrying `settlement_in_progress` — each keep their own
+line.
 
 ## Webhooks
 
-`order.status.changed` fires at each of the marks. This matters because on a
-delayed order the underlying status does **not** move for the whole second half
-of the order's life: without these you would hear nothing between the release
-and the payment, which is exactly the window your customer is asking about.
-
-Emission points:
+`order.status.changed` fires at each mark. The underlying status does **not** move
+for the whole second half of a delayed order's life, so without these you would
+hear nothing between the release and the payment.
 
 | Fires when | `data.status` |
 | --- | --- |
@@ -666,15 +623,16 @@ Emission points:
 | Bank returned the payout | `returned` |
 | Crypto refunded to the customer | `cancelled` |
 
-On a delayed order `data` carries nine of the order payload's T+1 fields —
-`delayed_settlement`, `settlement_hours`, `payout_deadline_at` and the six
-`delayed_settlement_*_at` marks — on **every** event for that order, not only
-the one each mark triggered. Four of them report the same status, so without the
-timestamps three `settlement_in_progress` events in a day are indistinguishable.
+`data` carries nine of the order payload's T+1 fields — `delayed_settlement`,
+`settlement_hours`, `payout_deadline_at` and the six `delayed_settlement_*_at`
+marks — on **every** event for that order, not only the one each mark triggered.
+Three of them report the same status, so without the timestamps three
+`settlement_in_progress` events in a day are indistinguishable.
 
-`consent_deadline_at` is **not** among them: every one of these events fires
-after the release, and the consent window is `null` by then on every order that
-could produce one. Read it on the order while the order is parked.
+A mark that has not happened is **absent** here, not `null` — the opposite of the
+order payload. `consent_deadline_at` is never among them: every one of these
+events fires after the release, and the consent window is `null` by then. Read it
+on the order while the order is parked.
 
 ```json
 {
@@ -691,47 +649,48 @@ could produce one. Read it on the order while the order is parked.
     "fiat_currency": "CNY",
     "provider": "licensed",
     "payment_details_id": "987",
+    "partner_fee": "30",
+    "partner_fee_pct": 1,
     "delayed_settlement": true,
     "settlement_hours": 24,
     "payout_deadline_at": "2026-09-19T12:07:55Z",
-    "delayed_settlement_crypto_sent_to_provider_at": "2026-09-19T08:14:02Z",
-    "delayed_settlement_fiat_payout_authorized_by_admin_at": null,
-    "delayed_settlement_fiat_payout_submitted_by_provider_at": null,
-    "delayed_settlement_fiat_paid_to_customer_at": null,
-    "delayed_settlement_fiat_returned_by_bank_at": null,
-    "delayed_settlement_crypto_refunded_to_customer_at": null
+    "delayed_settlement_crypto_sent_to_provider_at": "2026-09-19T08:14:02Z"
   }
 }
 ```
 
-These fields are **omitted entirely on an ordinary order**, so an ordinary
-order's payload is byte-for-byte what it was. `delayed_settlement` is `true` or
-absent, never `false` — its presence identifies the class.
+The nine are **omitted entirely on an ordinary order**, whose payload is
+byte-for-byte what it was: `delayed_settlement` is `true` or absent, never
+`false`, so its presence identifies the class.
 
 **A bank return can happen more than once.** Returned, re-authorised, returned
 again is a normal sequence, and each one is its own event. `event_id` is unique
-**per emission**, not per mark: de-duplicate on `event_id`, never on the mark,
-or the second return will be silently dropped. No subscription change is needed;
-if you receive `order.status.changed` today you will receive these.
+**per emission**, not per mark: de-duplicate on `event_id`, never on the mark, or
+the second return is silently dropped. No subscription change is needed; if you
+receive `order.status.changed` today you will receive these.
 
 ## Errors
 
-The dossier endpoints answer in the standard partner envelope. Their codes are
-derived from the status, so the four groups below are the whole vocabulary.
+Every endpoint on this page answers in the standard partner envelope. The dossier
+endpoints derive their code from the status, so this is the whole vocabulary.
 
 | `error.code` | Status | When |
 | --- | --- | --- |
-| `INVALID_REQUEST` | 400 | Malformed `order_id`; malformed body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction. |
-| `ORDER_NOT_FOUND` | 404 | No such order, not yours, not an off-ramp order, not one whose crypto you hold — or, on the dossier endpoints, an order that owes no dossier. |
+| `INVALID_REQUEST` | 400 | Malformed `order_id`; malformed body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the order is an on-ramp order. |
+| `ORDER_NOT_FOUND` | 404 | No such order, not yours, not one whose crypto you hold — or, on the dossier endpoints, an order that owes no dossier, or a `source_of_funds` category that does not exist. |
 | `INVALID_STATUS` | 409 | The order does not settle T+1; it is not parked waiting for a consent; it has no funded escrow. On the dossier endpoints: the order is no longer waiting for your information, the case is already decided, or the same file is already on the case under that `document_type`. |
 | `OPERATION_NOT_ALLOWED` | 409 | The order is under review or held, and no crypto may be moved; or the consent has already been given. |
 | `INVALID_REQUEST` | 413 | The file is larger than 15 MB. |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes disagree with its content type, or a `bank_statement` was sent as something other than a bank-issued PDF. `error.details.allowed` lists what may be sent. |
-| `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over length; `document_type` or `file` missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is under 4096 bytes. |
+| `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over length; `document_type` or `file` missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4096 bytes. |
 | `TRANSACTOR_ERROR` | 502 | The consent signature could not be accepted. A signature from a key that does not own the escrow and a briefly unreachable escrow service are indistinguishable from here — verify `signer_address`, then retry. |
 | `INTERNAL_ERROR` | 500 / 502 / 503 | The dossier, the document store or the release transaction could not be reached. The status carries the retryability. |
 
+413, 415 and 422 share `INVALID_REQUEST` deliberately: no code in this API is
+named after an HTTP status. Branch on the status — retry smaller, send a different
+type, fix the field — and read the message for the specific problem.
+
 After a `502`, re-fetch `settlement-consent-parameters` before signing again. If
 the consent did land, that GET answers `409 OPERATION_NOT_ALLOWED` and there is
-nothing left to do; a second signature against a Safe nonce that has already
-been spent is the one failure worth avoiding here.
+nothing left to do; a second signature against a Safe nonce that has already been
+spent is the one failure worth avoiding here.
