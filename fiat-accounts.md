@@ -5,8 +5,7 @@ paid into — and read what lands on it.
 
 **What you will build.** By the end of this guide one of your customers holds a
 real EUR or GBP account in their own name, you can show them where to send
-money, and you can read the balance, the ledger and the bank transfers in and out
-of the account.
+money, and you can read the balance and every transaction on the account.
 
 **What you need first.** A partner API key, and the `retail` product activated on
 your partner — plus the `issue_retail_accounts` capability if you want to open
@@ -97,7 +96,7 @@ account.
 4. Submit the customer's identity: `POST /users/{user_uuid}/identification`, then
    poll `GET /users/{user_uuid}/identification` until it approves.
 5. Issue the account: `POST /users/{user_uuid}/fiat-accounts`.
-6. Read balances, ledger and payments as deposits arrive.
+6. Read balances and transactions as deposits arrive.
 
 ### 1. See what you can offer
 
@@ -262,8 +261,7 @@ settles rather than treating it as a failure.
 ```http
 GET /api/v1/partner/users/{user_uuid}/fiat-accounts                        # this customer's accounts
 GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}                   # one account, full details
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/ledger?page=N     # every balance change
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/payments?page=N   # bank transfers in and out
+GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/transactions?page=N  # everything that moved the balance
 ```
 
 The list carries `iban_last4` (or `account_number_last4` and `sort_code` for a
@@ -275,23 +273,24 @@ read that failed is reported rather than shown as zero.
 remove the account, its history, or any money still behind it. Closed accounts
 keep appearing in the list with `status: "closed"` and answer every read.
 
-### Ledger and payments
+### Transactions
 
-These are two views of the same money, not two copies of it.
+One row is one movement of the balance, newest first.
 
-- **Ledger** lists every change to the balance: bank transfers, and also
-  conversions and internal transfers such as a deposit collected into your
-  master account. Use it to explain the balance.
-- **Payments** lists bank transfers only, in both directions. `kind` is
-  `incoming` or `outgoing`, and `recipient`, `iban` and `bic` describe the other
-  side: the payer on an incoming payment, the payee on an outgoing one. Use it
-  to show who paid whom.
+- **Bank transfers in and out** carry the other side of the transfer under
+  `counterparty`: the payer on money in, the payee on money out, with the
+  identifiers the transfer was addressed by. `status` is where that transfer
+  stands, and `payment_rail` is how it travelled.
+- **Everything else that moved the balance** is here too: conversions, fees, and
+  internal transfers such as a deposit collected into your master account. Those
+  rows carry no counterparty, because there is none.
 
-They link through ids: the ledger entry a payment produced carries the payment's
-`id` in `reference`.
+`type` says which of the two a row is (`bank_transfer`, `conversion`,
+`internal_transfer`, `fee`, `crypto_transfer`, `other`), `direction` is `in` or
+`out`, and `amount` is signed — a debit is negative.
 
-Both are paged with `?page=N`. `pagination` is present only when the bank
-returns it; when it is absent, request the next page until one comes back empty.
+Paged with `?page=N`. `pagination` is present only when the bank returns it;
+when it is absent, request the next page until one comes back empty.
 
 ## What happens when a deposit lands
 

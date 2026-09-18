@@ -5060,20 +5060,20 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
-  /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}/ledger:
+  /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}/transactions:
     get:
       tags:
         - User Management
-      summary: Fiat account ledger
-      operationId: getFiatAccountLedger
+      summary: Fiat account transactions
+      operationId: getFiatAccountTransactions
       description: |
-        One page of the account's ledger: every entry that changed its balance. Bank transfers in
-        and out are here, and so are movements that are not bank transfers, such as conversions and
-        internal transfers (for example, a deposit collected into your master account).
+        One page of everything that moved the account's balance, newest first. Bank transfers in and
+        out are here, and so are the movements that are not transfers: conversions, fees, and
+        internal transfers such as a deposit collected into your master account.
 
-        For the bank transfers themselves, with the payer or payee, use
-        `GET /users/{user_uuid}/fiat-accounts/{account_id}/payments`. A ledger entry caused by a
-        transfer carries that payment's `id` in `reference`.
+        A transfer carries the other side of it on the same row, under `counterparty`: the payer on
+        money in, the payee on money out, with the identifiers that transfer was addressed by. There
+        is no second list to reconcile against, and one row is one movement.
 
         `pagination` is present only when the bank returns page metadata. When it is absent, the
         number of pages is unknown: request the next page until one comes back empty.
@@ -5092,75 +5092,15 @@ paths:
           example: 2
       responses:
         '200':
-          description: Ledger page
+          description: Transactions page
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FiatLedgerResponse'
+                $ref: '#/components/schemas/FiatTransactionsResponse'
         '404':
           description: |
             `CUSTOMER_NOT_FOUND`, or `FIAT_ACCOUNT_NOT_FOUND` when this customer holds no such
-            account.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '422':
-          description: The account has not finished being opened (`ACCOUNT_NOT_PROVISIONED`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '502':
-          description: The bank could not be read (`BANKING_ERROR`, `BANKING_UNAVAILABLE`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-
-  /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}/payments:
-    get:
-      tags:
-        - User Management
-      summary: Fiat account payments
-      operationId: getFiatAccountPayments
-      description: |
-        One page of bank transfers on the account, in both directions. `kind` says which:
-        `incoming` (someone paid into the account) or `outgoing` (money sent from it).
-
-        The other side of the transfer is `recipient` — the payer on an incoming payment, the payee
-        on an outgoing one — plus the identifiers the transfer carried: `iban` and `bic` on SEPA,
-        `account_number` and `sort_code` on UK Faster Payments.
-
-        When a payment changes the balance, the ledger entry it produced
-        (`GET /users/{user_uuid}/fiat-accounts/{account_id}/ledger`) carries this payment's `id` in
-        `reference`.
-
-        `pagination` works as on the ledger: when it is absent, request the next page until one
-        comes back empty.
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
-        - $ref: '#/components/parameters/FiatAccountId'
-        - name: page
-          in: query
-          required: false
-          description: 1-based page number. Omitted or unparseable means the first page.
-          schema:
-            type: integer
-            minimum: 1
-      responses:
-        '200':
-          description: Payments page
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FiatPaymentsResponse'
-        '404':
-          description: |
-            `CUSTOMER_NOT_FOUND`, or `FIAT_ACCOUNT_NOT_FOUND` when this customer holds no such
-            account.
+            account. An account held by a different customer answers the same way.
           content:
             application/json:
               schema:
@@ -7718,86 +7658,88 @@ components:
         pending: { type: string, example: "0.00" }
         total: { type: string, example: "1250.00" }
 
-    FiatLedgerEntry:
+    FiatTransaction:
       type: object
-      description: One change to the account's balance.
+      description: |
+        One movement of the account's balance. A bank transfer also carries the other side of it;
+        a conversion, a fee or an internal transfer has no counterparty to carry.
       properties:
-        id: { type: string }
+        id:
+          type: string
+          description: The transaction id. Opaque, and stable across pages.
+          example: "5f1b2c9a"
         type:
           type: string
           enum: [bank_transfer, conversion, internal_transfer, fee, crypto_transfer, other]
           description: |
-            What produced the entry. `bank_transfer` is a payment into or out of the account,
+            What moved the money. `bank_transfer` is a payment into or out of the account,
             `internal_transfer` a movement between Unigox-held accounts (a deposit collected into
             your master account, for one), `conversion` a currency conversion, `fee` a charge.
             `other` is anything else the bank books; treat it as descriptive.
           example: bank_transfer
+        direction:
+          type: string
+          enum: [in, out]
+          description: Which way the money went, from the sign of the amount.
+          example: in
         amount:
           type: string
           description: Signed. A debit is negative.
-          example: "-500.00"
-        currency: { type: string, example: EUR }
+          example: "500.00"
+        currency:
+          type: string
+          example: EUR
+        status:
+          type: string
+          description: |
+            On a bank transfer, where that transfer stands: `initiated`, `pending`,
+            `pending_approval`, `ready_to_release`, `sent`, `confirmed`, `completed`, `blocked`,
+            `rejected` or `failed`. Money in that landed reads `confirmed`; money out that left
+            reads `sent`. Absent on a movement with no separate lifecycle.
+          example: confirmed
+        counterparty:
+          $ref: '#/components/schemas/FiatCounterparty'
+        payment_rail:
+          type: string
+          description: On a bank transfer, the network it went over, as the bank reports it.
+        description:
+          type: string
+          description: What the movement was sent with, when it carried anything.
         reference:
           type: string
           description: |
-            The id of the operation that produced the entry. For a bank transfer it is the `id` of
-            that payment in `GET /users/{user_uuid}/fiat-accounts/{account_id}/payments`. Several
-            entries can share one `reference` when an operation moves more than one amount.
-        note:
+            The id of the operation behind the transaction, for reconciling against a statement.
+        created_at:
           type: string
-          description: The description attached to the operation, when there is one.
-        created_at: { type: string, format: date-time }
+          format: date-time
 
-    FiatPayment:
+    FiatCounterparty:
       type: object
-      description: One bank transfer into or out of the account.
+      description: |
+        The other side of a bank transfer: the payer on money in, the payee on money out. Present on
+        `bank_transfer` transactions, and only for as much as the transfer carried.
       properties:
-        id:
+        name:
           type: string
-          description: The payment id. Ledger entries this payment produced carry it in `reference`.
-        amount: { type: string, example: "500.00" }
-        currency: { type: string, example: EUR }
-        kind:
-          type: string
-          enum: [incoming, outgoing]
-          description: '`incoming`: paid into the account. `outgoing`: sent from it.'
-          example: incoming
-        status:
-          type: string
-          enum: [initiated, pending, pending_approval, ready_to_release, sent, confirmed, completed, blocked, rejected, failed]
-          description: |
-            Where the payment stands. An incoming payment that credited the account reads
-            `confirmed`; an outgoing payment that left the account reads `sent`.
-          example: confirmed
-        recipient:
-          type: string
-          description: Name of the other side. The payer on an incoming payment, the payee on an outgoing one.
-        description:
-          type: string
-          description: The transfer's description (remittance text).
-        payment_rail:
-          type: string
-          description: The network the transfer went over, as the bank reports it.
+          example: ACME LTD
         iban:
           type: string
-          description: The other side's IBAN, on a transfer addressed by one.
-          example: "NL91ABNA0417164300"
+          description: On a transfer addressed by an IBAN.
+          example: "NL02ABNA0123456789"
         bic:
           type: string
-          description: The other side's BIC, on a transfer addressed by one.
+          description: On a transfer addressed by a BIC.
           example: ABNANL2A
         account_number:
           type: string
           description: |
-            The other side's local account number, on a transfer that carries no IBAN (a UK Faster
-            Payments one). Present instead of `iban`.
+            On a transfer that carries no IBAN (a UK Faster Payments one). Present instead of
+            `iban`.
           example: "25976129"
         sort_code:
           type: string
-          description: The other side's sort code, present instead of `bic` on the same transfers.
+          description: Present instead of `bic` on the same transfers.
           example: "23-08-01"
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
 
     FiatPagination:
       type: object
@@ -7910,7 +7852,7 @@ components:
                 Present, and `true`, when a submission found this customer already registered as an
                 account holder. Nothing was sent to the bank a second time.
 
-    FiatLedgerResponse:
+    FiatTransactionsResponse:
       type: object
       required: [success, data]
       properties:
@@ -7918,25 +7860,10 @@ components:
         data:
           type: object
           properties:
-            entries:
+            transactions:
               type: array
               items:
-                $ref: '#/components/schemas/FiatLedgerEntry'
-            pagination:
-              $ref: '#/components/schemas/FiatPagination'
-
-    FiatPaymentsResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            payments:
-              type: array
-              items:
-                $ref: '#/components/schemas/FiatPayment'
+                $ref: '#/components/schemas/FiatTransaction'
             pagination:
               $ref: '#/components/schemas/FiatPagination'
 
