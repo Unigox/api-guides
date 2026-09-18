@@ -4721,8 +4721,8 @@ paths:
 
         `requirements_snapshot.documents[].mode` is `one_of` (any single document satisfies the group)
         or `all_of` (every listed document is owed); `documents[].documents` holds the `document_type`
-        keys to upload under. There is no partner endpoint that lists the catalogue ahead of a case —
-        until a declaration exists there is no frozen contract to serve.
+        keys to upload under. Before a declaration exists there is no frozen contract to read — render
+        the form from `GET …/source-of-funds/requirements` until there is one.
 
         Several fields are served under two spellings (`documents` / `documents_provided`,
         `requested_documents` / `documents_requested`, `funds_flow_description` / `funds_flow`,
@@ -4813,7 +4813,7 @@ paths:
                     statement_months: 3
                     statement_max_age_days: 31
                     requires_explanation: true
-                    review_checks: ["regular_credits_one_payer", "amounts_match_contract"]
+                    review_checks: []
                     frozen_at: "2026-09-18T12:06:44Z"
                   decided_at: null
                   rejection_reason_code: ""
@@ -4849,6 +4849,129 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '503':
           description: Source-of-funds review is not available. Nothing was changed; retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/source-of-funds/requirements:
+    get:
+      tags:
+        - Orders
+      summary: Get the source-of-funds catalogue
+      description: |
+        **Delayed settlement (T+1) only.** The document catalogue for this order: which categories may
+        be declared, which documents each one owes, and how much statement history it asks for.
+
+        Render your form from this **before** a declaration exists. Until one is posted the dossier
+        carries no frozen requirement to read that from, and guessing the keys is how a partner uploads
+        evidence against a type no requirement names.
+
+        `?source_of_funds=` narrows the answer to one category. A code that does not exist answers
+        `404`.
+
+        Field names here are `camelCase` — this is the catalogue's own contract, not the dossier's.
+
+        Categories carrying `legacy: true` are no longer offered and are refused by the declaration
+        endpoint; they are served so a dossier frozen under one can still resolve its own label. Drop
+        them from your picker.
+
+        **The customer projection, never the reviewer's.** `reviewChecks` — what a document is tested
+        against — is not served here, for the same reason `requirements_snapshot.review_checks` is
+        always empty: published to an integrator it is a specification for passing a check rather than
+        for meeting one.
+
+        Keyed by order id like its siblings, so it answers only for an order that owes a dossier. It is
+        a read of a static catalogue: safe to poll, and safe to cache against `revision`.
+      operationId: getPartnerSourceOfFundsRequirements
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        - name: source_of_funds
+          in: query
+          required: false
+          description: Narrow the answer to one category. Omit for the whole catalogue.
+          schema:
+            type: string
+          example: salary
+      responses:
+        '200':
+          description: The catalogue
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          revision:
+                            type: integer
+                            description: The highest rule revision in the catalogue. Cache against it.
+                          categories:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/PartnerSourceOfFundsCategory'
+              example:
+                success: true
+                data:
+                  revision: 5
+                  categories:
+                    - code: "salary"
+                      label: "Salary or wages"
+                      description: "Regular income from an employer."
+                      requiresExplanation: true
+                      requiresBankStatement: true
+                      statement:
+                        minMonths: 3
+                        maxAgeDays: 31
+                      baseDocuments: []
+                      groups:
+                        - mode: "one_of"
+                          documents:
+                            - key: "employment_contract"
+                              label: "Employment contract"
+                            - key: "payslips"
+                              label: "2–3 recent payslips"
+                              multiple: true
+                              minFiles: 2
+                              maxFiles: 3
+                            - key: "employer_letter"
+                              label: "Letter from your employer"
+                      revision: 5
+        '400':
+          description: Malformed `order_id`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: >-
+            No such order, not yours, or an order that owes no dossier — or `source_of_funds` names a
+            category that does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: "No source-of-funds category is called lottery"
+        '503':
+          description: Source-of-funds review is not available. Retry.
           content:
             application/json:
               schema:
@@ -5254,12 +5377,14 @@ paths:
             - `settlement_in_progress` — delayed, released, and not yet resolved either way. A
               standing bank return with no fresh authorization belongs under `returned`
             - `returned` — the bank sent the payout back and nobody has authorized another attempt
-            - `cancelled` — orders that stopped before settlement, as before
+            - `cancelled` — orders that stopped before settlement, as before, **plus** delayed orders
+              whose crypto was refunded to the customer after the release
 
-            **Known gap:** `status=cancelled` does not return a delayed order whose crypto was refunded
-            to the customer *after* the release. That order reports `cancelled` on its own payload but
-            still sits in a release status, which the `cancelled` candidate set does not cover. Read
-            `delayed_settlement_crypto_refunded_to_customer_at` on the order for that case.
+            The four are disjoint and between them cover every released delayed order, so the set a
+            filter returns is exactly the set whose own `status` field reports that value. The last is
+            worth saying out loud: a delayed order refunded after the release reports `cancelled` while
+            still sitting in a release state internally, and is returned under `status=cancelled` like
+            any other stopped order.
           schema:
             type: string
             enum: [created, awaiting_liquidity_provider, awaiting_crypto_transfer_authorization, crypto_transfer_authorization_pending, crypto_received, awaiting_fiat_received_confirmation, fiat_received_confirmed, crypto_release_pending, completed, cancelled, failed, price_changed_requote_needed, settlement_in_progress, returned]
@@ -7753,9 +7878,11 @@ components:
               "nothing to do"
             - `null` — no required action (waiting for buyer or system)
 
-            **On `GET /api/v1/partner/orders` the T+1 hint is not refined.** A list read answers
-            `sign_settlement_consent` for every parked delayed order, because resolving the real answer
-            costs a query per row. The single-order read resolves it. Read the order itself before acting.
+            `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute this
+            identically, so a list row and the order page never disagree about what an order is waiting
+            for. If a lookup behind the T+1 hint fails, both fall back to `sign_settlement_consent` —
+            the safe direction, since a partner who has already signed learns nothing new from being
+            asked again, whereas `await_review` on an order nobody signed waits forever.
           enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, sign_settlement_consent, submit_source_of_funds, await_review, null]
           example: authorize_crypto_transfer
         action_required:
@@ -7831,8 +7958,9 @@ components:
             On a parked **delayed settlement (T+1)** order whose crypto you hold, `confirm-fiat-received`
             is **removed** and `settlement-consent` takes its place. The fiat has not been paid and
             cannot have been — that is the whole product — and the endpoint behind that action refuses a
-            delayed order for exactly that reason. The single-order read withdraws `settlement-consent`
-            once the consent is in; a list read leaves it advertised.
+            delayed order for exactly that reason. `settlement-consent` is withdrawn once the consent is
+            in — what is left is a review nobody on this API can hurry — and the list and the
+            single-order read agree about that, so a listed action is one the endpoint will accept.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
             because the crypto is the end user's and every action endpoint answers `404
@@ -8182,6 +8310,107 @@ components:
             `settlement_in_progress` each keep their own line.
           example: "Order created"
 
+    PartnerSourceOfFundsCategory:
+      type: object
+      description: |
+        One category of the source-of-funds catalogue, as
+        `GET /api/v1/partner/orders/{order_id}/source-of-funds/requirements` serves it. Field names are
+        `camelCase` here — this is the catalogue's own contract. `reviewChecks`, the reviewer's list of
+        what each document is tested against, is never served on this plane.
+      properties:
+        code:
+          type: string
+          description: The value to send as `source_of_funds` on the declaration.
+          example: salary
+        label:
+          type: string
+          example: "Salary or wages"
+        description:
+          type: string
+          example: "Regular income from an employer."
+        requiresExplanation:
+          type: boolean
+          description: True for every category — a file whose entire content is a dropdown value is not a file.
+        requiresBankStatement:
+          type: boolean
+          description: >-
+            Whether a personal account statement (`bank_statement`) is owed. False only for
+            `crypto_assets`, where the money moves exchange to wallet and may never touch a bank.
+        statement:
+          type: object
+          nullable: true
+          description: The window the personal account statement must cover. Absent when none is owed.
+          properties:
+            minMonths:
+              type: integer
+              description: How much history the statement must show.
+            maxMonths:
+              type: integer
+              description: The upper end of the requested range. Longer evidence is still fine.
+            maxAgeDays:
+              type: integer
+              description: How stale the last transaction may be.
+        baseDocuments:
+          type: array
+          description: Documents owed by this category outside any group.
+          items:
+            $ref: '#/components/schemas/PartnerSourceOfFundsCatalogueDocument'
+        groups:
+          type: array
+          description: How the rest of the evidence combines.
+          items:
+            type: object
+            properties:
+              mode:
+                type: string
+                enum: [one_of, all_of]
+                description: >-
+                  `one_of` — any single document in the group satisfies it, as with salary, where a
+                  contract, payslips or an employer letter each establish the same fact. `all_of` —
+                  every listed document is owed, as with business income, where the registration says
+                  the activity exists and the tax return says what it earned.
+              documents:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PartnerSourceOfFundsCatalogueDocument'
+        requiresAddressScreening:
+          type: boolean
+          description: >-
+            Set for `crypto_assets` alone: with no banking trail behind it, screening the on-chain
+            sender is the primary control, which is why `source_wallet_address` is required there.
+        legacy:
+          type: boolean
+          description: >-
+            A retired category. Served so a dossier frozen under it can still resolve its own label,
+            but refused by the declaration endpoint — drop it from your picker.
+        revision:
+          type: integer
+          description: Bumped when this category's wording or requirements change.
+
+    PartnerSourceOfFundsCatalogueDocument:
+      type: object
+      description: One piece of evidence a customer can be asked for.
+      properties:
+        key:
+          type: string
+          description: >-
+            Stable, and the `document_type` an upload is filed under. These are never renamed: they are
+            written into an AML record and into a reviewer's request.
+          example: payslips
+        label:
+          type: string
+          example: "2–3 recent payslips"
+        hint:
+          type: string
+          description: What a good copy of this document shows.
+        multiple:
+          type: boolean
+          description: Whether this evidence is a pack rather than a single file.
+        minFiles:
+          type: integer
+        maxFiles:
+          type: integer
+
     PartnerSourceOfFundsDeclaration:
       type: object
       description: |
@@ -8484,7 +8713,12 @@ components:
               type: array
               items:
                 type: string
-              description: The keys of the checks this case must satisfy.
+              description: >-
+                **Always `[]`.** The reviewer's own checklist — what a document is tested against —
+                which published to an integrator would be a specification for passing a check rather
+                than for meeting one. The key is kept and emptied rather than dropped, so a consumer
+                mapping over it never meets a second shape.
+              example: []
             frozen_at:
               type: string
               format: date-time

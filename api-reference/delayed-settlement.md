@@ -111,13 +111,17 @@ buyer has not paid yet. What tells them apart is `next_action`:
 `allowed_actions` is rewritten to match. On a parked delayed order whose crypto
 you hold, `confirm-fiat-received` is **removed** — the fiat has not been paid
 and cannot have been, and the endpoint behind it refuses a delayed order for
-that reason — and `settlement-consent` takes its place.
+that reason — and `settlement-consent` takes its place. Once the consent is in,
+`settlement-consent` is withdrawn: what is left is a review nobody on this API
+can hurry, and a second POST would be refused as already-consented.
 
-**On `GET /api/v1/partner/orders` the hint is not refined.** The list answers
-`sign_settlement_consent` for every parked delayed order, because resolving the
-real answer costs a query per row. The single-order read resolves it, and also
-withdraws `settlement-consent` from `allowed_actions` once the consent is in.
-Read the order itself before acting on either field.
+`GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute
+both fields identically, so a list row and the order page never disagree about
+what an order is waiting for. If either lookup behind the hint fails, both fall
+back to `sign_settlement_consent` and leave `settlement-consent` advertised —
+the safe direction, since a partner who has already signed learns nothing new
+from being asked again, whereas `await_review` on an order nobody signed waits
+forever.
 
 ### 2. Get the consent parameters
 
@@ -318,7 +322,7 @@ X-API-Key: <api-key>
       "statement_months": 3,
       "statement_max_age_days": 31,
       "requires_explanation": true,
-      "review_checks": ["regular_credits_one_payer", "amounts_match_contract"],
+      "review_checks": [],
       "frozen_at": "2026-09-18T12:06:44Z"
     },
     "decided_at": null,
@@ -346,11 +350,63 @@ because you still have to show your customer the decision.
 
 #### The requirements catalogue
 
-`requirements_snapshot` is the requirement contract **frozen** when the
-declaration was accepted, and it is the list to render. A case is judged by the
-rules it was opened under, not by today's catalogue: an operator editing a rule
-while cases are open cannot loosen an open one into approvable, nor tighten one
-into refusing a customer for a document that was never on their screen.
+Before a declaration exists there is no frozen contract to read, and you still
+have to render the form. Ask the catalogue:
+
+```http
+GET /api/v1/partner/orders/{order_id}/source-of-funds/requirements
+X-API-Key: <api-key>
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "revision": 5,
+    "categories": [
+      {
+        "code": "salary",
+        "label": "Salary or wages",
+        "description": "Regular income from an employer.",
+        "requiresExplanation": true,
+        "requiresBankStatement": true,
+        "statement": { "minMonths": 3, "maxAgeDays": 31 },
+        "baseDocuments": [],
+        "groups": [
+          {
+            "mode": "one_of",
+            "documents": [
+              { "key": "employment_contract", "label": "Employment contract" },
+              { "key": "payslips", "label": "2–3 recent payslips", "multiple": true, "minFiles": 2, "maxFiles": 3 },
+              { "key": "employer_letter", "label": "Letter from your employer" }
+            ]
+          }
+        ],
+        "revision": 5
+      }
+    ]
+  }
+}
+```
+
+`?source_of_funds=salary` narrows it to one category; a code that does not exist
+answers `404 ORDER_NOT_FOUND`. Field names here are `camelCase` — this is the
+catalogue's own contract, not the dossier's.
+
+Categories carrying `"legacy": true` are no longer offered and are refused by
+the declaration endpoint. They are served so a dossier frozen under one can
+still resolve its own label; drop them from your picker.
+
+The endpoint is keyed by order id like its siblings, so it answers only for an
+order that owes a dossier. It is a read of a static catalogue: safe to poll,
+and safe to cache against `revision`.
+
+`requirements_snapshot` on the dossier is the same catalogue **frozen** to what
+this case was opened under, and once a declaration exists that is the list to
+render instead. A case is judged by the rules it was opened under, not by
+today's catalogue: an operator editing a rule while cases are open cannot loosen
+an open one into approvable, nor tighten one into refusing a customer for a
+document that was never on their screen.
 
 - `documents[].mode` is `one_of` (any single document satisfies the group) or
   `all_of` (every listed document is owed).
@@ -362,11 +418,14 @@ into refusing a customer for a document that was never on their screen.
   `crypto_assets`.
 - `requested_documents` is what a reviewer came back and asked for on top. Each
   entry carries `document_type`, `label`, `reason` and `satisfied`.
+- `review_checks` is **always `[]`**. It is the reviewer's own checklist — what a
+  document is tested against — and published to an integrator it would be a
+  specification for passing a check rather than for meeting one. The key is kept
+  and emptied rather than dropped, so consumers mapping over it never meet a
+  second shape.
 
-There is no partner endpoint that lists the catalogue ahead of a case. Until a
-declaration exists there is no frozen contract to serve; upload against the keys
-in the snapshot, and read `expected_document_types` on an upload response if a
-key does not match.
+Upload against the keys in the snapshot, and read `expected_document_types` on
+an upload response if a key does not match.
 
 #### Submit the declaration
 
@@ -537,13 +596,14 @@ the four release-bearing filters mean:
 | `completed` | Ordinary released orders, and delayed orders whose fiat actually reached the customer. A delayed order that has released but not paid is **not** here — that is the point. |
 | `settlement_in_progress` | Delayed, released, not yet resolved either way. A standing bank return with no fresh authorisation belongs under `returned`. |
 | `returned` | The bank sent the payout back and nobody has authorised another attempt yet. |
-| `cancelled` | Orders that stopped before settlement, as before. |
+| `cancelled` | Orders that stopped before settlement, as before, **plus** delayed orders whose crypto was refunded to the customer after the release. |
 
-**Known gap:** `status=cancelled` does not return a delayed order whose crypto
-was refunded to the customer *after* the release. That order reports `cancelled`
-on its own payload but still sits in a release status, which the `cancelled`
-candidate set does not cover. Read `delayed_settlement_crypto_refunded_to_customer_at`
-on the order rather than relying on the filter for that case.
+The four are disjoint, and between them they cover every released delayed order:
+the set a filter returns is exactly the set whose own `status` field reports
+that value. The last row is the one worth saying out loud — a delayed order
+refunded after the release reports `cancelled` while still sitting in a release
+state internally, and is returned under `status=cancelled` like any other
+stopped order.
 
 ### Timeline
 
