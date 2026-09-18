@@ -1,5 +1,8 @@
 # Fiat accounts
 
+The how-to. The endpoint-by-endpoint reference is the **Fiat Accounts** section
+of the API reference.
+
 Give your customers an account of their own, in their own name, for them to be
 paid into — and read what lands on it.
 

@@ -2309,7 +2309,7 @@ paths:
         `awaiting_fiat_transfer` when the crypto is locked in escrow.
 
         At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order —
-        unless the order's `fiat_funding_source` is `own_iban`. Then `next_action` is
+        unless the order's `fiat_funding_source` is `own_account`. Then `next_action` is
         `deposit_to_user_account`: the customer transfers the order's fiat amount into the fiat account
         issued to them, that transfer confirms the payment, and `confirm-payment-sent` is not used.
         If the order type is `payment_request`, call `submit-payer-details` first before confirming.
@@ -5664,6 +5664,25 @@ components:
                       format: date-time
                       description: Last update timestamp for KYC status
                       example: "2026-01-06T14:30:00Z"
+                fiat_account_issuance:
+                  type: object
+                  description: |
+                    Whether a fiat account can be opened for this customer, and what the bank is still
+                    short of if not. It lives here because there is no second identity to register for
+                    an account: the gaps are gaps in this customer's KYC record.
+                  properties:
+                    ready:
+                      type: boolean
+                      description: True when `POST /api/v1/partner/fiat-accounts` will be accepted for this customer.
+                      example: false
+                    missing_fields:
+                      type: array
+                      items: { type: string }
+                      description: |
+                        The fields the bank needs that the KYC record does not have, in the names
+                        `PATCH /api/v1/partner/users/{user_uuid}/kyc` takes: `address`, `city`,
+                        `postal_code`, `dob`, `id_number`, `id_type`.
+                      example: ["address", "postal_code"]
                 payment_profiles:
                   type: array
                   items:
@@ -6701,7 +6720,7 @@ components:
             - `authorize_refund` — the order ended without a payout and its crypto is still in escrow; only your
               signature can send it back. Note that this appears on an order whose `status` is `cancelled`, which
               is the one case where a terminal status still needs something from you
-            - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_iban` is waiting for the
+            - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_account` is waiting for the
               customer to transfer the order's fiat amount into the fiat account issued to them. The transfer
               itself confirms the payment; there is nothing to call
             - `null` — no required action (waiting for buyer or system)
@@ -6774,7 +6793,7 @@ components:
               rather than assuming a cancelled order is finished with. `next_action` is
               `authorize_refund` and `action_required` names the endpoint at the same time.
 
-            On-ramp orders with `fiat_funding_source: own_iban` never offer `confirm-payment-sent`: the
+            On-ramp orders with `fiat_funding_source: own_account` never offer `confirm-payment-sent`: the
             transfer into the customer's own account is the confirmation.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
@@ -6783,17 +6802,26 @@ components:
           example: ["authorize-crypto-transfer", "cancel"]
         fiat_funding_source:
           type: string
-          enum: [vendor_details, own_iban]
+          enum: [vendor_details, own_account]
           description: |
             On-ramp orders only. Where the fiat for this order is paid:
             - `vendor_details` — to the vendor's bank account in `vendor_payment_details`; then call
               `confirm-payment-sent`.
-            - `own_iban` — into the fiat account you issued to the customer. There are no
-              `vendor_payment_details` and no `confirm-payment-sent`: the transfer landing on the customer's
-              account is matched to the order by amount and the order proceeds on its own.
+            - `own_account` — into the fiat account you issued to the customer, named by
+              `fiat_account_id`. There are no `vendor_payment_details` and no `confirm-payment-sent`:
+              the transfer landing on the customer's account is matched to the order by amount and the
+              order proceeds on its own.
 
             Read it on every order rather than assuming one or the other.
-          example: own_iban
+          example: own_account
+        fiat_account_id:
+          type: string
+          format: uuid
+          description: |
+            On an `own_account` order: the fiat account the customer transfers into. The same id the
+            Fiat Accounts endpoints take, so the deposit that funds this order can be found on that
+            account's transactions carrying this order's id.
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
         crypto_transfer_authorization_seconds_left:
           type: integer
           format: int64
@@ -6966,7 +6994,7 @@ components:
         **On-ramp statuses (fiat → crypto):**
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
         - `awaiting_vendor_escrow_funding` — vendor accepted, funding escrow with crypto
-        - `awaiting_fiat_transfer` — crypto locked in escrow; the partner pays the vendor and confirms payment sent (`fiat_funding_source: vendor_details`), or the customer transfers into their own fiat account (`own_iban`)
+        - `awaiting_fiat_transfer` — crypto locked in escrow; the partner pays the vendor and confirms payment sent (`fiat_funding_source: vendor_details`), or the customer transfers into their own fiat account (`own_account`)
         - `fiat_transfer_pending` — fiat payment confirmed, awaiting vendor confirmation of receipt
         - `completed` — vendor confirmed fiat received, crypto released to end-user wallet
         - `cancelled` — order cancelled
