@@ -1,102 +1,84 @@
 # Fiat accounts
 
-Give your customers a bank account of their own — a dedicated IBAN they can be
+Give your customers an account of their own, in their own name, for them to be
 paid into — and read what lands on it.
 
 **What you will build.** By the end of this guide one of your customers holds a
-real EUR or GBP account in their own name, you can show them where to send
-money, and you can read the balance and every transaction on the account.
+real EUR or GBP account, you can show them where to send money, and you can see
+every deposit that arrives, including the one that funds an on-ramp order.
 
-**What you need first.** A partner API key, and the `retail` product activated on
-your partner — plus the `issue_retail_accounts` capability if you want to open
-accounts rather than only verify people for them. Neither is self-service; ask
-Unigox. Until they are on, the write endpoints answer `403` and
-`GET /fiat-accounts/config` reports `enabled: false`, which is the check to run
-first.
+**What you need first.** A partner API key and the fiat accounts product
+switched on for you. It is not self-service; ask Unigox.
+`GET /api/v1/partner/fiat-accounts/config` answers whether it is on, and is the
+check to run first.
 
-**How long it takes.** Three calls per customer once they are KYC-verified, and
-approval is usually immediate. It is not guaranteed to be, which is why step 4
-is a poll rather than a wait.
+**How long it takes.** One call per customer once they are KYC-verified. The
+bank usually opens the account immediately, but not always, which is why the
+account has a `status` and fires a webhook when it changes.
 
-## An account belongs to a customer
+## An account belongs to a customer, and has one id
 
 The holder is a customer you already have: the one you created with
-`POST /api/v1/partner/users` and put through KYC. There is no separate banking
-record to register and keep in step.
+`POST /api/v1/partner/users` and put through KYC. There is no second identity to
+register.
 
-So the routes live under `/api/v1/partner/users/{user_uuid}/…`, beside the KYC
-and payment-details routes for the same customer. An account id on its own is
-not enough to read an account, and the identity the bank opens the account on is
-the one Unigox verified, not one you retype into a request body.
+The account is addressed by **`fiat_account_id`**, a uuid, the way a person is
+addressed by `user_uuid`. That is the only id on it: there is no field called
+`id`, and nothing names the bank behind the account.
 
-Accounts here are held by individuals. An account issued to a company you
-onboarded through business (KYB) onboarding is not on this API: its holder is a
-KYB case rather than a customer, so it cannot be addressed through this tree.
-Those remain available in the Unigox console.
+```
+Your partner account
+  └── customer (user_uuid)
+        ├── KYC                — who they are
+        ├── payment details    — THEIR outside bank, where off-ramp money goes
+        ├── fiat accounts      — OUR issued account, where money comes in
+        └── orders             — conversion; an on-ramp may be funded from the account
+```
+
+Accounts are held by individuals. An account issued to a company you onboarded
+through KYB onboarding is not on this API.
+
+## What you can and cannot do
+
+You can open accounts and read them. v1 is **receive-only**: moving money off an
+account is not on this API, and converting what arrives is an order, not a
+transfer.
 
 ## Conventions
 
 The same as the rest of the Partner API. Responses are wrapped:
 
 ```json
-{ "success": true, "data": { "config": { … } } }
+{ "success": true, "data": { … } }
 ```
 
 Errors carry a machine `code` you can branch on, a human `message`, and — for a
-validation failure — the request fields at fault:
+gap in the customer's record — the fields at fault:
 
 ```json
 {
   "success": false,
   "error": {
-    "code": "MISSING_FIELDS",
-    "message": "The bank needs a few details this customer's verification did not capture.",
-    "details": { "missing_fields": ["address", "birthdate"] }
+    "code": "ISSUANCE_NOT_READY",
+    "message": "The bank needs a few details this customer's KYC record does not have.",
+    "details": { "missing_fields": ["address", "postal_code"] }
   }
 }
 ```
 
-This is the same `{success, error:{code, message, details}}` shape the order and
-off-ramp endpoints use — `code` is stable and safe to branch on, `message` is for
-your logs and your support team, and `details` carries whatever the particular
-refusal can say.
+Field names are `snake_case` at every depth, authentication is the same
+`X-API-Key`, and every id is scoped to you: an account or a customer you do not
+own answers `404`, indistinguishable from one that does not exist.
 
-Field names are `snake_case` at every depth. Authentication is the same
-`X-API-Key` as everywhere else, and every id is scoped to you: a customer or an
-account you do not own answers `404`, indistinguishable from one that does not
-exist.
-
-**Account ids are opaque** — `retail_412`. Pass them back verbatim; do not parse
-them and do not assume the numeric part means anything. The prefix is part of
-the id, not decoration.
-
-An account is always addressed under its own customer. One that belongs to a
-different customer answers `404`, exactly as one that does not exist — so an
-account id alone is never enough to read an account.
-
-Nothing in this section identifies the bank or banking platform behind an
-account, and nothing branches on it. Which institution issues a given currency
-is an operational detail Unigox may change; your integration should not be able
-to tell. `bank_name` and `bic` describe the account a payer will send money to,
-which is different — those are yours to display.
-
-## What you can and cannot do
-
-You can **issue** accounts and **read** them. You cannot move money on this API:
-funding, conversions, closing an account and outbound payments are
-Unigox-operated and are not exposed here. Nothing in this section debits an
-account.
-
-## End-to-end flow
+## End to end
 
 1. Create and KYC-verify a customer (`POST /api/v1/partner/users`, then the KYC
-   flow). Reuse an existing verified customer if you have one.
+   flow). Reuse a verified customer if you have one.
 2. Check what you can offer: `GET /fiat-accounts/config`.
-3. Check what identity is still needed: `GET /users/{user_uuid}/identity`.
-4. Submit the customer's identity: `POST /users/{user_uuid}/identification`, then
-   poll `GET /users/{user_uuid}/identification` until it approves.
-5. Issue the account: `POST /users/{user_uuid}/fiat-accounts`.
-6. Read balances and transactions as deposits arrive.
+3. Check the customer is ready: `GET /users/{user_uuid}`.
+4. Open the account: `POST /fiat-accounts`.
+5. Wait for `active`, then show the customer where to pay in.
+6. Read what arrives: `GET /fiat-accounts/{fiat_account_id}/transactions`.
 
 ### 1. See what you can offer
 
@@ -109,78 +91,143 @@ X-API-Key: <api-key>
 {
   "success": true,
   "data": {
-    "config": {
-      "enabled": true,
-      "issues_accounts": true,
-      "currencies": ["EUR", "GBP"],
-      "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] },
-      "postal_code_issuers": ["NL"]
-    }
+    "enabled": true,
+    "issues_accounts": true,
+    "currencies": ["EUR", "GBP"],
+    "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] }
   }
 }
 ```
 
-`enabled` and `issues_accounts` tell you whether you may submit identities and
-open accounts. `currencies` and `issuers` (currency → jurisdictions, default
-first) tell you what an account may be denominated in, and where it can be
-issued. `postal_code_issuers` names the jurisdictions that will not issue
-without a postal code on file — see step 5.
+`enabled` and `issues_accounts` say whether you may use the product and whether
+you may open accounts with it. `currencies` and `issuers` (currency →
+jurisdictions, default first) say what an account may be denominated in, and
+where it can be issued.
 
-This endpoint never errors on entitlement. When the product is off it returns
-`enabled: false` with a `disabled_reason` slug.
+Entitlement is never an error here: when the product is off this still answers
+`200`, with `enabled: false` and a `disabled_reason`.
 
-### 2. See what identity is still needed
+### 2. Check the customer is ready
 
 ```http
-GET /api/v1/partner/users/{user_uuid}/identity
+GET /api/v1/partner/users/{user_uuid}
 X-API-Key: <api-key>
 ```
 
-Returns what our KYC already established about this customer, and `missing`: the
-fields the bank still needs. `ready: true` means step 3 will be accepted with an
-empty body.
+The customer carries one more object:
 
-It creates nothing and calls no one, so it is safe to call while you decide
-whether to offer the product to a given customer. The document number is never
-returned, only its last four digits.
+```json
+"fiat_account_issuance": {
+  "ready": false,
+  "missing_fields": ["address", "postal_code"]
+}
+```
 
-### 3. Submit the customer's identity
+`ready: true` means the next step will be accepted. Anything under
+`missing_fields` is a field the bank needs and the KYC record does not have,
+named the way `PATCH /api/v1/partner/users/{user_uuid}/kyc` takes it:
+`address`, `city`, `postal_code`, `dob`, `id_number`, `id_type`. Fill them there
+and the customer is ready.
+
+You can skip this check and read the same list off the refusal in step 3.
+
+### 3. Open the account
 
 ```http
-POST /api/v1/partner/users/{user_uuid}/identification
+POST /api/v1/partner/fiat-accounts
 X-API-Key: <api-key>
 Content-Type: application/json
 ```
 
 ```json
-{ "address": "10 Downing Street", "city": "London", "birthdate": "1990-04-17" }
+{
+  "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "currency": "EUR",
+  "issuer_country": "NL"
+}
 ```
 
-**Every field is optional.** What Unigox verified at KYC is always preferred
-over what you send, so send only what step 2 reported as `missing`. The name,
-the country of residence and the document are taken from the verification —
-sending your own copy cannot override them, by design: the identity a bank opens
-an account on has to be the one that was verified.
+`currency` is required and must be one `config.currencies` offers.
+`issuer_country` is optional: omitted, the currency's default jurisdiction is
+used. `postal_code` is accepted for the one jurisdiction that will not issue
+without one, and only when the KYC record has none; sent here, it is written
+onto that record.
 
-Accepted fields: `address`, `city`, `birthdate` (`YYYY-MM-DD`),
-`document_type`, `document_number`, `email`, `country_of_residence`. Document
-types are `PASSPORT`, `NATIONAL_ID`, `DRIVERS_LICENCE`, `WORK_PERMIT`.
+```json
+{
+  "success": true,
+  "data": {
+    "fiat_account_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
+    "currency": "EUR",
+    "issuer_country": "NL",
+    "status": "active",
+    "created": true,
+    "iban": "NL91ABNA0417164300",
+    "bic": "ABNANL2A",
+    "bank_name": "ABN AMRO",
+    "holder_name": "Maria ZALISHCHUK",
+    "created_at": "2026-09-18T10:00:00Z"
+  }
+}
+```
 
-The customer must be KYC-verified by Unigox before this is accepted. The
-document number is used for the submission and is not stored; only its last four
-digits are kept.
+**Idempotent per (customer, currency, jurisdiction).** A repeat answers `201`
+with the same account and no `created` flag; it does not open a second one. One
+customer may hold accounts in several currencies, and in several jurisdictions
+of the same currency.
 
-A gap answers `400` with `error.code: "MISSING_FIELDS"` and the field list under
-`error.details.missing_fields`.
+Registering the person with the bank happens behind this call, from the identity
+Unigox verified. There is nothing to submit and no second record to keep in
+step.
 
-Calling this again for a customer who is already an account holder answers `200`
-with their current record and `already_linked: true`. Nothing is sent to the
-bank twice.
+- The customer is not verified: `422 KYC_NOT_CLEARED`.
+- The bank needs a field the KYC record does not have: `422
+  ISSUANCE_NOT_READY`, with `error.details.missing_fields`. Patch the KYC record
+  and post again.
+- The same account is already being opened: `409 PROVISIONING_IN_PROGRESS`.
 
-### 4. Wait for approval
+### 4. Wait for `active`
+
+An account is `pending` until the bank has opened it, and it carries no pay-in
+details while it is: an account that is not open has nowhere to receive money,
+and a customer sent to it loses the transfer to a bounce.
+
+| `status` | What it means |
+| --- | --- |
+| `pending` | Being opened. Do not tell the customer to transfer yet. |
+| `active` | Open. The pay-in details are on the account and money may be sent. |
+| `failed` | The bank refused. This account will not become usable. |
+| `closed` | Retired. Its history stays readable; new deposits will not credit it. |
+
+`fiat_account.updated` fires when this changes, and
+`GET /fiat-accounts/{fiat_account_id}` answers the same thing when you poll.
+
+### 5. Show the customer where to pay in
 
 ```http
-GET /api/v1/partner/users/{user_uuid}/identification
+GET /api/v1/partner/fiat-accounts/{fiat_account_id}
+X-API-Key: <api-key>
+```
+
+The pay-in details are shaped by the rail the account is on:
+
+| Currency | Fields |
+| --- | --- |
+| EUR (SEPA) | `iban`, `bic`, `bank_name`, `holder_name` |
+| GBP (Faster Payments) | `account_number`, `sort_code`, `bank_name`, `holder_name` |
+
+Keys that do not apply are absent rather than empty. This view also carries
+`balances`, and `balances_unavailable: true` when the balance read failed: a
+balance we could not read is reported as unavailable rather than as zero.
+
+`GET /api/v1/partner/fiat-accounts?user_uuid={user_uuid}` lists one customer's
+accounts, with the last four digits of the identifier rather than the whole one.
+
+### 6. Read what arrives
+
+```http
+GET /api/v1/partner/fiat-accounts/{fiat_account_id}/transactions?page=1
 X-API-Key: <api-key>
 ```
 
@@ -188,175 +235,77 @@ X-API-Key: <api-key>
 {
   "success": true,
   "data": {
-    "holder": {
-      "user_uuid": "9f1c…",
-      "full_name": "Maria ZALISHCHUK",
-      "status": "approved",
-      "kyc_status": "approved",
-      "can_open_accounts": true
-    }
+    "transactions": [
+      {
+        "transaction_id": "5f1b2c9a-1d44-4f0e-9c1a-2b5f0d7e9a31",
+        "type": "credit",
+        "amount": "500.00",
+        "currency": "EUR",
+        "order_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "description": "Invoice 2026-114",
+        "created_at": "2026-09-18T10:04:22Z"
+      }
+    ],
+    "has_more": false
   }
 }
 ```
 
-Poll this until `can_open_accounts` is `true`. `status` moves
-`draft → pending_review → approved | rejected`. Approval is usually immediate,
-but it is not guaranteed to be, which is why step 3 does not answer it.
+v1 is receive-only, so every row is a `credit`. `order_id` names the on-ramp
+this deposit funded, and is `null` when it funded none: that money simply stays
+on the customer's account.
 
-A customer you have not submitted yet answers `404 ACCOUNT_HOLDER_NOT_FOUND`:
-polling never creates a holder record.
+## Webhooks
 
-### 5. Issue the account
+Two events, in the same envelope and with the same signature as
+`order.status.changed`.
 
-```http
-POST /api/v1/partner/users/{user_uuid}/fiat-accounts
-X-API-Key: <api-key>
-Content-Type: application/json
-```
+| `event_type` | Fired when | `data` |
+| --- | --- | --- |
+| `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency` |
+| `fiat_account.deposit.received` | Money arrived on the account. | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
 
-```json
-{ "currency": "EUR", "issuer_country": "NL", "postal_code": "1011 AB" }
-```
+Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
+no per-event subscription.
 
-`currency` is required and must be one `GET /fiat-accounts/config` offers.
-`issuer_country` is optional — omitted, the currency's default jurisdiction is
-used; supplied, it must be one of that currency's `issuers`. `postal_code` is
-required only when the chosen jurisdiction is in `postal_code_issuers`, and is
-otherwise ignored.
+## Paying for an on-ramp from the account
 
-```json
-{
-  "success": true,
-  "data": {
-    "account": {
-      "id": "retail_412",
-      "holder_type": "retail",
-      "holder_id": "9f1c…",
-      "currency": "EUR",
-      "issuer_country": "NL",
-      "status": "active",
-      "iban_last4": "8827",
-      "bank_name": "ABN AMRO",
-      "bic": "ABNANL2A",
-      "holder_name": "Maria ZALISHCHUK",
-      "created_at": "2026-09-09T11:04:22Z"
-    },
-    "created": true
-  }
-}
-```
+When a customer holds an account in the order's currency, the on-ramp is funded
+from it instead of from a vendor's bank details. Such an order carries
+`fiat_funding_source: "own_account"` and the `fiat_account_id` it is funded
+from, its `next_action` is `deposit_to_user_account`, and it has no
+`vendor_payment_details`.
 
-**This endpoint is idempotent per (customer, currency, jurisdiction).** A repeat
-answers `201` with the same account and `created: false`; it does not open a
-second one. One customer may hold accounts in several currencies, and in several
-jurisdictions of the same currency — `EUR/NL` and `EUR/MT` are two accounts, and
-each is opened by naming its `issuer_country`.
+The customer transfers the order's amount into their own account, and the
+deposit completes the order: `confirm-payment-sent` is not used and answers
+`409 OPERATION_NOT_ALLOWED`. The transaction on the account carries that
+`order_id`, so the two books can be reconciled against each other.
 
-Two requests racing for the same account answer `409
-PROVISIONING_IN_PROGRESS` — one of them is already opening it. Retry once it
-settles rather than treating it as a failure.
+Open the order first, then have the customer transfer. A deposit is matched to
+an open order of the same customer by amount, to the cent; two open orders for
+the same amount are held for review rather than guessed between.
 
-### 6. Read the account
-
-```http
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts                        # this customer's accounts
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}                   # one account, full details
-GET /api/v1/partner/users/{user_uuid}/fiat-accounts/{id}/transactions?page=N  # everything that moved the balance
-```
-
-The list carries `iban_last4` (or `account_number_last4` and `sort_code` for a
-sterling account, which has no IBAN). The single-account view adds the full
-identifier a payer needs, plus `balances` and `balances_unavailable` — a balance
-read that failed is reported rather than shown as zero.
-
-**A closed account stays readable.** Closing retires the IBAN; it does not
-remove the account, its history, or any money still behind it. Closed accounts
-keep appearing in the list with `status: "closed"` and answer every read.
-
-### Transactions
-
-One row is one movement of the balance, newest first.
-
-- **Bank transfers in and out** carry the other side of the transfer under
-  `counterparty`: the payer on money in, the payee on money out, with the
-  identifiers the transfer was addressed by. `status` is where that transfer
-  stands, and `payment_rail` is how it travelled.
-- **Everything else that moved the balance** is here too: conversions, fees, and
-  internal transfers such as a deposit collected into your master account. Those
-  rows carry no counterparty, because there is none.
-
-`type` says which of the two a row is (`bank_transfer`, `conversion`,
-`internal_transfer`, `fee`, `crypto_transfer`, `other`), `direction` is `in` or
-`out`, and `amount` is signed — a debit is negative.
-
-Paged with `?page=N`. `pagination` is present only when the bank returns it;
-when it is absent, request the next page until one comes back empty.
-
-## What happens when a deposit lands
-
-By default a deposit stays on the customer's account. Unigox can enable
-partner-level collection into your master account; when a collection settles,
-the `retail.settlement.completed` webhook fires with the settlement id, the
-amount, the currency and the account it came from. Register webhooks with
-`POST /api/v1/partner/webhooks` as usual.
+Off-ramp does not pay out of this account in v1. The customer's outside bank
+stays `payment_details`, and a third party stays a Recipient.
 
 ## Errors
 
 | `error.code` | Status | What it means |
 | --- | --- | --- |
-| `MISSING_FIELDS` | 400 | See `error.details.missing_fields`. |
-| `INVALID_DOCUMENT_TYPE` | 400 | Not one of the four accepted document types. |
-| `INVALID_POSTAL_CODE` | 400 | Longer than the bank accepts. |
 | `UNSUPPORTED_CURRENCY` | 400 | Not in `config.currencies`. |
 | `UNSUPPORTED_ISSUER_COUNTRY` | 400 | Not in `config.issuers[currency]`. |
-| `POSTAL_CODE_REQUIRED` | 400 | This jurisdiction will not issue without one. |
+| `POSTAL_CODE_REQUIRED` | 400 | This jurisdiction will not issue without one, and neither the body nor the KYC record has it. |
 | `PRODUCT_NOT_ACTIVATED` | 403 | The product is not active on your partner. |
-| `ISSUANCE_NOT_GRANTED` | 403 | You may verify customers but not open accounts for them. |
-| `ISSUANCE_DISABLED` | 403 | Account issuance is switched off platform-wide. |
-| `CURRENCY_NOT_PERMITTED` | 403 | This holder's issuance is limited to other currencies. |
+| `ISSUANCE_NOT_GRANTED` | 403 | You may read accounts but not open them. |
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
-| `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, not yours, or not this customer's. |
-| `ACCOUNT_HOLDER_NOT_FOUND` | 404 | No such account holder under that customer. |
-| `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. |
-| `HOLDER_REGISTRATION_IN_PROGRESS` | 409 | This customer is already being registered as a holder. Retry once it settles. |
-| `IDENTIFICATION_ALREADY_LINKED` | 409 | This person is already an account holder under a different record. |
-| `CLIENT_NOT_APPROVED` | 422 | The identity is not approved yet. |
-| `IDENTIFICATION_MISSING` | 422 | Submit the identity before opening an account. |
-| `CUSTOMER_NOT_VERIFIED` | 422 | The customer's KYC is not (or no longer) verified. |
+| `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
+| `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. Read it rather than retrying. |
+| `KYC_NOT_CLEARED` | 422 | The customer is not KYC-verified. |
+| `ISSUANCE_NOT_READY` | 422 | Verified, but the bank needs the fields in `error.details.missing_fields`. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |
-| `ACCOUNT_NOT_PROVISIONED` | 422 | The account has not finished being opened, so it has no details or history yet. |
-| `CUSTOMER_UNKNOWN` | 422 | The customer has no account holder record behind them yet. |
-| `NO_OPERATING_ACCOUNT` | 403 | Your partner has no banking account behind it. Ask Unigox; no request on this API will work until it does. |
-| `RECORD_FAILED` | 500 | The account was opened but could not be recorded. **Do not retry**, contact Unigox to reconcile. |
 | `BANKING_ERROR` | 502 | The bank refused or failed the request. |
-| `BANKING_UNAVAILABLE` | 502 / 503 | The bank could not be reached. |
+| `BANKING_UNAVAILABLE` | 503 | The bank could not be reached. Nothing was done. |
 
-`BANKING_ERROR` and `BANKING_UNAVAILABLE` mean the request reached the bank and
-did not complete. Both are safe to retry: issuance is idempotent per (customer,
+Both banking failures are safe to retry: issuance is idempotent per (customer,
 currency, jurisdiction), so a retry either finishes the account or returns the
 one that was already opened.
-
-### Failures that are not about your request
-
-These say a piece of Unigox could not answer just now. Nothing was changed, and
-every one of them is safe to retry.
-
-| `error.code` | Status | Which step |
-| --- | --- | --- |
-| `ENTITLEMENT_UNAVAILABLE` | 503 | Your entitlements could not be read. |
-| `CUSTOMER_LOOKUP_UNAVAILABLE` | 503 | The customer could not be looked up. |
-| `IDENTITY_UNAVAILABLE` | 503 | The verified identity could not be read. |
-| `KYC_UNAVAILABLE` | 503 | The KYC verdict could not be read. |
-| `HOLDER_UNAVAILABLE` | 503 | The customer could not be registered as a holder. |
-| `PRICING_UNAVAILABLE` | 503 | Pricing for the currency could not be read. |
-| `PROVISION_UNAVAILABLE` | 503 | Issuance could not be started. |
-| `DB_NOT_CONFIGURED` | 503 | A store this route needs is not configured in this environment. |
-| `LOAD_FAILED` | 500 | A record could not be read. |
-| `CREATE_FAILED` | 500 | A record could not be written. |
-| `PROVISION_FAILED` | 500 | Issuance failed before the account was opened. |
-| `LINK_WRITE_FAILED` | 500 | The identity reached the bank but the link could not be stored. |
-| `STATUS_WRITE_FAILED` | 500 | The bank answered but the status could not be stored. |
-
-The last two mean the bank has your submission even though we could not record
-its answer. Poll `GET /users/{user_uuid}/identification` rather than submitting
-again.
