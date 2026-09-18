@@ -29,11 +29,11 @@ Account details are strings. Whitespace is removed from account numbers before v
 
 ## Customer APIs
 
-The authenticated account session at `GET /api/v1/bill-payment/session` returns USD with `available` derived from the rollout setting, `preparation_available: true` and `bank_rails: ["usd-wire-china"]`. When disabled, the reason is `provider_confirmation_pending`. Availability means permission to execute; preparation availability only permits saving details and documents. Missing preparation metadata fails closed.
+The authenticated account session at `GET /api/v1/bill-payment/session` returns one USD row per destination — this one is `country: "CN"` with `bank_rails: ["usd-wire-china"]` — each with its own `available` derived from that destination's rollout setting and `preparation_available: true`. When disabled, the reason is `provider_confirmation_pending`. Availability means permission to execute; preparation availability only permits saving details and documents. Missing preparation metadata fails closed.
 
 Use `payout_currency=USD` on `GET /api/v1/bill-payment/payment-rails` and `/institutions`. The institution's actual rail is resolved on our side. To add a separate USD account to an existing supplier, POST `/api/v1/bill-payment/recipients/:id/destinations` with `institution_id`, `payout_currency`, `details` and an `idempotency_key`. Include `beneficiary_type: "business"` in widget details. The recipient's other destinations are retained. Replaying the same key/body returns the saved destination; a changed body returns 409. A caller cannot add to someone else's recipient.
 
-`POST /api/v1/bill-payment/preflight` checks the saved account, amount and live quote. A refusal uses HTTP 200 with `ok: false`, `may_collect: false`, `price: null`; direct bill-create is refused before collection. An enabled onshore account with live liquidity can return `may_collect: true`, then `POST /bills` opens a real USD bill with immutable intent and idempotency. A USD preflight must name `recipient_destination_id`, or it is refused with `destination_required`. An amount below USD 25 is refused with `USD_AMOUNT_OUT_OF_RANGE`. NRA/OSA remains refused with `CHINA_USD_INVOICE_CHANNEL_UNAVAILABLE` until its original-invoice channel is confirmed. After that, preflight and `POST /bills` for an NRA/OSA account must name the uploaded invoice in `invoice_document_id`, or they are refused with `INVOICE_DOCUMENT_REQUIRED`. Validation errors use the endpoint's existing 400/422 envelopes; do not treat a successful discovery response as permission to fund.
+`POST /api/v1/bill-payment/preflight` checks the saved account, amount and live quote. A refusal uses HTTP 200 with `ok: false`, `may_collect: false`, `price: null`; direct bill-create is refused before collection. An enabled onshore account with live liquidity can return `may_collect: true`, then `POST /bills` opens a real USD bill with immutable intent and idempotency. A USD preflight must name `recipient_destination_id`, or it is refused with `destination_required`. An amount below USD 25 is refused with `CHINA_USD_AMOUNT_OUT_OF_RANGE` on this rail; the Hong Kong and Singapore rails answer with `USD_AMOUNT_OUT_OF_RANGE`. NRA/OSA remains refused with `CHINA_USD_INVOICE_CHANNEL_UNAVAILABLE` until its original-invoice channel is confirmed. After that, preflight and `POST /bills` for an NRA/OSA account must name the uploaded invoice in `invoice_document_id`, or they are refused with `INVOICE_DOCUMENT_REQUIRED`. Validation errors use the endpoint's existing 400/422 envelopes; do not treat a successful discovery response as permission to fund.
 
 Private documents use `/api/v1/bill-payment/documents/:uuid`, where `:uuid` is a client-generated UUID in canonical lowercase form: PUT multipart `document`, `recipient_destination_id`, `payout_currency`; GET metadata; GET `/content`; DELETE an unbound draft. GET, GET `/content` and DELETE take `recipient_destination_id` and `payout_currency` as query parameters; to read the invoice retained on a payment, GET and GET `/content` also take that payment's `bill_id`. PDF/JPEG/PNG, 8 MiB maximum. The server binds the original bytes and SHA-256 to the owner, destination and currency. An identical retry is safe; different bytes with the same UUID return 409 `invoice_document_mismatch`. Drafts expire after 7 days; a bound invoice is retained as payment evidence. Storing an invoice here is not the same as the provider accepting it.
 
@@ -80,8 +80,8 @@ Confirmed by the provider and probed live on 18 September 2026. Use country `HK`
 country `CN` is refused as a route mismatch rather than resolved to either.
 
 These rails are SWIFT only — the provider has no domestic alternative outside the mainland — and
-they are one generic bank method each: the beneficiary's own `bank_name` and `swift_code` route the
-payment. Like the mainland rail, they list their fields at the top level and have no `formats`, and
+they are one generic bank method each: the beneficiary's own `swift_code` routes the payment. A
+`bank_name` may be saved for the payer's own reference and is not sent to the provider. Like the mainland rail, they list their fields at the top level and have no `formats`, and
 they pay business beneficiaries.
 
 | Detail | Constraint |
@@ -107,9 +107,10 @@ rail. Correspondent bank charges on a SWIFT payment are the correspondents' own 
 here, so a beneficiary may receive less than the amount sent. There is no field on these rails for a
 payment reference or remark: an order number a supplier asks to see on the wire cannot be carried.
 
-Delivery is what the provider reports for SWIFT: usually two working days, and a beneficiary bank
-without a direct SWIFT connection can take two to three. Provider acceptance is not bank finality,
-and a returned payment is refunded through the same manual process as the mainland rail.
+Delivery is what the provider reports for SWIFT: usually two working days. A beneficiary bank
+without a direct SWIFT connection can take longer, and public holidays move the date. Provider
+acceptance is not bank finality, and a returned payment is refunded through the same manual process
+as the mainland rail.
 
 `GET /api/v1/bill-payment/session` lists one payout option per destination, each with its own
 `available`, `preparation_available`, `reason` and `bank_rails`. A disabled destination answers
