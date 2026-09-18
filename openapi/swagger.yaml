@@ -2879,8 +2879,9 @@ paths:
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
         It also reports `delayed_settlement` and `settlement_hours`, so you can discover at which
-        amounts a corridor stops settling instantly without burning quotes. Indicative like the rest
-        of this response: the quote decides, and is what your customer must be shown.
+        amounts a corridor stops settling instantly without burning quotes. This response is
+        indicative about the **numbers**, not about the class: the price may move before the quote,
+        but a T+1 estimate does not become an instant order.
 
         **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
 
@@ -7395,6 +7396,35 @@ components:
           default: "0"
           example: "1"
 
+    ExactPaymentMethodMatchingOffer:
+      type: object
+      description: >-
+        One route in the same crypto/fiat/network context that is reachable **only** by exact
+        payment-method matching — a counterparty on this exact method, rather than anyone on the
+        network. Quote with `payment_method_slug` and `payment_network_slug` set to these values to
+        reach it.
+      properties:
+        payment_method_slug:
+          type: string
+          example: access-bank
+        payment_method_name:
+          type: string
+          example: "Access Bank"
+        payment_network_slug:
+          type: string
+          example: nibss
+        payment_network_name:
+          type: string
+          example: "NIBSS Nigeria"
+        country_code:
+          type: string
+          description: Omitted when the route was resolved without a country scope.
+          example: NG
+        country_name:
+          type: string
+          description: Omitted with `country_code`.
+          example: Nigeria
+
     PartnerPriceEstimateResponse:
       type: object
       properties:
@@ -7455,12 +7485,23 @@ components:
             `true` when `matching_type` is `network`. `false` means this price is reachable only
             through exact payment-method matching.
           example: true
+        exact_payment_method_matching_offers:
+          type: array
+          description: >-
+            Routes in the same context that only exact payment-method matching can reach — the
+            alternatives to the one this estimate priced. Omitted when there are none. It also
+            travels under `error.details` on a `409 NO_OFFERS_AVAILABLE`, which is where it matters
+            most: the refusal names the routes that would have worked.
+          items:
+            $ref: '#/components/schemas/ExactPaymentMethodMatchingOffer'
         delayed_settlement:
           type: boolean
           description: >-
             Whether pricing at this amount would open a **delayed settlement (T+1)** order. Always
-            present, and carries the same meaning as on the quote — an estimate is indicative, so
-            re-read it on the quote before initiating.
+            present, never omitted, so a client can tell "this build does not know about T+1" from
+            "this estimate is not T+1". An estimate is indicative about the numbers, not about the
+            class: the price may move before the quote, but a T+1 estimate does not become an instant
+            order.
           example: false
         settlement_hours:
           type: integer
@@ -7872,6 +7913,16 @@ components:
             `true` when `matching_type` is `network`. `false` means this quote is reachable only
             through exact payment-method matching.
           example: true
+        exact_payment_method_matching_offers:
+          type: array
+          description: >-
+            Routes in the same context that only exact payment-method matching can reach — the
+            alternatives to the one this quote matched. Omitted when there are none. It also travels
+            under `error.details` on a `409 NO_OFFERS_AVAILABLE`, which is where it matters most: the
+            refusal names the routes that would have worked. An absent key means none were found
+            **or** the lookup failed; it is not a promise that no such route exists.
+          items:
+            $ref: '#/components/schemas/ExactPaymentMethodMatchingOffer'
         expires_at:
           type: string
           format: date-time

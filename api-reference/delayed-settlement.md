@@ -55,8 +55,8 @@ The response carries two new fields:
 There is no second endpoint that reveals this later: by then the order is open.
 
 `POST /api/v1/partner/offramp/estimate` reports the same two fields, so you can find where a corridor
-stops settling instantly without burning quotes. It is indicative: the quote decides, and the quote is
-what your customer must be shown.
+stops settling instantly without burning quotes. It is indicative about the numbers, not about the
+class: the price may move before the quote, but a T+1 estimate does not become an instant order.
 
 `POST /api/v1/partner/offramp/initiate` and the escrow funding pair
 (`transfer-authorization-parameters` → `authorize-crypto-transfer`) are
