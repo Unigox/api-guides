@@ -69,10 +69,11 @@ tags:
       ## Fiat accounts
 
       Issue dedicated fiat accounts (IBANs) for your customers and read their balances, ledger and
-      payments. Every account is reached through the customer that holds it — which is why
-      these routes live here rather than under a product of their own, and why an account id on its
-      own will not read an account. It is an optional product that Unigox activates per partner, it
-      covers individuals rather than companies, and money movement is not on this API. The
+      payments. Every account is reached through the customer that holds it, so an account id on
+      its own will not read an account.
+
+      An optional product Unigox activates per partner. It covers individuals rather than
+      companies, and money movement is not on this API. The
       [Fiat accounts guide](https://developers.unigox.com/tutorials/fiat-accounts) has the flow end
       to end, what has to be switched on before you start, and the error codes.
 
@@ -4726,19 +4727,16 @@ paths:
     get:
       tags:
         - User Management
-      summary: What you can offer
+      summary: What fiat accounts you can offer
       operationId: getFiatAccountsConfig
       description: |
-        Whether this partner may use fiat accounts right now, which currencies an account may be
-        denominated in, and which jurisdictions each currency can be issued from.
+        Whether you may use fiat accounts right now, which currencies an account may be denominated
+        in, and which jurisdictions each currency can be issued from. Call it before any customer is
+        in scope; it is the only fiat account route that names no customer.
 
-        The one route outside the customer tree, and deliberately: it answers what you may offer AT
-        ALL, before any customer is in scope. It is not an account.
-
-        Never errors on entitlement: when the product is not active it answers `200` with
-        `enabled: false` and a `disabled_reason`, so a console can render the reason rather than a
-        failure. `issues_accounts: false` with `enabled: true` is a real shape — the partner may put
-        customers through verification but not open accounts for them.
+        Entitlement is never an error here. When the product is not active it answers `200` with
+        `enabled: false` and a `disabled_reason`. `issues_accounts: false` with `enabled: true`
+        means you may put customers through verification but not open accounts for them.
       security:
         - ApiKeyAuth: []
       responses:
@@ -4759,17 +4757,17 @@ paths:
     get:
       tags:
         - User Management
-      summary: What identity we hold, and what is still needed
+      summary: Fiat account holder identity, and what is still missing
       operationId: getFiatCustomerIdentity
       description: |
-        What Unigox KYC already established about this customer, and `missing` — the fields the
-        banking layer still needs before an account can be opened. `ready: true` means the
-        identification submission will be accepted with an empty body.
+        What Unigox KYC already established about this customer, and `missing`: the fields the bank
+        still needs before an account can be opened. `ready: true` means the next step accepts an
+        empty body.
 
-        A read: it creates nothing, calls no one and stays available when the product is switched
-        off, so a partner can always see WHY a customer cannot be issued an account.
+        This creates nothing and stays available when the product is switched off, so you can always
+        see why a customer cannot be issued an account.
 
-        The document number is never returned — only its last four digits.
+        The document number is never returned, only its last four digits.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -4792,14 +4790,14 @@ paths:
     get:
       tags:
         - User Management
-      summary: Verification status of the account holder
+      summary: Fiat account holder verification status
       operationId: getFiatIdentification
       description: |
-        The holder's current verification state. Poll this until `can_open_accounts` is `true`.
+        Where the holder's verification stands. Poll this until `can_open_accounts` is `true`;
+        approval is usually immediate, but it is not guaranteed to be.
 
-        A `GET` on purpose: checking a verification changes nothing, so it is safe to retry and safe
-        to run on a schedule. Where the identity has already reached the banking layer this re-reads
-        their verdict; before that it answers from the holder record.
+        Once the identity has reached the bank this re-reads their verdict, so the status can change
+        between two calls without you sending anything.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -4813,15 +4811,14 @@ paths:
                 $ref: '#/components/schemas/FiatHolderResponse'
         '404':
           description: |
-            No such customer, or not yours (`CUSTOMER_NOT_FOUND`), or the customer has not been
-            submitted for verification yet (`ACCOUNT_HOLDER_NOT_FOUND`) — polling never creates a
-            holder record.
+            `CUSTOMER_NOT_FOUND`, or `ACCOUNT_HOLDER_NOT_FOUND` when this customer has not been
+            submitted for verification yet. Polling never creates a holder record.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '502':
-          description: The banking layer could not be read
+          description: The bank could not be read (`BANKING_ERROR`, `BANKING_UNAVAILABLE`)
           content:
             application/json:
               schema:
@@ -4829,22 +4826,22 @@ paths:
     post:
       tags:
         - User Management
-      summary: Submit the customer's identity
+      summary: Submit a fiat account holder's identity
       operationId: submitFiatIdentification
       description: |
-        Submits the customer's identity to the banking layer, registering them as an account holder
-        if this is the first call.
+        Sends the customer's identity to the bank, registering them as an account holder if this is
+        the first call. Do this once per customer, before opening their first account.
 
-        **Every body field is optional.** What Unigox verified at KYC is always preferred over what
-        is sent here, so send only what `GET /users/{user_uuid}/identity` reported as `missing`. The
-        name, the country of residence and the document are taken from the verification and cannot
-        be overridden — the identity a bank opens an account on has to be the one that was verified.
+        **Every body field is optional.** What Unigox verified at KYC is preferred over what you
+        send, so send only what `GET /users/{user_uuid}/identity` reported as `missing`. The name,
+        the country of residence and the document come from the verification and cannot be
+        overridden: the identity a bank opens an account on has to be the one that was verified.
 
         The customer must be KYC-verified by Unigox first. The document number is used for the
         submission and is not stored; only its last four digits are kept.
 
-        Idempotent: a customer already submitted answers `200` with their current holder record and
-        makes no second submission.
+        Idempotent: a customer already submitted answers `200` with their current holder record,
+        `already_linked: true`, and no second submission.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -4857,7 +4854,7 @@ paths:
               $ref: '#/components/schemas/FiatIdentificationRequest'
       responses:
         '200':
-          description: Submitted (or already submitted)
+          description: 'Submitted, or already submitted, which adds `already_linked: true`'
           content:
             application/json:
               schema:
@@ -4899,7 +4896,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '502':
-          description: The banking layer refused or failed the submission
+          description: The bank refused or failed the submission (`BANKING_ERROR`, `BANKING_UNAVAILABLE`)
           content:
             application/json:
               schema:
@@ -4909,14 +4906,13 @@ paths:
     get:
       tags:
         - User Management
-      summary: This customer's accounts
+      summary: This customer's fiat accounts
       operationId: listFiatAccountsForUser
       description: |
-        Every account issued to this customer. A read: a customer with no issuance yet has no
-        accounts, which is an empty list rather than a reason to create anything.
+        Every fiat account issued to this customer. A customer with none yet answers an empty list.
 
-        Only the last four digits of the identifier travel here — fetch a single account for the
-        full details a payer needs.
+        Only the last four digits of the identifier travel here. Fetch a single account for the full
+        details a payer needs.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -4937,16 +4933,16 @@ paths:
     post:
       tags:
         - User Management
-      summary: Issue an account
+      summary: Issue a fiat account
       operationId: issueFiatAccount
       description: |
         Opens a fiat account (IBAN) for the customer, registering them as an account holder first if
-        needed. The holder must already be approved — see
+        needed. The holder must already be approved, see
         `GET /users/{user_uuid}/identification`.
 
         **Idempotent per (customer, currency, jurisdiction).** A repeat answers `201` with the same
         account and `created: false`; it does not open a second one. One customer may hold accounts
-        in several currencies, and in several jurisdictions of the same currency — `EUR/NL` and
+        in several currencies, and in several jurisdictions of the same currency: `EUR/NL` and
         `EUR/MT` are two accounts, each opened by naming its `issuer_country`.
 
         Two requests racing for the same account answer `409 PROVISIONING_IN_PROGRESS`. Retry once
@@ -5029,17 +5025,14 @@ paths:
     get:
       tags:
         - User Management
-      summary: One account, with balances
+      summary: One fiat account, with balances
       operationId: getFiatAccount
       description: |
-        The full account details a payer needs — including the complete IBAN or account number — the
-        holder it belongs to, and the live balances.
+        The full details a payer needs, including the complete IBAN or account number, plus the
+        `holder` the account belongs to and the live `balances`.
 
-        An account is always addressed through the customer that holds it. One that belongs to a
-        different customer answers `404`, the same as one that does not exist.
-
-        `balances_unavailable: true` means the balance read failed — the balances are reported as
-        unavailable rather than as zero, because a zero a partner acts on is worse than a gap.
+        `balances_unavailable: true` means the balance read failed. Balances are reported as
+        unavailable rather than as zero: a zero you act on is worse than a gap.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -5054,9 +5047,8 @@ paths:
                 $ref: '#/components/schemas/FiatAccountDetailResponse'
         '404':
           description: |
-            No such customer, or not yours (`CUSTOMER_NOT_FOUND`); or no such account under that
-            customer (`FIAT_ACCOUNT_NOT_FOUND`). An account that exists but belongs to a DIFFERENT
-            customer answers the same way — it is not addressable through this path.
+            `CUSTOMER_NOT_FOUND`, or `FIAT_ACCOUNT_NOT_FOUND` when this customer holds no such
+            account. An account held by a different customer answers the same way.
           content:
             application/json:
               schema:
@@ -5135,8 +5127,10 @@ paths:
       description: |
         One page of bank transfers on the account, in both directions. `kind` says which:
         `incoming` (someone paid into the account) or `outgoing` (money sent from it).
-        `recipient`, `iban` and `bic` describe the other side: the payer on an incoming payment,
-        the payee on an outgoing one.
+
+        The other side of the transfer is `recipient` — the payer on an incoming payment, the payee
+        on an outgoing one — plus the identifiers the transfer carried: `iban` and `bic` on SEPA,
+        `account_number` and `sort_code` on UK Faster Payments.
 
         When a payment changes the balance, the ledger entry it produced
         (`GET /users/{user_uuid}/fiat-accounts/{account_id}/ledger`) carries this payment's `id` in
@@ -7731,14 +7725,17 @@ components:
         id: { type: string }
         type:
           type: string
+          enum: [bank_transfer, conversion, internal_transfer, fee, crypto_transfer, other]
           description: |
-            What kind of operation produced the entry: a bank transfer, a conversion, an internal
-            transfer, a fee. The values come from the bank and are not a closed list, so show them
-            rather than branch on them.
-        category:
+            What produced the entry. `bank_transfer` is a payment into or out of the account,
+            `internal_transfer` a movement between Unigox-held accounts (a deposit collected into
+            your master account, for one), `conversion` a currency conversion, `fee` a charge.
+            `other` is anything else the bank books; treat it as descriptive.
+          example: bank_transfer
+        amount:
           type: string
-          description: A finer label from the bank. Not a closed list either.
-        amount: { type: string, example: "500.00" }
+          description: Signed. A debit is negative.
+          example: "-500.00"
         currency: { type: string, example: EUR }
         reference:
           type: string
@@ -7749,11 +7746,7 @@ components:
         note:
           type: string
           description: The description attached to the operation, when there is one.
-        created_at:
-          type: integer
-          format: int64
-          description: Unix seconds.
-          example: 1757415862
+        created_at: { type: string, format: date-time }
 
     FiatPayment:
       type: object
@@ -7787,21 +7780,24 @@ components:
           description: The network the transfer went over, as the bank reports it.
         iban:
           type: string
-          description: The other side's IBAN, when the transfer carried one.
+          description: The other side's IBAN, on a transfer addressed by one.
+          example: "NL91ABNA0417164300"
         bic:
           type: string
+          description: The other side's BIC, on a transfer addressed by one.
+          example: ABNANL2A
+        account_number:
+          type: string
           description: |
-            The other side's BIC. On a UK Faster Payments transfer this can hold the sort code
-            instead.
-        created_at:
-          type: integer
-          format: int64
-          description: Unix seconds.
-          example: 1757415862
-        updated_at:
-          type: integer
-          format: int64
-          description: Unix seconds.
+            The other side's local account number, on a transfer that carries no IBAN (a UK Faster
+            Payments one). Present instead of `iban`.
+          example: "25976129"
+        sort_code:
+          type: string
+          description: The other side's sort code, present instead of `bic` on the same transfers.
+          example: "23-08-01"
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     FiatPagination:
       type: object
@@ -7908,6 +7904,11 @@ components:
           properties:
             holder:
               $ref: '#/components/schemas/FiatAccountHolder'
+            already_linked:
+              type: boolean
+              description: |
+                Present, and `true`, when a submission found this customer already registered as an
+                account holder. Nothing was sent to the bank a second time.
 
     FiatLedgerResponse:
       type: object

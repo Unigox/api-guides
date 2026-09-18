@@ -19,18 +19,16 @@ first.
 approval is usually immediate. It is not guaranteed to be, which is why step 4
 is a poll rather than a wait.
 
-## The one idea to hold on to
+## An account belongs to a customer
 
-An account belongs to a **person**, and that person is a customer you already
-have — the one you created with `POST /api/v1/partner/users` and put through
-KYC. It is not a separate banking record with its own identity to register and
-keep in step.
+The holder is a customer you already have: the one you created with
+`POST /api/v1/partner/users` and put through KYC. There is no separate banking
+record to register and keep in step.
 
-Everything follows from that. The routes live under
-`/api/v1/partner/users/{user_uuid}/…`, beside the KYC and payment-details routes
-for the same customer. An account id on its own is not enough to read an
-account — you address it through its holder. And the identity the bank opens the
-account on is the one Unigox verified, not one you retype into a request body.
+So the routes live under `/api/v1/partner/users/{user_uuid}/…`, beside the KYC
+and payment-details routes for the same customer. An account id on its own is
+not enough to read an account, and the identity the bank opens the account on is
+the one Unigox verified, not one you retype into a request body.
 
 Accounts here are held by individuals. An account issued to a company you
 onboarded through business (KYB) onboarding is not on this API: its holder is a
@@ -39,7 +37,7 @@ Those remain available in the Unigox console.
 
 ## Conventions
 
-Nothing here departs from the rest of the Partner API. Responses are wrapped:
+The same as the rest of the Partner API. Responses are wrapped:
 
 ```json
 { "success": true, "data": { "config": { … } } }
@@ -53,7 +51,7 @@ validation failure — the request fields at fault:
   "success": false,
   "error": {
     "code": "MISSING_FIELDS",
-    "message": "The banking layer needs a few details this customer's verification did not capture.",
+    "message": "The bank needs a few details this customer's verification did not capture.",
     "details": { "missing_fields": ["address", "birthdate"] }
   }
 }
@@ -139,13 +137,13 @@ GET /api/v1/partner/users/{user_uuid}/identity
 X-API-Key: <api-key>
 ```
 
-Returns what our KYC already established about this customer, and `missing` —
-the fields the banking layer still needs. `ready: true` means step 3 will be
-accepted with an empty body.
+Returns what our KYC already established about this customer, and `missing`: the
+fields the bank still needs. `ready: true` means step 3 will be accepted with an
+empty body.
 
-This is a read: it creates nothing and calls no one, so it is safe to poll while
-you decide whether to offer the product to a given customer. The document
-number is never returned — only its last four digits.
+It creates nothing and calls no one, so it is safe to call while you decide
+whether to offer the product to a given customer. The document number is never
+returned, only its last four digits.
 
 ### 3. Submit the customer's identity
 
@@ -176,6 +174,10 @@ digits are kept.
 A gap answers `400` with `error.code: "MISSING_FIELDS"` and the field list under
 `error.details.missing_fields`.
 
+Calling this again for a customer who is already an account holder answers `200`
+with their current record and `already_linked: true`. Nothing is sent to the
+bank twice.
+
 ### 4. Wait for approval
 
 ```http
@@ -199,13 +201,11 @@ X-API-Key: <api-key>
 ```
 
 Poll this until `can_open_accounts` is `true`. `status` moves
-`draft → pending_review → approved | rejected`. Approval is usually immediate
-but is not guaranteed to be, which is why this is a poll rather than a
-synchronous answer on step 3.
+`draft → pending_review → approved | rejected`. Approval is usually immediate,
+but it is not guaranteed to be, which is why step 3 does not answer it.
 
-It is a `GET`: checking a verification does not change anything, so it is safe
-to retry and safe to run on a schedule. A customer you have not submitted yet
-answers `404 ACCOUNT_HOLDER_NOT_FOUND` — polling never creates a holder record.
+A customer you have not submitted yet answers `404 ACCOUNT_HOLDER_NOT_FOUND`:
+polling never creates a holder record.
 
 ### 5. Issue the account
 
@@ -292,7 +292,6 @@ They link through ids: the ledger entry a payment produced carries the payment's
 
 Both are paged with `?page=N`. `pagination` is present only when the bank
 returns it; when it is absent, request the next page until one comes back empty.
-Timestamps on both are Unix seconds.
 
 ## What happens when a deposit lands
 
@@ -308,7 +307,7 @@ amount, the currency and the account it came from. Register webhooks with
 | --- | --- | --- |
 | `MISSING_FIELDS` | 400 | See `error.details.missing_fields`. |
 | `INVALID_DOCUMENT_TYPE` | 400 | Not one of the four accepted document types. |
-| `INVALID_POSTAL_CODE` | 400 | Longer than the banking layer accepts. |
+| `INVALID_POSTAL_CODE` | 400 | Longer than the bank accepts. |
 | `UNSUPPORTED_CURRENCY` | 400 | Not in `config.currencies`. |
 | `UNSUPPORTED_ISSUER_COUNTRY` | 400 | Not in `config.issuers[currency]`. |
 | `POSTAL_CODE_REQUIRED` | 400 | This jurisdiction will not issue without one. |
@@ -327,13 +326,38 @@ amount, the currency and the account it came from. Register webhooks with
 | `CUSTOMER_NOT_VERIFIED` | 422 | The customer's KYC is not (or no longer) verified. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |
 | `ACCOUNT_NOT_PROVISIONED` | 422 | The account has not finished being opened, so it has no details or history yet. |
-| `RECORD_FAILED` | 500 | The account was opened but could not be recorded. **Do not retry** — contact Unigox to reconcile. |
-| `BANKING_ERROR` | 502 | The banking layer refused or failed the request. |
-| `BANKING_UNAVAILABLE` | 502 / 503 | The banking layer could not be reached. |
-| `ENTITLEMENT_UNAVAILABLE` | 503 | We could not check your entitlements; nothing was done. |
-| `HOLDER_UNAVAILABLE` | 503 | The customer could not be registered as a holder just now; nothing was done. |
+| `CUSTOMER_UNKNOWN` | 422 | The customer has no account holder record behind them yet. |
+| `NO_OPERATING_ACCOUNT` | 403 | Your partner has no banking account behind it. Ask Unigox; no request on this API will work until it does. |
+| `RECORD_FAILED` | 500 | The account was opened but could not be recorded. **Do not retry**, contact Unigox to reconcile. |
+| `BANKING_ERROR` | 502 | The bank refused or failed the request. |
+| `BANKING_UNAVAILABLE` | 502 / 503 | The bank could not be reached. |
 
-`BANKING_ERROR` and `BANKING_UNAVAILABLE` mean the request reached the banking
-layer and did not complete. Both are safe to retry: issuance is idempotent per
-(customer, currency, jurisdiction), so a retry either finishes the account or
-returns the one that was already opened.
+`BANKING_ERROR` and `BANKING_UNAVAILABLE` mean the request reached the bank and
+did not complete. Both are safe to retry: issuance is idempotent per (customer,
+currency, jurisdiction), so a retry either finishes the account or returns the
+one that was already opened.
+
+### Failures that are not about your request
+
+These say a piece of Unigox could not answer just now. Nothing was changed, and
+every one of them is safe to retry.
+
+| `error.code` | Status | Which step |
+| --- | --- | --- |
+| `ENTITLEMENT_UNAVAILABLE` | 503 | Your entitlements could not be read. |
+| `CUSTOMER_LOOKUP_UNAVAILABLE` | 503 | The customer could not be looked up. |
+| `IDENTITY_UNAVAILABLE` | 503 | The verified identity could not be read. |
+| `KYC_UNAVAILABLE` | 503 | The KYC verdict could not be read. |
+| `HOLDER_UNAVAILABLE` | 503 | The customer could not be registered as a holder. |
+| `PRICING_UNAVAILABLE` | 503 | Pricing for the currency could not be read. |
+| `PROVISION_UNAVAILABLE` | 503 | Issuance could not be started. |
+| `DB_NOT_CONFIGURED` | 503 | A store this route needs is not configured in this environment. |
+| `LOAD_FAILED` | 500 | A record could not be read. |
+| `CREATE_FAILED` | 500 | A record could not be written. |
+| `PROVISION_FAILED` | 500 | Issuance failed before the account was opened. |
+| `LINK_WRITE_FAILED` | 500 | The identity reached the bank but the link could not be stored. |
+| `STATUS_WRITE_FAILED` | 500 | The bank answered but the status could not be stored. |
+
+The last two mean the bank has your submission even though we could not record
+its answer. Poll `GET /users/{user_uuid}/identification` rather than submitting
+again.
