@@ -532,8 +532,9 @@ both answer `409 INVALID_STATUS`.
 ### 5. Follow the payout
 
 The release is the middle of a delayed order, not the end. Every field below is
-present on every off-ramp order response, and a `null` mark is a fact — that step
-has not happened — rather than an absent field.
+present on every order response — `GET /api/v1/partner/orders/{order_id}` and
+`GET /api/v1/partner/orders`, on-ramp rows included, where all ten read `false` or
+`null` — and a `null` mark is a fact: that step has not happened.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -688,7 +689,7 @@ endpoints derive their code from the status, so this is the whole vocabulary.
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes disagree with its content type, or a `bank_statement` was sent as something other than a bank-issued PDF. `error.details.allowed` lists what may be sent. |
 | `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over length; `document_type` or `file` missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4096 bytes. |
 | `TRANSACTOR_ERROR` | 502 | The consent signature could not be accepted. A signature from a key that does not own the escrow and a briefly unreachable escrow service are indistinguishable from here — verify `signer_address`, then retry. |
-| `INTERNAL_ERROR` | 500 / 502 / 503 | The dossier, the document store or the release transaction could not be reached. The status carries the retryability. |
+| `INTERNAL_ERROR` | 500 / 503 | `503` when the dossier store or the document store is unavailable; `500` for anything else that failed. The status carries the retryability. |
 
 413, 415 and 422 share `INVALID_REQUEST` deliberately: no code in this API is
 named after an HTTP status. Branch on the status — retry smaller, send a different

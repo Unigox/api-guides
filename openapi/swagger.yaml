@@ -8088,15 +8088,14 @@ components:
             - `await_review` — everything owed on a delayed order has been supplied and a reviewer is
               deciding. Named as an action rather than left `null` so a poller has an unambiguous
               "nothing to do"
-            - `null` — no required action (waiting for buyer or system). On a parked delayed order this
-              means the order is held for review, or a payout of yours failed and its escrow refund is
-              in flight: both consent endpoints then answer `409 OPERATION_NOT_ALLOWED`
+            - absent — no required action (waiting for buyer or system). The key is **omitted**, not
+              sent as `null`. On a parked delayed order it is absent when the order is held for review,
+              or a payout of yours failed and its escrow refund is in flight: both consent endpoints
+              then answer `409 OPERATION_NOT_ALLOWED`
 
             `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute this
-            identically, so a list row and the order page never disagree about what an order is waiting
-            for. If a lookup behind the T+1 hint fails, both fall back to `sign_settlement_consent` —
-            the safe direction, since a partner who has already signed learns nothing new from being
-            asked again, whereas `await_review` on an order nobody signed waits forever.
+            identically. If a lookup behind the T+1 hint fails, both fall back to
+            `sign_settlement_consent`.
           enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, sign_settlement_consent, submit_source_of_funds, await_review, null]
           example: authorize_crypto_transfer
         action_required:
@@ -8187,7 +8186,7 @@ components:
 
             The one exception is a parked delayed order that is **held** — flagged for review, or with
             a failed payout whose escrow refund is in flight. There the list is left as the ordinary
-            mapping produced it (`["confirm-fiat-received"]`), `next_action` is `null`, and neither
+            mapping produced it (`["confirm-fiat-received"]`), `next_action` is omitted, and neither
             that action nor a consent is accepted.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
@@ -8292,12 +8291,9 @@ components:
           type: boolean
           description: |
             Whether this order settles **T+1**: the crypto leaves escrow on your release signature and
-            the fiat follows within `settlement_hours`. Fixed when the order is created — a vendor
-            changing their offer afterwards does not change the order's class.
-
-            This field and the eight below are **always present** on every order. This one is `false`
-            on an ordinary order; the other eight are `null` there, and a `null` mark on a delayed
-            order is a fact — that step has not happened — rather than an absent field.
+            the fiat follows within `settlement_hours`. This field and the nine below are always
+            present on every order, on-ramp included — `false` here and `null` there on an order that
+            does not settle T+1.
           example: false
         settlement_hours:
           type: integer
