@@ -558,8 +558,10 @@ timeline is unchanged, entry for entry.
 | `returned` | `Fiat returned by the bank` |
 | `cancelled` | `Crypto refunded to the customer` |
 
-Consecutive entries are collapsed by status and description, so each intermediate
-mark keeps its own line.
+The release is **one** entry, however many internal release statuses the order
+passes through: on a delayed order they all read `settlement_in_progress` with
+the same description, and consecutive entries are collapsed by status **and**
+description. Each mark after it keeps its own line.
 
 ## Webhooks
 

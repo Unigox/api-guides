@@ -5116,7 +5116,7 @@ paths:
             `source_of_funds` is not one of the offered categories; `additional_sources` names a new or
             unknown code; `explanation` is required and empty; a text field is over 4000 characters; the
             wallet address or network is over length; or `source_wallet_address` is missing on a
-            `crypto_assets` declaration, where screening the on-chain sender is the primary control.
+            `crypto_assets` declaration.
           content:
             application/json:
               schema:
@@ -5125,7 +5125,7 @@ paths:
                 success: false
                 error:
                   code: INVALID_REQUEST
-                  message: "source_wallet_address is required when the funds come from crypto: it is the address that gets screened"
+                  message: "source_of_funds must be a category from the requirements catalogue"
         '500':
           description: The declaration could not be saved.
           content:
@@ -5283,7 +5283,7 @@ paths:
                 success: false
                 error:
                   code: INVALID_REQUEST
-                  message: "document_type is required: name what this file is, using a key from the dossier's requirements snapshot"
+                  message: "document_type is required: it must be a document key from the requirements catalogue"
         '500':
           description: The document could not be saved.
           content:
@@ -5416,14 +5416,15 @@ paths:
           in: query
           required: false
           description: |
-            Filter by partner order status. Every status this API emits is accepted, on-ramp and
-            off-ramp alike; an unrecognised value is a `400`.
+            Accepts exactly the values of the `PartnerOrderStatus` enum below, on-ramp and off-ramp
+            alike. Anything else answers `400 INVALID_REQUEST` — including `awaiting_vendor_acceptance`,
+            `awaiting_crypto_submit` and `crypto_submit_pending`, which are internal constants this API
+            never reports and the enum does not carry.
 
-            Four are accepted but can never match. `awaiting_liquidity_provider` and
-            `price_changed_requote_needed` live on a trade request, and this list reads trades;
-            `fiat_received_confirmed` and `crypto_release_pending` are timeline vocabulary, shadowed
-            by `completed` on the order itself. An empty page from one of these is the filter working,
-            not an outage.
+            Four of the accepted values can never match a row and answer an empty `200`:
+            `awaiting_liquidity_provider` and `price_changed_requote_needed` live on a trade request
+            and never on an order, and `fiat_received_confirmed` and `crypto_release_pending` are
+            shadowed by `completed`, which every internal status behind them reports.
 
             A ramp-specific status implies its trade type, so `status` and `type` need not be paired.
             Passing a `type` that contradicts the status is not an error either — it is simply a
