@@ -4409,36 +4409,12 @@ paths:
         - Orders
       summary: Get settlement consent parameters
       description: |
-        **Delayed settlement (T+1) only.** Returns the EIP-712 Safe transaction to sign in order to let
-        a parked delayed order's crypto leave escrow — *before* the customer has been paid, which is
-        the whole product. The fiat then follows within `settlement_hours` of the release.
+        **Delayed settlement (T+1) only.** Returns the EIP-712 Safe transaction that releases a parked
+        delayed order's crypto from escrow ahead of the fiat payout, behind the same gate as the POST
+        that takes the signature.
 
-        Use this endpoint first, sign the returned typed data locally with the key that owns
-        `signer_address`, then send the signature to
-        `/api/v1/partner/orders/{order_id}/settlement-consent`.
-
-        Same shape as `refund-authorization-parameters`, with three differences: `direction` is
-        `to_buyer`, `tx_hash` is present because the consent is checked against the release
-        transaction, and `settlement_hours` and `consent_deadline_at` are echoed beside the payload
-        because signing is the moment that promise is accepted and the moment it stops being available.
-
-        There is no `payout_deadline_at` here, deliberately, though the order payload carries one: that
-        deadline is measured from the release, and this endpoint only ever serves an order that has not
-        released — signing is what releases it. The key would be `null` on every response this endpoint
-        can produce, and one that can never carry a value is a worse contract than its absence.
-
-        **Who signs.** The escrow is a 2-of-3 Safe. On an order you opened, its seller-side owner is
-        *your* wallet — your customer holds no key with us, which is why delayed settlement is offered
-        only on orders whose crypto you hold. `signer_address` names it; sign with that key and no
-        other.
-
-        **Where the money goes is not yours to choose.** `recipient_address` is read from the escrow on
-        the server — the vendor providing the fiat. `amount_human` is what that vendor receives, after
-        the platform fee is split off by the same release. Both are returned so you can verify them
-        before signing; no parameter changes either.
-
-        This GET runs the same gate as the POST, so you can never be handed a payload you would then be
-        refused for when it comes back signed.
+        Sign the returned typed data locally with the key that owns `signer_address`, then send the
+        signature to `POST /api/v1/partner/orders/{order_id}/settlement-consent`.
       operationId: getSettlementConsentParameters
       security:
         - ApiKeyAuth: []
@@ -4641,10 +4617,9 @@ paths:
         `GET /settlement-consent-parameters` to let the order's crypto leave escrow ahead of the payout.
         Unigox adds the second of the two signatures the Safe requires and executes.
 
-        **Both fields are required**, which is where this differs from `authorize-refund`. Only the
-        artefact you signed distinguishes "send the crypto to the vendor" from "send it back to me" —
-        so without `signed_data` there is nothing to check the signature against, and storing a refund
-        signature as a consent would release an order somebody was trying to unwind.
+        **Both fields are required**, which is where this differs from `authorize-refund`: the
+        signature is checked against `signed_data`, and a `signed_data` that is not this order's
+        release transaction answers `400 INVALID_REQUEST`.
 
         Two artefacts identify the same release, and **either** is accepted as `signed_data`:
         `safe_params.data` — the release calldata, which is what our own clients send and what the
@@ -5501,10 +5476,7 @@ paths:
               whose crypto was refunded to the customer after the release
 
             The four are disjoint and between them cover every released delayed order, so the set a
-            filter returns is exactly the set whose own `status` field reports that value. The last is
-            worth saying out loud: a delayed order refunded after the release reports `cancelled` while
-            still sitting in a release state internally, and is returned under `status=cancelled` like
-            any other stopped order.
+            filter returns is exactly the set whose own `status` field reports that value.
           schema:
             $ref: '#/components/schemas/PartnerOrderStatus'
           example: "completed"
@@ -7544,10 +7516,8 @@ components:
           type: boolean
           description: >-
             Whether pricing at this amount would open a **delayed settlement (T+1)** order. Always
-            present, never omitted, so a client can tell "this build does not know about T+1" from
-            "this estimate is not T+1". An estimate is indicative about the numbers, not about the
-            class: the price may move before the quote, but a T+1 estimate does not become an instant
-            order.
+            present. An estimate is indicative about the numbers, not about the class: the price may
+            move before the quote, but a T+1 estimate does not become an instant order.
           example: false
         settlement_hours:
           type: integer
@@ -7993,13 +7963,9 @@ components:
         delayed_settlement:
           type: boolean
           description: |
-            Whether initiating this quote would open a **delayed settlement (T+1)** order — a different
-            product from the one this endpoint returns the rest of the time. On a delayed order the
-            crypto leaves escrow on your own release signature and the fiat follows within
-            `settlement_hours`, instead of both legs completing together.
-
-            **Always present**, never omitted, so a client can tell "this build does not know about
-            T+1" from "this quote is not T+1".
+            Whether initiating this quote would open a **delayed settlement (T+1)** order: the crypto
+            leaves escrow on your own release signature and the fiat follows within `settlement_hours`,
+            instead of both legs completing together. **Always present.**
 
             You cannot request it or decline it. A delayed offer is considered only when no instant
             offer covers the amount, and only on orders whose crypto you hold — never on a widget
@@ -9012,10 +8978,8 @@ components:
               items:
                 type: string
               description: >-
-                **Always `[]`.** The reviewer's own checklist — what a document is tested against —
-                which published to an integrator would be a specification for passing a check rather
-                than for meeting one. The key is kept and emptied rather than dropped, so a consumer
-                mapping over it never meets a second shape.
+                **Always `[]`.** The reviewer's own checklist is not served on this plane; the key is
+                always present and always empty.
               example: []
             frozen_at:
               type: string
@@ -9195,29 +9159,11 @@ components:
             delayed_settlement:
               type: boolean
               description: |
-                **Delayed settlement (T+1) only.** This field and the eight below are present only on a
-                delayed order, and are omitted entirely otherwise — an ordinary order's payload is
-                byte-for-byte what it was. `delayed_settlement` is `true` or absent, never `false`, so
-                its presence identifies the class.
+                **Delayed settlement (T+1) only.** This field and the eight below travel on every
+                `order.status.changed` event for a delayed order, and are omitted entirely on any other
+                order — `delayed_settlement` is `true` or absent, never `false`.
 
-                On a delayed order `order.status.changed` fires at each of the six marks: crypto sent to
-                the payout provider, fiat payout authorized, fiat payout submitted by the provider
-                (all three `settlement_in_progress`), fiat paid to the customer (`completed`), bank
-                returned the payout (`returned`) and crypto refunded to the customer (`cancelled`).
-                They exist because the underlying status does **not** move for the whole second half of
-                a delayed order's life; without them there is nothing between the release and the
-                payment.
-
-                All nine travel on **every** event for that order, not only the one each mark triggered:
-                three of the six report the same status, so without the timestamps three
-                `settlement_in_progress` events in a day are indistinguishable.
-
-                A mark that has not happened is **absent** here, not `null` — the opposite of the order
-                payload, where these fields are always present.
-
-                **A bank return can recur** — returned, re-authorized, returned again is a normal
-                sequence — and `event_id` is unique **per emission**, not per mark. De-duplicate on
-                `event_id`, never on the mark, or the second return is silently dropped.
+                A mark that has not happened is absent here rather than `null`.
               example: true
             settlement_hours:
               type: integer

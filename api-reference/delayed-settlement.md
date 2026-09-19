@@ -97,9 +97,7 @@ order, the fiat not having been paid.
 the only funded state any order can be cancelled from; every other funded order
 answers "cannot be cancelled". `POST /api/v1/partner/orders/{order_id}/cancel` is
 the ordinary endpoint, unchanged — it refunds the escrow to you while the crypto
-is still in it. Both actions are withdrawn the moment the consent is signed. The
-cancel loses that race in the database rather than in a check, so calling it
-against an order that is already releasing cannot half-cancel it.
+is still in it. Both actions are withdrawn the moment the consent is signed.
 
 `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute
 both fields identically. If either lookup behind the hint fails, both fall back to
@@ -159,11 +157,7 @@ X-API-Key: <api-key>
 
 Same shape as `refund-authorization-parameters`, with three differences:
 `direction` is `to_buyer` rather than `to_seller`, `tx_hash` is present, and
-`settlement_hours` and `consent_deadline_at` are echoed beside the payload,
-signing being the moment the promise is accepted and the moment it stops being
-available. `payout_deadline_at` is not here: it is measured from the release,
-which has not happened. It appears on the order payload from the moment there is
-one.
+`settlement_hours` and `consent_deadline_at` are echoed beside the payload.
 
 The escrow is a 2-of-3 Safe whose seller-side owner is *your* wallet — your
 customer holds no key. `signer_address` names it; sign with that key and no other.
@@ -201,8 +195,8 @@ the escrow files the signature under — or **`tx_hash`**. Both are compared
 case-insensitively and with surrounding quotes stripped; anything else answers
 `400 INVALID_REQUEST` naming the endpoint to take it from.
 
-Your private key never reaches the API. Sign the returned typed data (`domain`,
-`types`, `safe_params`) locally and submit only the signature.
+Sign the returned typed data (`domain`, `types`, `safe_params`) locally and submit
+only the signature.
 
 ```json
 {
@@ -236,9 +230,7 @@ Below the threshold there is no dossier: `source-of-funds`,
 `404 ORDER_NOT_FOUND`. `…/source-of-funds/requirements` still serves the
 catalogue, for any delayed order of yours.
 
-Your customer supplies the evidence on *your* screens and you post it here. Below
-the authorisation line these are the endpoints our own app uses: the same
-validation, the same store, the same case the reviewer reads.
+Your customer supplies the evidence on *your* screens and you post it here.
 
 #### Read the dossier
 
