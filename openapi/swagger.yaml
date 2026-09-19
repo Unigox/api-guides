@@ -264,6 +264,8 @@ tags:
       | `cancelled` | Order cancelled or payment declined |
       | `failed` | Escrow error, or fiat-anchored safety bound exceeded (see below) |
       | `dispute_started` | Dispute opened |
+      | `settlement_in_progress` | Delayed settlement (T+1): the crypto has left escrow and the fiat has not arrived |
+      | `returned` | Delayed settlement (T+1): the bank sent the payout back and no fresh authorization stands |
 
       **Fiat-anchored safety bound failure**
 
@@ -5289,11 +5291,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '502':
-          description: The document store refused the file, or could not store it intact. Safe to retry.
+          description: >-
+            The document store refused the file, or could not store it intact. The code is
+            `INTERNAL_ERROR`, not `TRANSACTOR_ERROR`. Safe to retry.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the document could not be stored"
         '503':
           description: The document store is not available. Nothing was stored; retry.
           content:
@@ -5436,7 +5445,10 @@ paths:
             - `cancelled` — orders that stopped before settlement, as before, **plus** delayed orders
               whose crypto was refunded to the customer after the release
 
-            A filter returns exactly the orders whose `status` reports that value.
+            For these four values a filter returns exactly the orders whose `status` reports that
+            value. That does not hold for the status filter in general: several partner statuses share
+            one internal status, so `?status=crypto_transfer_authorization_pending` returns rows
+            reporting `awaiting_crypto_transfer_authorization`.
           schema:
             $ref: '#/components/schemas/PartnerOrderStatus'
           example: "completed"
@@ -8256,7 +8268,8 @@ components:
           format: date-time
           nullable: true
           description: |
-            Release time plus `settlement_hours`. `null` until the crypto has left escrow.
+            Release time plus the promised window; `settlement_hours` is that window rounded to whole
+            hours. `null` until the crypto has left escrow.
           example: "2026-09-19T12:07:55Z"
         delayed_settlement_crypto_sent_to_provider_at:
           type: string
@@ -9064,11 +9077,15 @@ components:
             delayed_settlement:
               type: boolean
               description: |
-                **Delayed settlement (T+1) only.** This field and the eight below travel on every
-                `order.status.changed` event for a delayed order, and are omitted entirely on any other
-                order — `delayed_settlement` is `true` or absent, never `false`.
+                **Delayed settlement (T+1) only.** Omitted entirely on any other order —
+                `delayed_settlement` is `true` or absent, never `false`.
 
-                A mark that has not happened is absent here rather than `null`.
+                Every T+1 field here is omitted until it has a value. `delayed_settlement` and
+                `settlement_hours` are on every `order.status.changed` event of a delayed order,
+                including the ones before the release; `payout_deadline_at` from the release onwards;
+                and each `delayed_settlement_*_at` mark once that step has happened, and then on every
+                later event for the order. An absent key means the step has not happened; none of them
+                is sent as `null`.
               example: true
             settlement_hours:
               type: integer

@@ -490,7 +490,7 @@ Every field below is present on every order response — `GET /api/v1/partner/or
 | `delayed_settlement` | boolean | Whether this order settles T+1. `false`, not `null`, on an ordinary order. Fixed at creation. |
 | `settlement_hours` | integer \| null | The promised window, rounded to the nearest whole hour, never below `1`. `null` on an instant order. |
 | `consent_deadline_at` | string \| null | Funding time plus the consent window; after it the payment-window sweep refunds the escrow. Set only while the order is parked, `null` otherwise. |
-| `payout_deadline_at` | string \| null | Release time plus `settlement_hours`. `null` until the crypto has left escrow. |
+| `payout_deadline_at` | string \| null | Release time plus the promised window (`settlement_hours` is that window rounded to whole hours). `null` until the crypto has left escrow. |
 | `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto left the vendor's wallet for the payout provider. **A refund to the customer stops being possible at this mark.** |
 | `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox authorised the vendor to send the fiat. Never set before the mark above. |
 | `delayed_settlement_fiat_payout_submitted_by_provider_at` | string \| null | The provider accepted the payout and put it on the banking rail. |
@@ -538,7 +538,10 @@ the four release-bearing filters mean:
 | `returned` | The bank sent the payout back and nobody has authorised another attempt yet. |
 | `cancelled` | Orders that stopped before settlement, as before, **plus** delayed orders whose crypto was refunded after the release. |
 
-A filter returns exactly the orders whose `status` reports that value.
+For these four values a filter returns exactly the orders whose `status` reports
+that value. That does not hold for the status filter in general: several partner
+statuses share one internal status, so `?status=crypto_transfer_authorization_pending`
+returns rows reporting `awaiting_crypto_transfer_authorization`.
 
 ### Timeline
 
@@ -560,8 +563,13 @@ mark keeps its own line.
 
 ## Webhooks
 
-`order.status.changed` fires at each mark. The underlying status does not move for
-the whole second half of a delayed order's life.
+`order.status.changed` fires at each mark, on top of the ordinary status events a
+delayed order already sends before the release. The underlying status does not
+move for the whole second half of a delayed order's life.
+
+The six events below fire after the release. The ordinary ones —
+`awaiting_crypto_transfer_authorization`, `crypto_received` and the rest — fire
+before it.
 
 | Fires when | `data.status` |
 | --- | --- |
@@ -572,12 +580,16 @@ the whole second half of a delayed order's life.
 | Bank returned the payout | `returned` |
 | Crypto refunded to the customer | `cancelled` |
 
-`data` carries nine of the order payload's T+1 fields — `delayed_settlement`,
-`settlement_hours`, `payout_deadline_at` and the six `delayed_settlement_*_at`
-marks — on **every** event for that order, not only the one each mark triggered.
+Every T+1 field on `data` is omitted until it has a value:
 
-A mark that has not happened is absent, not `null`. `consent_deadline_at` is not
-carried: these events fire after the release.
+- `delayed_settlement` and `settlement_hours` are on **every** event of a delayed
+  order, including the ones before the release.
+- `payout_deadline_at` appears from the release onwards.
+- Each `delayed_settlement_*_at` mark appears once that step has happened, and
+  then on every later event for the order — not only on the event it triggered.
+
+An absent key means the step has not happened; none of them is ever sent as
+`null`. `consent_deadline_at` is not carried at all.
 
 ```json
 {
@@ -617,15 +629,16 @@ Every endpoint on this page answers in the standard partner envelope.
 
 | `error.code` | Status | When |
 | --- | --- | --- |
-| `INVALID_REQUEST` | 400 | Malformed `order_id`; malformed body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the order is an on-ramp order. |
+| `UNAUTHORIZED` | 401 | The `X-API-Key` header is missing or names no partner. |
+| `INVALID_REQUEST` | 400 | Malformed `order_id`; malformed body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the uploaded file could not be read; the order is an on-ramp order. |
 | `ORDER_NOT_FOUND` | 404 | No such order, not yours, not one whose crypto you hold — or, on the dossier endpoints, an order that owes no dossier, or a `source_of_funds` category that does not exist. |
 | `INVALID_STATUS` | 409 | The order does not settle T+1; it is not parked waiting for a consent; it has no funded escrow. On the dossier endpoints: the order is no longer waiting for your information, the case is already decided, or the same file is already on the case under that `document_type`. |
 | `OPERATION_NOT_ALLOWED` | 409 | The order is under review or held, and no crypto may be moved; or the consent has already been given. |
 | `INVALID_REQUEST` | 413 | The file is larger than 15 MB. |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes disagree with its content type, or a `bank_statement` was sent as something other than a bank-issued PDF. `error.details.allowed` lists what may be sent. |
 | `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over length; `document_type` or `file` missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4096 bytes. |
-| `TRANSACTOR_ERROR` | 502 | The escrow service refused the signature or was unreachable. Verify `signer_address`, then retry. |
-| `INTERNAL_ERROR` | 500 / 503 | `503` when the dossier store or the document store is unavailable; `500` for anything else that failed. |
+| `TRANSACTOR_ERROR` | 502 | The escrow service refused the consent signature or was unreachable. Verify `signer_address`, then retry. |
+| `INTERNAL_ERROR` | 500 / 502 / 503 | `502` when the document store refused the file or could not store it intact — retry the upload. `503` when the dossier store or the document store is unavailable. `500` for anything else that failed. |
 
 413, 415 and 422 share `INVALID_REQUEST`; branch on the status.
 
