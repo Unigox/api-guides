@@ -3745,7 +3745,7 @@ paths:
         for the counterparty (e.g. the buyer to submit fiat payment proof).
 
         The `allowed_actions` array lists all API actions the partner **can** perform at the current
-        status. An action can be in `allowed_actions` even when `next_action` is `null` — this means
+        status. An action can be in `allowed_actions` even when `next_action` is absent — this means
         the action is optional. For example, on an ordinary off-ramp order `confirm-fiat-received` is
         available at `crypto_received` as a fast-track: if you already know the fiat has arrived (via
         your own systems), you can confirm immediately without waiting for the buyer's payment proof
@@ -4682,13 +4682,12 @@ paths:
                             $ref: '#/components/schemas/PartnerOrderStatus'
                           next_action:
                             type: string
-                            nullable: true
                             description: >-
                               What is still owed — `submit_source_of_funds` or `await_review` when the
                               release is waiting on a dossier, and absent once it has started. It falls
                               back to `sign_settlement_consent` if the consent lookup behind the hint
                               fails; the consent is stored either way.
-                            enum: [sign_settlement_consent, submit_source_of_funds, await_review, null]
+                            enum: [sign_settlement_consent, submit_source_of_funds, await_review]
                           consent_signed:
                             type: boolean
                             description: Always `true` on a 200 — the signature is stored.
@@ -5505,7 +5504,6 @@ paths:
                   orders:
                     - order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                       status: completed
-                      next_action: null
                       allowed_actions: []
                       amounts:
                         crypto_amount: "101.50"
@@ -8012,11 +8010,10 @@ components:
           $ref: '#/components/schemas/PartnerOrderStatus'
         next_action:
           type: string
-          nullable: true
           description: |
-            The action the partner **must** perform to advance the order. `null` means
-            no action is required from the partner at this stage — the order is waiting
-            for the counterparty or for an automated system step.
+            The action the partner **must** perform to advance the order. The key is **absent**
+            when no action is required at this stage — the order is waiting for the
+            counterparty or for an automated system step — and is never sent as `null`.
 
             Possible values:
             - `authorize_crypto_transfer` — partner must authorize escrow funding
@@ -8037,15 +8034,15 @@ components:
               source-of-funds threshold with its dossier incomplete. See the `source-of-funds` endpoints
             - `await_review` — everything owed on a delayed order has been supplied and a reviewer is
               deciding
-            - absent — no required action (waiting for buyer or system). The key is **omitted**, not
-              sent as `null`. On a parked delayed order it is absent when the order is held for review,
-              or a payout of yours failed and its escrow refund is in flight: both consent endpoints
-              then answer `409 OPERATION_NOT_ALLOWED`
+            - absent — no required action (waiting for buyer or system). On a parked delayed order
+              the key is absent when the order is held for review, or a payout of yours failed and its
+              escrow refund is in flight: both consent endpoints then answer
+              `409 OPERATION_NOT_ALLOWED`
 
             `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute this
             identically. If a lookup behind the T+1 hint fails, both fall back to
             `sign_settlement_consent`.
-          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, sign_settlement_consent, submit_source_of_funds, await_review, null]
+          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, sign_settlement_consent, submit_source_of_funds, await_review]
           example: authorize_crypto_transfer
         action_required:
           type: object
@@ -8089,7 +8086,7 @@ components:
             type: string
           description: |
             List of API actions the partner **can** perform at the current status. An action
-            may be present here even when `next_action` is `null` — meaning it is optional.
+            may be present here even when `next_action` is absent — meaning it is optional.
 
             Notable case: `confirm-fiat-received` appears at both `crypto_received` and
             `awaiting_fiat_received_confirmation`. At `crypto_received` it is a **fast-track**:
