@@ -4627,8 +4627,9 @@ paths:
         **Security note:** your private key is never sent to the API. Sign the typed data locally and
         submit only the resulting signature.
 
-        A consent is recorded once. A second call answers `409 OPERATION_NOT_ALLOWED` — the release runs
-        on its own once the source-of-funds review, if any, is decided.
+        A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while the order
+        is still parked (the release waits for the source-of-funds review), `INVALID_STATUS` once the
+        release has started.
       operationId: submitSettlementConsent
       security:
         - ApiKeyAuth: []
@@ -4746,8 +4747,8 @@ paths:
             The consent signature could not be accepted. A signature from a key that does not own the
             escrow and a briefly unreachable escrow service are indistinguishable from here. Verify you
             signed with `signer_address`, then re-fetch `settlement-consent-parameters` before signing
-            again — if the consent did land, that GET answers `409 OPERATION_NOT_ALLOWED` and there is
-            nothing left to do.
+            again — if the consent did land, that GET answers `409` (`OPERATION_NOT_ALLOWED` while the
+            order is parked, `INVALID_STATUS` once the release has started).
           content:
             application/json:
               schema:

@@ -201,7 +201,9 @@ only the signature.
 `release_started` is `false` when the release waits for the source-of-funds
 review; `next_action` then says what is owed. Below the threshold it is `true`.
 
-A consent is recorded once; a second call answers `409 OPERATION_NOT_ALLOWED`.
+A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while
+the order is still parked (the release waits for the review), `INVALID_STATUS` once the
+release has started.
 
 ### 4. Source of funds
 
@@ -628,4 +630,5 @@ Every endpoint on this page answers in the standard partner envelope.
 413, 415 and 422 share `INVALID_REQUEST`; branch on the status.
 
 After a `502`, re-fetch `settlement-consent-parameters` before signing again; if
-the consent landed, that GET answers `409 OPERATION_NOT_ALLOWED`.
+the consent landed, that GET answers `409` (`OPERATION_NOT_ALLOWED` while the order is
+parked, `INVALID_STATUS` once the release has started).
