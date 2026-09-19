@@ -127,7 +127,7 @@ X-API-Key: <api-key>
     "crypto_currency": "USDT",
     "crypto_decimals": 6,
     "direction": "to_buyer",
-    "tx_hash": "0x4c8f...9ad1",
+    "tx_hash": "0x4c8f9b2a7e1d05c3ab84f6d29e7c1130bb5a4f8e6c2d9017a3b5e8f1c4d70a9d1",
     "safe_params": {
       "to": "0x2222222222222222222222222222222222222222",
       "value": "0",
@@ -253,7 +253,7 @@ X-API-Key: <api-key>
   "data": {
     "trade_id": 77,
     "delayed_settlement": true,
-    "case_id": "sof_9f1c…",
+    "case_id": "sof_9f1c4e2b",
     "status": "documents_required",
     "consent": { "signed": true, "signed_at": "2026-09-18T12:04:11Z" },
     "threshold_usd": 50000,
@@ -263,7 +263,7 @@ X-API-Key: <api-key>
       "threshold_usd": 50000,
       "usd_equivalent": 62500,
       "case": {
-        "case_id": "sof_9f1c…",
+        "case_id": "sof_9f1c4e2b",
         "status": "documents_required",
         "catalogue_revision": 5,
         "decided_at": null,
@@ -283,7 +283,7 @@ X-API-Key: <api-key>
     },
     "documents": [
       {
-        "document_id": "0f0f…",
+        "document_id": "0f0f8a41-7b2e-4c19-9f60-1d2a3b4c5d6e",
         "document_type": "bank_statement",
         "file_name": "statement.pdf",
         "content_type": "application/pdf",
@@ -484,7 +484,7 @@ balance the requirement is written about.
 {
   "success": true,
   "data": {
-    "document_id": "0f0f…",
+    "document_id": "0f0f8a41-7b2e-4c19-9f60-1d2a3b4c5d6e",
     "document_type": "bank_statement",
     "file_name": "statement.pdf",
     "size_bytes": 184320,

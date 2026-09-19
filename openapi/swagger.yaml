@@ -3415,6 +3415,31 @@ paths:
                       expires_at: "2026-02-01T12:01:00Z"
                       delayed_settlement: false
                       settlement_hours: null
+                delayed_settlement:
+                  summary: Delayed settlement (T+1) quote
+                  value:
+                    success: true
+                    data:
+                      quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                      anchor_type: "fiat"
+                      rate: "7.18"
+                      crypto_amount: "3000.00"
+                      fiat_amount: "21540.00"
+                      fee_breakdown:
+                        platform_fee: "45.00"
+                        platform_fee_pct: 1.5
+                        partner_fee: "30.00"
+                        partner_fee_pct: 1
+                        total_fee: "75.00"
+                        fiat_rail_fee: "0.00"
+                      payment_details_id: 987
+                      payment_method_id: 5
+                      payment_network_id: 12
+                      matching_type: network
+                      network_matching_available: true
+                      expires_at: "2026-09-18T12:01:00Z"
+                      delayed_settlement: true
+                      settlement_hours: 24
         '400':
           description: Bad request — invalid parameters or missing required fields
           content:
@@ -7960,6 +7985,7 @@ components:
             You can call `confirm-fiat-received` at any time regardless of this value.
           example: true
         recipient_context:
+          type: object
           allOf:
             - $ref: '#/components/schemas/PartnerRecipientContext'
           nullable: true
