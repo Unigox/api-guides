@@ -4794,13 +4794,6 @@ paths:
         exists there is no frozen contract to read — render the form from
         `GET …/source-of-funds/requirements` until there is one.
 
-        Several fields are served under two spellings (`documents` / `documents_provided`,
-        `requested_documents` / `documents_requested`, `funds_flow_description` / `funds_flow`,
-        `purpose_of_payment` / `purpose`, `sender_recipient_relationship` / `relationship`,
-        `source_wallet_address` / `wallet_address`, `source_wallet_network` / `wallet_network`, and
-        `document_type` / `document_key` inside a `requested_documents` entry). Both carry the same
-        value; prefer the long ones.
-
         **The read is never fenced.** A case that has just been decided still answers, because you still
         have to show your customer the decision.
       operationId: getPartnerSourceOfFunds
@@ -8737,9 +8730,6 @@ components:
       type: object
       description: |
         One delayed order's source-of-funds dossier, as both the reviewer and your customer see it.
-        Several fields carry two spellings for one value (`documents` / `documents_provided`,
-        `requested_documents` / `documents_requested`, and the short forms of the declaration fields);
-        prefer the long ones, which are the names the reviewer's own screens use.
       properties:
         trade_id:
           type: integer
@@ -8869,11 +8859,6 @@ components:
               uploaded_at:
                 type: string
                 format: date-time
-        documents_provided:
-          type: array
-          description: The same list as `documents`, under the short spelling.
-          items:
-            type: object
         requested_documents:
           type: array
           description: What a reviewer came back and asked for, on top of the frozen contract. Open requests only.
@@ -8883,9 +8868,6 @@ components:
               document_type:
                 type: string
                 description: The key to upload under.
-              document_key:
-                type: string
-                description: The same value as `document_type`.
               label:
                 type: string
               reason:
@@ -8898,11 +8880,6 @@ components:
               policy:
                 type: object
                 description: Present when the requested document has a format or window policy of its own.
-        documents_requested:
-          type: array
-          description: The same list as `requested_documents`, under the short spelling.
-          items:
-            type: object
         requirements_snapshot:
           type: object
           description: |

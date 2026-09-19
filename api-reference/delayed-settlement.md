@@ -319,14 +319,6 @@ threshold and owes no dossier. It is also the answer for an order that is not
 yours or is not one whose crypto you hold — one code for all three, so ids cannot
 be probed. An on-ramp order answers `400 INVALID_REQUEST` instead.
 
-Some fields are served under two spellings (`documents` / `documents_provided`,
-`requested_documents` / `documents_requested`, `funds_flow_description` /
-`funds_flow`, `purpose_of_payment` / `purpose`, `sender_recipient_relationship` /
-`relationship`, `source_wallet_address` / `wallet_address`,
-`source_wallet_network` / `wallet_network`, and `document_type` / `document_key`
-inside a `requested_documents` entry). Both carry the same value. Prefer the long
-spellings above; they are the column names the reviewer's own screens use.
-
 **The read is never fenced.** A case that has just been decided still answers,
 because you still have to show your customer the decision.
 
@@ -401,9 +393,9 @@ that was never on their screen.
   personal account statement (`bank_statement`), owed on every category except
   `crypto_assets`.
 - `requested_documents` is what a reviewer came back and asked for on top. Open
-  requests only; each entry carries `document_type`, `document_key`, `label`,
-  `reason`, `requested_at`, `satisfied`, and `policy` when that document has a
-  format or window rule of its own.
+  requests only; each entry carries `document_type`, `label`, `reason`,
+  `requested_at`, `satisfied`, and `policy` when that document has a format or
+  window rule of its own.
 - `review_checks` is **always `[]`** — the reviewer's checklist stays on the admin
   plane. The key is kept and emptied rather than dropped, so consumers mapping
   over it never meet a second shape.
