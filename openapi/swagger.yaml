@@ -4577,19 +4577,17 @@ paths:
           description: Unauthorized
         '404':
           description: >-
-            No order with this id belongs to your partner account, or its crypto is not yours to move.
-            One code for both, so ids cannot be probed.
+            No order with this id belongs to your partner account, or its crypto is not yours to
+            move.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: >-
-            The order does not take a settlement consent. Either it does not settle T+1 — its crypto is
-            released when the fiat is confirmed, not before — or it is not parked waiting for one, or it
-            has no funded escrow to release (`INVALID_STATUS`); or it is held for review, or the consent
-            has already been given (`OPERATION_NOT_ALLOWED`). Nothing you sent is wrong; the order does
-            not take this action.
+            The order does not take a settlement consent: it does not settle T+1, it is not parked
+            waiting for one, or it has no funded escrow to release (`INVALID_STATUS`); or it is held
+            for review, or the consent has already been given (`OPERATION_NOT_ALLOWED`).
           content:
             application/json:
               schema:
@@ -4687,7 +4685,7 @@ paths:
                             nullable: true
                             description: >-
                               What is still owed — `submit_source_of_funds` or `await_review` when the
-                              release is waiting on a dossier, and `null` once it has started. It falls
+                              release is waiting on a dossier, and absent once it has started. It falls
                               back to `sign_settlement_consent` if the consent lookup behind the hint
                               fails; the consent is stored either way.
                             enum: [sign_settlement_consent, submit_source_of_funds, await_review, null]
@@ -4697,12 +4695,9 @@ paths:
                           release_started:
                             type: boolean
                             description: |
-                              Whether the crypto has actually begun leaving escrow.
-
-                              **`false` is a success, not a failure.** At or above the source-of-funds
-                              threshold the release waits for a reviewer, and on that class of order
-                              this is the normal outcome; `next_action` then says what is still owed.
-                              Below the threshold the crypto goes immediately and this is `true`.
+                              Whether the crypto has begun leaving escrow. `false` when the release
+                              waits for the source-of-funds review; `next_action` then says what is
+                              owed. Below the threshold it is `true`.
               example:
                 success: true
                 data:
@@ -4779,23 +4774,18 @@ paths:
         **Delayed settlement (T+1) only.** An order whose fiat leg is worth at least `threshold_usd` —
         **USD 50 000** today, and an order whose USD equivalent cannot be computed counts as above it —
         does not release until a reviewer has decided where the money came from. Your customer supplies
-        that evidence on *your* screens and you post it here; below the authorization line these are the
-        same endpoints our own app uses, so the two sides of one review cannot disagree about what is
-        owed.
+        that evidence on *your* screens and you post it here.
 
         Returns the whole case: its review status, the declaration, the documents on file, anything a
         reviewer has come back and asked for, and `requirements_snapshot` — the requirement contract
-        **frozen** when the declaration was accepted. A case is judged by the rules it was opened under,
-        so that snapshot, not today's catalogue, is the list to render.
+        **frozen** when the declaration was accepted. Render that snapshot, not today's catalogue.
 
         `requirements_snapshot.documents[].mode` is `one_of` (any single document satisfies the group)
-        or `all_of` (the document is owed outright; such a group always carries exactly one);
-        `documents[].documents` holds the `document_type` keys to upload under. Before a declaration
-        exists there is no frozen contract to read — render the form from
-        `GET …/source-of-funds/requirements` until there is one.
+        or `all_of` (every listed document is owed); `documents[].documents` holds the `document_type`
+        keys to upload under. Until a declaration exists, render the form from
+        `GET …/source-of-funds/requirements`.
 
-        **The read is never fenced.** A case that has just been decided still answers, because you still
-        have to show your customer the decision.
+        The read is not fenced: a decided case still answers.
       operationId: getPartnerSourceOfFunds
       security:
         - ApiKeyAuth: []
@@ -4896,9 +4886,8 @@ paths:
           description: Unauthorized
         '404':
           description: >-
-            **An answer, not a failure:** this order never crossed the threshold and owes no dossier. It
-            is also the answer for an order that is not yours or is not one whose crypto you hold — one
-            code for all three, so ids cannot be probed. Read it as "nothing owed" and stop polling.
+            The order owes no dossier, is not yours, or its crypto is not held by you. Read it as
+            "nothing owed" and stop polling.
           content:
             application/json:
               schema:
@@ -4930,27 +4919,18 @@ paths:
         **Delayed settlement (T+1) only.** The document catalogue for this order: which categories may
         be declared, which documents each one owes, and how much statement history it asks for.
 
-        Render your form from this **before** a declaration exists. Until one is posted the dossier
-        carries no frozen requirement to read that from, and guessing the keys is how a partner uploads
-        evidence against a type no requirement names.
+        Render your form from this **before** a declaration exists.
 
         `?source_of_funds=` narrows the answer to one category. A code that does not exist answers
         `404`.
 
-        Field names here are `camelCase` — this is the catalogue's own contract, not the dossier's.
+        Field names here are `camelCase`.
 
-        Categories carrying `legacy: true` are no longer offered and are refused by the declaration
-        endpoint; they are served so a dossier frozen under one can still resolve its own label. Drop
-        them from your picker.
-
-        **The customer projection, never the reviewer's.** `reviewChecks` — what a document is tested
-        against — is not served here, for the same reason `requirements_snapshot.review_checks` is
-        always empty: published to an integrator it is a specification for passing a check rather than
-        for meeting one.
+        Categories carrying `legacy: true` are refused by the declaration endpoint; do not offer them.
+        `reviewChecks` is not served here.
 
         Keyed by order id like its siblings, so it answers for any delayed order of yours — including
-        one below the threshold, which owes no dossier and whose three sibling endpoints answer `404`.
-        It is a read of a static catalogue: safe to poll, and safe to cache against `revision`.
+        one below the threshold, whose three sibling endpoints answer `404`. Cache against `revision`.
       operationId: getPartnerSourceOfFundsRequirements
       security:
         - ApiKeyAuth: []
@@ -5055,18 +5035,15 @@ paths:
       summary: Submit the source-of-funds declaration
       description: |
         **Delayed settlement (T+1) only.** Records what your customer says about where this order's
-        money came from, and **freezes the requirement contract** they answered under — so an operator
-        editing a rule while cases are open can neither loosen an incomplete case into approvable nor
-        refuse a customer for a document that was never on their screen.
+        money came from, and **freezes the requirement contract** they answered under.
 
         Answers with the whole dossier, in the shape `GET …/source-of-funds` returns.
 
-        A dossier declares **one** source. `additional_sources` exists only to re-send codes already on
-        the case; adding a new one is refused, because a declaration that could grow sources could grow
-        requirements the frozen contract never had.
+        A dossier declares **one** source. `additional_sources` carries only codes already on the
+        case; a new one is refused.
 
         `catalogue_revision` and the requirement contract are computed on the server and are never read
-        from the request — a client that could name its own contract could name an empty one.
+        from the request.
 
         **Writes are fenced.** Accepted only while the order is still parked and the case is undecided.
       operationId: submitPartnerSourceOfFundsDeclaration
@@ -5168,19 +5145,11 @@ paths:
       description: |
         **Delayed settlement (T+1) only.** Takes one evidence file.
 
-        **Bytes, not a reference.** A document named in a bucket of your own is evidence the reviewer
-        who signs the case off can never open, so the file travels here and lands in the same private
-        store our own uploads use.
+        Accepted: PDF, JPEG, PNG, HEIC, HEIF, WebP, validated against the file's bytes rather than its
+        declared type. A `bank_statement` must be a bank-issued PDF.
 
-        The file is validated against **its own bytes**, not its declared type: a renamed archive, a
-        file whose content type disagrees with its content, and anything a browser would execute are all
-        refused. Accepted formats are PDF, JPEG, PNG, HEIC, HEIF and WebP; a personal account statement
-        (`bank_statement`) must be the bank-issued PDF, because a photograph of a screen cannot be
-        checked for the account number, the period or the balance the requirement is written about.
-
-        An **unrecognised** `document_type` is stored rather than refused — throwing away evidence in an
-        AML case because we do not recognise its label is the worse failure. The response says whether
-        it satisfies anything and, when it does not, names the types that would.
+        An unrecognised `document_type` is stored; `satisfies_requirement` is then `false` and
+        `expected_document_types` names the types that would satisfy the case.
 
         **Writes are fenced.** Accepted only while the order is still parked and the case is undecided.
       operationId: uploadPartnerSourceOfFundsDocument
@@ -5460,16 +5429,14 @@ paths:
             On **delayed settlement (T+1)** orders the four release-bearing filters mean:
 
             - `completed` — ordinary released orders, and delayed orders whose fiat actually reached
-              the customer. A delayed order that has released but not paid is **not** here, which is
-              the point of the filter
+              the customer. A released but unpaid delayed order is not here
             - `settlement_in_progress` — delayed, released, and not yet resolved either way. A
               standing bank return with no fresh authorization belongs under `returned`
             - `returned` — the bank sent the payout back and nobody has authorized another attempt
             - `cancelled` — orders that stopped before settlement, as before, **plus** delayed orders
               whose crypto was refunded to the customer after the release
 
-            The four are disjoint and between them cover every released delayed order, so the set a
-            filter returns is exactly the set whose own `status` field reports that value.
+            A filter returns exactly the orders whose `status` reports that value.
           schema:
             $ref: '#/components/schemas/PartnerOrderStatus'
           example: "completed"
@@ -7509,8 +7476,7 @@ components:
           type: boolean
           description: >-
             Whether pricing at this amount would open a **delayed settlement (T+1)** order. Always
-            present. An estimate is indicative about the numbers, not about the class: the price may
-            move before the quote, but a T+1 estimate does not become an instant order.
+            present. The numbers are indicative; the class is not.
           example: false
         settlement_hours:
           type: integer
@@ -7962,8 +7928,7 @@ components:
 
             You cannot request it or decline it. A delayed offer is considered only when no instant
             offer covers the amount, and only on orders whose crypto you hold — never on a widget
-            order, where your customer owns the wallet and nobody on this API can sign the release.
-            See the Delayed settlement (T+1) reference.
+            order. See the Delayed settlement (T+1) reference.
           example: false
         settlement_hours:
           type: integer
@@ -8071,8 +8036,7 @@ components:
             - `submit_source_of_funds` — the consent is in, and this delayed order is at or above the
               source-of-funds threshold with its dossier incomplete. See the `source-of-funds` endpoints
             - `await_review` — everything owed on a delayed order has been supplied and a reviewer is
-              deciding. Named as an action rather than left `null` so a poller has an unambiguous
-              "nothing to do"
+              deciding
             - absent — no required action (waiting for buyer or system). The key is **omitted**, not
               sent as `null`. On a parked delayed order it is absent when the order is held for review,
               or a payout of yours failed and its escrow refund is in flight: both consent endpoints
@@ -8153,21 +8117,15 @@ components:
             On-ramp orders with `fiat_funding_source: own_iban` never offer `confirm-payment-sent`: the
             transfer into the customer's own account is the confirmation.
 
-            On a parked **delayed settlement (T+1)** order whose crypto you hold, `confirm-fiat-received`
-            is **removed** — the fiat has not been paid and cannot have been, that being the whole
-            product, and the endpoint behind that action refuses a delayed order for exactly that
-            reason — and `["settlement-consent", "cancel"]` take its place.
+            On a parked **delayed settlement (T+1)** order whose crypto you hold,
+            `confirm-fiat-received` is removed — the endpoint behind it refuses a delayed order — and
+            `["settlement-consent", "cancel"]` take its place.
 
-            `cancel` is the entry you would not otherwise find: a parked delayed order is the **only**
-            funded state any order can be cancelled from, through an edge opened for this class alone,
-            and every other funded order answers "cannot be cancelled". The endpoint is the ordinary
+            `cancel` is available only while the order is parked; the endpoint is the ordinary
             `POST /api/v1/partner/orders/{order_id}/cancel`.
 
-            **Both are withdrawn the moment the consent is signed.** After the signature the crypto is
-            on its way to the vendor: a second consent is refused as already-consented, and a cancel is
-            refused because the guarded edge requires that no seller signature exist. Both answer
-            `409 OPERATION_NOT_ALLOWED`. The list and the single-order read agree about all of this, so
-            a listed action is one the endpoint will accept.
+            Both are withdrawn once the consent is signed, and then answer
+            `409 OPERATION_NOT_ALLOWED`. The list and the single-order read agree about all of this.
 
             The one exception is a parked delayed order that is **held** — flagged for review, or with
             a failed payout whose escrow refund is in flight. There the list is left as the ordinary
@@ -8292,24 +8250,15 @@ components:
           format: date-time
           nullable: true
           description: |
-            When a **parked** delayed order stops waiting for its consent: funding time plus the consent
-            window. After it the ordinary payment-window sweep refunds the escrow.
-
-            This is the only deadline that exists *before* the release — `payout_deadline_at` starts at
-            the release, which has not happened yet — so it is the one to show your customer while
-            asking them to sign.
-
-            `null` on any order that is not parked, because by then the window has stopped meaning
-            anything: the order either released or it was refunded.
+            Funding time plus the consent window; after it the payment-window sweep refunds the
+            escrow. Set only while the order is parked, `null` otherwise.
           example: "2026-09-21T11:58:30Z"
         payout_deadline_at:
           type: string
           format: date-time
           nullable: true
           description: |
-            Release plus the promised window: when the customer was told the money would be there by.
-            `null` until the crypto has actually left escrow — a parked order waiting on a signature is
-            not running late.
+            Release time plus `settlement_hours`. `null` until the crypto has left escrow.
           example: "2026-09-19T12:07:55Z"
         delayed_settlement_crypto_sent_to_provider_at:
           type: string
@@ -8340,9 +8289,8 @@ components:
           format: date-time
           nullable: true
           description: >-
-            The bank sent the payout back. Set together with clearing the paid, submitted and authorized
-            marks, so the order is not finished and will be paid again. Mutually exclusive with
-            `delayed_settlement_fiat_paid_to_customer_at`.
+            The bank sent the payout back. Set together with clearing the paid, submitted and
+            authorized marks. Mutually exclusive with `delayed_settlement_fiat_paid_to_customer_at`.
         delayed_settlement_crypto_refunded_to_customer_at:
           type: string
           format: date-time
@@ -8465,14 +8413,11 @@ components:
 
         **Delayed settlement (T+1) statuses:**
 
-        > Both are unreachable for an ordinary order: an integration that never opens a delayed
-        > order will never see either. On a delayed order the crypto leaves escrow *before* the
-        > customer is paid, so `completed` alone would report a finished order while the money is
-        > still in flight.
+        > Both are unreachable for an ordinary order.
 
         - `settlement_in_progress` — the crypto has left escrow and the fiat has not arrived
-        - `returned` — the bank sent the payout back and no fresh authorization stands. Distinct
-          from `cancelled`: nothing has been given back to anyone and the order will be paid again
+        - `returned` — the bank sent the payout back and no fresh authorization stands. Nothing has
+          been refunded; the order will be paid again
 
         Precedence on a delayed order, in this order — more than one mark can be set at once:
 
@@ -8484,8 +8429,7 @@ components:
         5. before the release, the ordinary mapping applies — a parked delayed order is
            `crypto_received` like any other, and `next_action` is what tells them apart
 
-        Step 3 is conditioned on the authorization being absent on purpose: a standing return with a
-        fresh authorization on top of it is an order being paid a second time, not a returned one.
+        A return with a fresh authorization on top reads as `settlement_in_progress` (step 4).
 
         **On-ramp statuses (fiat → crypto):**
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
@@ -8629,13 +8573,12 @@ components:
         requiresAddressScreening:
           type: boolean
           description: >-
-            Set for `crypto_assets` alone: with no banking trail behind it, screening the on-chain
-            sender is the primary control, which is why `source_wallet_address` is required there.
+            `true` on `crypto_assets` alone, where `source_wallet_address` is required.
         legacy:
           type: boolean
           description: >-
-            A retired category. Served so a dossier frozen under it can still resolve its own label,
-            but refused by the declaration endpoint — drop it from your picker.
+            A retired category: served so a frozen dossier can resolve its label, refused by the
+            declaration endpoint. Do not offer it.
         revision:
           type: integer
           description: Bumped when this category's wording or requirements change.
@@ -8647,8 +8590,7 @@ components:
         key:
           type: string
           description: >-
-            Stable, and the `document_type` an upload is filed under. These are never renamed: they are
-            written into an AML record and into a reviewer's request.
+            Stable, and the `document_type` an upload is filed under. Never renamed.
           example: payslips
         label:
           type: string
@@ -8693,16 +8635,14 @@ components:
           type: string
           maxLength: 4000
           description: >-
-            The customer's own words. Required: a compliance file whose entire content is a dropdown
-            value is not a file.
+            The customer's own words. Required.
           example: "monthly salary accumulated since 2024"
         additional_sources:
           type: array
           items:
             type: string
           description: >-
-            Secondary sources. A dossier declares **one** source — this exists only to re-send codes
-            already on the case. A new code is refused with `422`.
+            Only codes already on the case; a new one is refused with `422`.
           example: []
         funds_flow_description:
           type: string
@@ -8718,9 +8658,7 @@ components:
           type: string
           maxLength: 256
           description: >-
-            **Required when `source_of_funds` is `crypto_assets`.** With no banking trail behind it,
-            screening the on-chain sender is the primary control rather than one more check beside the
-            documents, so a declaration with no address to screen is a dossier a reviewer cannot decide.
+            **Required when `source_of_funds` is `crypto_assets`.**
         source_wallet_network:
           type: string
           maxLength: 64
@@ -8744,7 +8682,7 @@ components:
         status:
           type: string
           description: |
-            The review status, at the top level because it is the one fact every screen branches on.
+            The review status.
             - `documents_required` — the declaration or its documents are still owed
             - `documents_submitted` — everything the frozen contract asks for is in
             - `in_review` — a reviewer has picked it up
@@ -8884,10 +8822,6 @@ components:
           type: object
           description: |
             The requirement contract **frozen** when the declaration was accepted — the list to render.
-            A case is judged by the rules it was opened under, so an operator editing a rule while cases
-            are open can neither loosen an incomplete case into approvable nor refuse a customer for a
-            document that was never on their screen.
-
             Absent until a declaration exists.
           properties:
             catalogue_revisions:
@@ -8999,11 +8933,8 @@ components:
         satisfies_requirement:
           type: boolean
           description: |
-            Whether this file moved the case forward. `false` is **not** an error — the document is
-            stored either way — and `expected_document_types` then names what the case is waiting for.
-
-            **Absent** when nothing has been declared yet: there is no requirement to match against, and
-            a literal `false` would be a wrong answer to a question nobody could answer.
+            `false` means the file did not satisfy a requirement; `expected_document_types` then lists
+            what is owed. Absent before a declaration exists.
         expected_document_types:
           type: array
           items:
@@ -9013,8 +8944,7 @@ components:
           type: integer
           format: int64
           description: >-
-            How many earlier documents of the same type this one replaced. Silence here would let you
-            believe you had added a second copy.
+            How many earlier documents of the same type this one replaced.
         case_status:
           type: string
           description: Where the case landed — the last upload may have completed it.
