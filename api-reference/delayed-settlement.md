@@ -1,8 +1,10 @@
 # Delayed settlement (T+1)
 
 Some off-ramp quotes come back as **delayed settlement**: the crypto leaves
-escrow on your own release signature, and the fiat reaches the recipient within
-`settlement_hours` afterwards, instead of both legs completing together.
+escrow before the fiat is paid, instead of both legs completing together. Your
+release signature authorises that move and is required for it; Unigox then sends
+the crypto to the vendor, and the fiat reaches the recipient within
+`settlement_hours` of that release.
 
 It is a property of the matched offer, not of your account; read the flag on
 every quote.
@@ -70,8 +72,9 @@ unchanged. The order behaves like any other until the escrow is funded.
    `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
    `POST /api/v1/partner/orders/{order_id}/settlement-consent`.
 5. If the order is at or above the source-of-funds threshold, supply the dossier
-   and wait for the review. Below it, the crypto goes as soon as the consent
-   lands.
+   and wait for the review. Either way the order then waits for Unigox to send
+   the crypto to the vendor: the consent authorises the release, it does not
+   start it.
 6. Follow the payout on `status`, the six timestamps, and the webhooks.
 
 ### 1. Read what the order is waiting for
@@ -83,7 +86,7 @@ buyer has not paid yet. `next_action` is what tells them apart:
 | --- | --- | --- |
 | `sign_settlement_consent` | Nobody has signed the release yet. | `["settlement-consent", "cancel"]` |
 | `submit_source_of_funds` | The consent is in; this order needs a dossier and it is not complete. | `[]` |
-| `await_review` | Everything owed has been supplied. A reviewer decides; there is nothing to call. | `[]` |
+| `await_review` | Everything owed has been supplied. The order is waiting on us: for a reviewer's decision where a dossier was owed, and in every case for the release out of escrow. There is nothing to call. | `[]` |
 | absent | The order is held for review, or a payout of yours failed and its escrow refund is in flight. Both consent endpoints answer `409 OPERATION_NOT_ALLOWED`. | `["confirm-fiat-received"]` (not rewritten; the endpoint refuses a delayed order) |
 
 The list is rewritten only on an order whose crypto you hold.
@@ -198,12 +201,14 @@ only the signature.
 }
 ```
 
-`release_started` is `false` when the release waits for the source-of-funds
-review; `next_action` then says what is owed. Below the threshold it is `true`.
+`release_started` says whether the crypto has begun leaving escrow. A consent
+leaves the order waiting to be released, above and below the threshold alike, so
+it reads `false`; `next_action` then says what is still owed, if anything. The
+release itself shows up on the order as `settlement_in_progress` and the marks
+under **Follow the payout** below.
 
 A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while
-the order is still parked (the release waits for the review), `INVALID_STATUS` once the
-release has started.
+the order is still parked, `INVALID_STATUS` once the release has started.
 
 ### 4. Source of funds
 
@@ -468,12 +473,13 @@ A `bank_statement` must be a bank-issued PDF.
 | `in_review` | A reviewer has picked it up. |
 | `additional_information_required` | A reviewer asked for something else — see `requested_documents`. |
 | `resubmitted` | The answer to that request is in. |
-| `approved` | The crypto is released. |
+| `approved` | Nothing more is owed on the dossier; the order waits for the release. |
 | `rejected` | The crypto is returned to the customer; the order ends `cancelled`. |
 | `escalated` | Moved out of the ordinary queue. |
 
-The release runs once both the approval and your consent are in, whichever comes
-last.
+The approval and your consent are both preconditions for the release, not
+triggers. Once both are in, the order waits for Unigox to send the crypto to the
+vendor.
 
 **Writes are fenced; reads are not.** A declaration or an upload is accepted only
 while the order is still parked and the case is undecided. Outside that window

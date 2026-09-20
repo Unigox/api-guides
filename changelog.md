@@ -2,6 +2,15 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-20
+
+**The release of a delayed settlement (T+1) order is now performed by Unigox rather than triggered by your consent.** See the [Delayed settlement (T+1)](./api-reference/delayed-settlement.md) reference.
+
+- **The consent is still required, and it is still the customer's authorisation** for the crypto to leave escrow. It is a precondition for the release, not the trigger: once it is in — and, at or above `threshold_usd`, once the source-of-funds case is decided — the order waits for us to send the crypto to the vendor.
+- **`release_started` reads `false` on an order that is still waiting to be released,** below the threshold as well as above it. It reports what it always reported: whether the crypto has begun leaving escrow.
+- **`settlement_hours` still counts from the release,** not from the consent, and `payout_deadline_at` is still release time plus that window.
+- **No endpoint, request or response field, status, `next_action`, `allowed_actions` or webhook changed.** The documentation said the crypto went as soon as the consent landed; that was the part that was wrong, and it has been corrected.
+
 ## 2026-09-18
 
 **Some off-ramp quotes now come back as delayed settlement (T+1): the crypto leaves escrow on your own release signature and the fiat follows within a stated window.** See the [Delayed settlement (T+1)](./api-reference/delayed-settlement.md) reference.

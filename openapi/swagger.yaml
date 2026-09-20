@@ -4614,8 +4614,9 @@ paths:
       summary: Submit settlement consent
       description: |
         **Delayed settlement (T+1) only.** Submit the signature produced from
-        `GET /settlement-consent-parameters` to let the order's crypto leave escrow ahead of the payout.
-        Unigox adds the second of the two signatures the Safe requires and executes.
+        `GET /settlement-consent-parameters`. It authorises the order's crypto to leave escrow ahead of
+        the payout and is a precondition for that, not the trigger: Unigox adds the second of the two
+        signatures the Safe requires and executes the release.
 
         **Both fields are required**, which is where this differs from `authorize-refund`: the
         signature is checked against `signed_data`, and a `signed_data` that is not this order's
@@ -4697,9 +4698,10 @@ paths:
                           release_started:
                             type: boolean
                             description: |
-                              Whether the crypto has begun leaving escrow. `false` when the release
-                              waits for the source-of-funds review; `next_action` then says what is
-                              owed. Below the threshold it is `true`.
+                              Whether the crypto has begun leaving escrow. A consent leaves the order
+                              waiting to be released, above and below the source-of-funds threshold
+                              alike, so it reads `false`; `next_action` then says what is still owed,
+                              if anything.
               example:
                 success: true
                 data:
@@ -4743,7 +4745,7 @@ paths:
                 success: false
                 error:
                   code: OPERATION_NOT_ALLOWED
-                  message: "this order has already been consented to: the release runs on its own once the source-of-funds review, if any, is decided"
+                  message: "this order has already been consented to: it is waiting to be released"
         '502':
           description: >-
             The consent signature could not be accepted. A signature from a key that does not own the
@@ -7935,8 +7937,9 @@ components:
           type: boolean
           description: |
             Whether initiating this quote would open a **delayed settlement (T+1)** order: the crypto
-            leaves escrow on your own release signature and the fiat follows within `settlement_hours`,
-            instead of both legs completing together. **Always present.**
+            leaves escrow before the fiat is paid, instead of both legs completing together. Your
+            release signature authorises that move; Unigox then sends the crypto to the vendor, and the
+            fiat follows within `settlement_hours` of that release. **Always present.**
 
             You cannot request it or decline it. A delayed offer is considered only when no instant
             offer covers the amount, and only on orders whose crypto you hold — never on a widget
@@ -8244,8 +8247,9 @@ components:
         delayed_settlement:
           type: boolean
           description: |
-            Whether this order settles **T+1**: the crypto leaves escrow on your release signature and
-            the fiat follows within `settlement_hours`. This field and the nine below are always
+            Whether this order settles **T+1**: the crypto leaves escrow before the fiat is paid. Your
+            release signature authorises that move and Unigox performs it; the fiat follows within
+            `settlement_hours` of the release. This field and the nine below are always
             present on every order, on-ramp included — `false` here and `null` there on an order that
             does not settle T+1.
           example: false
@@ -8701,12 +8705,13 @@ components:
             - `additional_information_required` — a reviewer asked for something else; see
               `requested_documents`
             - `resubmitted` — the answer to that request is in
-            - `approved` — the crypto is released
+            - `approved` — nothing more is owed on the dossier; the order waits for the release
             - `rejected` — the crypto is returned to the customer and the order ends `cancelled`
             - `escalated` — moved out of the ordinary queue
 
-            Your consent and the approval are two halves of one release, and **whichever arrives last
-            performs it**. There is nothing to call after either.
+            Your consent and the approval are both preconditions for the release, not triggers: once
+            both are in, the order waits for Unigox to send the crypto to the vendor. There is nothing
+            to call after either.
           enum:
             - documents_required
             - documents_submitted
