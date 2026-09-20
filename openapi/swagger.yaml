@@ -3757,7 +3757,8 @@ paths:
         leaves escrow before the customer is paid, so at `crypto_received` `confirm-fiat-received` is
         **removed** from `allowed_actions` and the endpoint refuses the order; `["settlement-consent",
         "cancel"]` take its place and `next_action` is `sign_settlement_consent`, then
-        `submit_source_of_funds` or `await_review` while a source-of-funds review runs. Branch on
+        `submit_source_of_funds` or `await_review` — the latter meaning the order is waiting on us, for
+        a source-of-funds decision where one is owed and in every case for the release. Branch on
         `delayed_settlement` — the two orders share a status and differ in everything you may do with
         it. See the Delayed settlement (T+1) reference.
 
@@ -3796,7 +3797,7 @@ paths:
         |---|---|---|
         | `crypto_received` | `sign_settlement_consent` | **Partner** signs the release |
         | `crypto_received` | `submit_source_of_funds` | **Partner** supplies the dossier |
-        | `crypto_received` | `await_review` | Unigox reviewer decides |
+        | `crypto_received` | `await_review` | **Unigox**: the dossier decision, where one is owed, and the release |
         | `crypto_received` | — | Held: flagged, or a failed payout whose escrow refund is in flight |
         | `settlement_in_progress` | — | Payout in flight; the fiat has not arrived |
         | `returned` | — | The bank sent the payout back; it will be paid again |
@@ -4687,8 +4688,9 @@ paths:
                           next_action:
                             type: string
                             description: >-
-                              What is still owed — `submit_source_of_funds` or `await_review` when the
-                              release is waiting on a dossier, and absent once it has started. It falls
+                              What is still owed — `submit_source_of_funds` while a dossier is
+                              incomplete, `await_review` once nothing is owed and the order is waiting
+                              on us, and absent once the release has started. It falls
                               back to `sign_settlement_consent` if the consent lookup behind the hint
                               fails; the consent is stored either way.
                             enum: [sign_settlement_consent, submit_source_of_funds, await_review]
@@ -4777,8 +4779,10 @@ paths:
       description: |
         **Delayed settlement (T+1) only.** An order whose fiat leg is worth at least `threshold_usd` —
         **USD 50 000** today, and an order whose USD equivalent cannot be computed counts as above it —
-        does not release until a reviewer has decided where the money came from. Your customer supplies
-        that evidence on *your* screens and you post it here.
+        does not release until a reviewer has decided where the money came from. The figure is
+        configurable on our side, so read it from `source_of_funds_threshold_usd` on the order rather
+        than from this page; `source_of_funds_required` says which side of it an order fell on. Your
+        customer supplies that evidence on *your* screens and you post it here.
 
         Returns the whole case: its review status, the declaration, the documents on file, anything a
         reviewer has come back and asked for, and `requirements_snapshot` — the requirement contract
@@ -8049,8 +8053,9 @@ components:
               `POST /api/v1/partner/orders/{order_id}/settlement-consent`
             - `submit_source_of_funds` — the consent is in, and this delayed order is at or above the
               source-of-funds threshold with its dossier incomplete. See the `source-of-funds` endpoints
-            - `await_review` — everything owed on a delayed order has been supplied and a reviewer is
-              deciding
+            - `await_review` — everything owed on a delayed order has been supplied and the order is
+              waiting on us: for a reviewer's decision where a dossier is owed, and in every case for
+              the release
             - absent — no required action (waiting for buyer or system). On a parked delayed order
               the key is absent when the order is held for review, or a payout of yours failed and its
               escrow refund is in flight: both consent endpoints then answer
@@ -8141,10 +8146,11 @@ components:
             Both are withdrawn once the consent is signed, and then answer
             `409 OPERATION_NOT_ALLOWED`. The list and the single-order read agree about all of this.
 
-            The one exception is a parked delayed order that is **held** — flagged for review, or with
-            a failed payout whose escrow refund is in flight. There the list is left as the ordinary
-            mapping produced it (`["confirm-fiat-received"]`), `next_action` is omitted, and neither
-            that action nor a consent is accepted.
+            On a parked delayed order that is **held** — flagged for review, or with a failed payout
+            whose escrow refund is in flight — `next_action` is omitted and no consent is accepted.
+            `confirm-fiat-received` is struck from the list there too, because that endpoint refuses
+            every delayed order; it is removed rather than the list being emptied, so an
+            `authorize-refund` that is genuinely owed survives and is the one action that matters.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
             because the crypto is the end user's and every action endpoint answers `404
@@ -8251,7 +8257,8 @@ components:
             release signature authorises that move and Unigox performs it; the fiat follows within
             `settlement_hours` of the release. This field and the nine below are always
             present on every order, on-ramp included — `false` here and `null` there on an order that
-            does not settle T+1.
+            does not settle T+1. `source_of_funds_required` and `source_of_funds_threshold_usd` are
+            likewise always present; `settlement_refund_reason` is omitted unless it applies.
           example: false
         settlement_hours:
           type: integer
@@ -8314,6 +8321,42 @@ components:
           description: >-
             The crypto went back to the customer instead. Only reachable while
             `delayed_settlement_crypto_sent_to_provider_at` is `null`.
+        source_of_funds_required:
+          type: boolean
+          description: >-
+            Whether this order owes a source-of-funds dossier. `false` on any order that does not
+            settle T+1. Always present, never omitted — `false` and "this build does not send it" are
+            different answers.
+          example: true
+        source_of_funds_threshold_usd:
+          type: number
+          description: >-
+            The source-of-funds threshold being applied to this order, in USD. Present on every order,
+            above the line and below it, so the figure can be read from the order rather than
+            hard-coded from the documentation. Always present, never omitted.
+          example: 50000
+        settlement_refund_reason:
+          type: string
+          description: |
+            Why a delayed order ended without a payout. Omitted — not empty — when the order has not
+            ended that way, or when none of the four applies; an absence means no reason was recorded
+            and never stands in for one of them.
+
+            - `dossier_rejected` — a reviewer refused the source-of-funds case
+            - `consent_window_expired` — the consent was never signed and the window ran out
+            - `not_released_in_time` — the consent **was** signed and the window still ran out. The
+              crypto is released by Unigox and it was not released in time; this is ours, not the
+              customer's
+            - `cancelled_by_customer` — the order was cancelled while parked
+
+            Read in that order: a refusal outranks an expired window, which outranks a cancellation.
+            An expired window is two different endings and the consent separates them.
+          enum:
+            - dossier_rejected
+            - consent_window_expired
+            - not_released_in_time
+            - cancelled_by_customer
+          example: not_released_in_time
 
     PartnerOrderAmounts:
       type: object
@@ -8734,7 +8777,9 @@ components:
               nullable: true
         threshold_usd:
           type: number
-          description: The per-order USD threshold at or above which a dossier is required.
+          description: >-
+            The per-order USD threshold at or above which a dossier is required. The same figure the
+            order reports as `source_of_funds_threshold_usd`.
           example: 50000
         usd_equivalent:
           type: number

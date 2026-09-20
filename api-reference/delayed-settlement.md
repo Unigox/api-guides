@@ -87,11 +87,14 @@ buyer has not paid yet. `next_action` is what tells them apart:
 | `sign_settlement_consent` | Nobody has signed the release yet. | `["settlement-consent", "cancel"]` |
 | `submit_source_of_funds` | The consent is in; this order needs a dossier and it is not complete. | `[]` |
 | `await_review` | Everything owed has been supplied. The order is waiting on us: for a reviewer's decision where a dossier was owed, and in every case for the release out of escrow. There is nothing to call. | `[]` |
-| absent | The order is held for review, or a payout of yours failed and its escrow refund is in flight. Both consent endpoints answer `409 OPERATION_NOT_ALLOWED`. | `["confirm-fiat-received"]` (not rewritten; the endpoint refuses a delayed order) |
+| absent | The order is held for review, or a payout of yours failed and its escrow refund is in flight. Both consent endpoints answer `409 OPERATION_NOT_ALLOWED`. | `confirm-fiat-received` is struck here too; what is left is whatever else was owed, such as `authorize-refund`. |
 
-The list is rewritten only on an order whose crypto you hold.
-`confirm-fiat-received` is removed: the endpoint behind it refuses a delayed
-order.
+`settlement-consent` and `cancel` are offered only on an order whose crypto you
+hold. `confirm-fiat-received` is removed from a parked delayed order whether or
+not it is held: the endpoint behind it refuses a delayed order, so offering it
+would advertise a `409`. On a held order it is struck out of the list rather than
+the list being emptied — an `authorize-refund` that is genuinely owed stays, and
+it is the one action that matters there.
 
 `cancel` is available only while the order is parked:
 `POST /api/v1/partner/orders/{order_id}/cancel` refunds the escrow to you. Both
@@ -212,9 +215,15 @@ the order is still parked, `INVALID_STATUS` once the release has started.
 
 ### 4. Source of funds
 
-An order whose fiat leg is worth at least `threshold_usd` — **USD 50 000**
-today — does not release until a reviewer has decided where the money came from.
-An order whose USD equivalent cannot be computed is treated as above it.
+An order whose fiat leg is worth at least the source-of-funds threshold —
+**USD 50 000** today — does not release until a reviewer has decided where the
+money came from. An order whose USD equivalent cannot be computed is treated as
+above it.
+
+The figure is configurable on our side, so read it from the order rather than
+from this page: `source_of_funds_threshold_usd` is the threshold being applied to
+that order and `source_of_funds_required` says which side of it the order fell
+on. `threshold_usd` on the dossier read below carries the same figure.
 
 Below the threshold there is no dossier: `source-of-funds`,
 `…/source-of-funds/declaration` and `…/source-of-funds/documents` answer
@@ -488,8 +497,11 @@ both answer `409 INVALID_STATUS`.
 ### 5. Follow the payout
 
 Every field below is present on every order response — `GET /api/v1/partner/orders/{order_id}` and
-`GET /api/v1/partner/orders`, on-ramp rows included, where all ten read `false` or
-`null`.
+`GET /api/v1/partner/orders`, on-ramp rows included, where the ten payout fields
+read `false` or `null` and `source_of_funds_required` reads `false`.
+`source_of_funds_threshold_usd` carries the figure in force on every order,
+delayed or not. `settlement_refund_reason` is the one key here that is absent
+rather than empty when it does not apply.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -503,10 +515,33 @@ Every field below is present on every order response — `GET /api/v1/partner/or
 | `delayed_settlement_fiat_paid_to_customer_at` | string \| null | The fiat reached the recipient. **This is the real completion of the order.** |
 | `delayed_settlement_fiat_returned_by_bank_at` | string \| null | The bank sent the payout back. Set together with clearing `paid`, `submitted` and `authorized`. |
 | `delayed_settlement_crypto_refunded_to_customer_at` | string \| null | The crypto went back to the customer instead. Only reachable while `crypto_sent_to_provider_at` is `null`. |
+| `source_of_funds_required` | boolean | Whether this order is still being held for a dossier. `false` on any order that does not settle T+1, and `false` once the order has finished, whichever way it finished — it is what the order owes now, not what it owed once. The dossier read below answers the other question: whether a case was ever opened for it. Always present, never omitted. |
+| `source_of_funds_threshold_usd` | number | The threshold being applied to this order, in USD. Present on every order, above the line and below it. Always present, never omitted. |
+| `settlement_refund_reason` | string | Why a delayed order ended without a payout. One of the four values below. **Absent**, not empty, when the order has not ended that way or when none of the four applies. |
 
 Two pairs are mutually exclusive: paid **or** returned, and refunded **or** sent
 to the provider. A new payment after a return clears
 `returned_at` and sets `paid_at`; a return after a payment does the reverse.
+
+#### Why an order ended without a payout
+
+`settlement_refund_reason` distinguishes endings that otherwise all read
+`cancelled`:
+
+| Value | Meaning |
+| --- | --- |
+| `dossier_rejected` | A reviewer refused the source-of-funds case. |
+| `consent_window_expired` | The consent was never signed and the window ran out. |
+| `not_released_in_time` | The consent **was** signed and the window still ran out. The crypto is released by Unigox, and it was not released in time. This is ours, not your customer's. |
+| `cancelled_by_customer` | The order was cancelled while parked. |
+
+Those four are the whole set. They are read in the order above: a refusal
+outranks an expired window, which outranks a cancellation. An expired window is
+two different endings and the consent is what separates them — unsigned, the
+window was the customer's to use; signed, they did everything asked of them.
+
+The key is absent when no reason was recorded. An absence means exactly that;
+it never stands in for one of the four.
 
 ## Status on a delayed order
 
@@ -597,7 +632,9 @@ Every T+1 field on `data` is omitted until it has a value:
   then on every later event for the order — not only on the event it triggered.
 
 An absent key means the step has not happened; none of them is ever sent as
-`null`. `consent_deadline_at` is not carried at all.
+`null`. `consent_deadline_at` is not carried at all, and neither are
+`source_of_funds_required`, `source_of_funds_threshold_usd` or
+`settlement_refund_reason` — read those three from the order.
 
 ```json
 {

@@ -11,6 +11,15 @@ Notable changes to the Unigox partner API, newest first.
 - **`settlement_hours` still counts from the release,** not from the consent, and `payout_deadline_at` is still release time plus that window.
 - **No endpoint, request or response field, status, `next_action`, `allowed_actions` or webhook changed.** The documentation said the crypto went as soon as the consent landed; that was the part that was wrong, and it has been corrected.
 
+## 2026-09-20
+
+**A delayed settlement (T+1) order now says why it ended without a payout, and publishes the source-of-funds rule it is being held to.** Three fields on the order response, and one dead action removed. This is a separate change from the release entry above, which added no fields.
+
+- **`settlement_refund_reason` says why a delayed order ended without a payout,** where every ending used to read `cancelled` plus a timeline sentence. Four values: `dossier_rejected` (a reviewer refused the source-of-funds case), `consent_window_expired` (the consent was never signed and the window ran out), `not_released_in_time` (the consent *was* signed and the window still ran out — the crypto is released by us, and it was not released in time) and `cancelled_by_customer` (cancelled while parked). They are read in that order: a refusal outranks an expired window, which outranks a cancellation. **Omitted, not empty,** when the order has not ended that way or when none of the four applies — an absence is "no reason recorded", never a wrong one.
+- **`source_of_funds_required` (boolean) and `source_of_funds_threshold_usd` (number) publish the dossier rule the server is applying to this order,** above the line and below it. Read the threshold from the order rather than hard-coding it out of the documentation: it is configurable on our side, and an integration that copies the figure drifts when it moves. Both are **always present**, on instant and on-ramp orders too — `false` and "this build does not send it" are different answers, for the same reason `delayed_settlement` is always present.
+- **`confirm-fiat-received` no longer appears in `allowed_actions` on a held delayed order.** A flagged order, or one whose escrow refund is in flight, used to keep it while `next_action` was cleared — an action whose endpoint refuses every delayed order, so it was a `409` advertised to automation that retries on it. It is struck from the list rather than the list being emptied: an `authorize-refund` that is genuinely owed stays, and it is the one action that matters there.
+- **The three new fields are on the order response only.** They are not carried on `order.status.changed`.
+
 ## 2026-09-18
 
 **Some off-ramp quotes now come back as delayed settlement (T+1): the crypto leaves escrow on your own release signature and the fiat follows within a stated window.** See the [Delayed settlement (T+1)](./api-reference/delayed-settlement.md) reference.
