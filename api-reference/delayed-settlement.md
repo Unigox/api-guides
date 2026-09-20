@@ -2,11 +2,10 @@
 
 Some off-ramp quotes come back as **delayed settlement**: the crypto leaves
 escrow before the fiat is paid, instead of both legs completing together. Your
-release signature authorises that move and is required for it; Unigox then sends
-the crypto to the vendor, and the fiat reaches the recipient within
-`settlement_hours` of that release.
+release signature authorises it to leave. Unigox then sends it to the vendor, and
+the recipient is paid within `settlement_hours` of that release.
 
-It is a property of the matched offer, not of your account; read the flag on
+It is a property of the matched offer, not of your account, so read the flag on
 every quote.
 
 ## When a quote is delayed
@@ -18,7 +17,7 @@ Three conditions:
   typically above a provider's instant ceiling.
 - **You hold the crypto.** Never a widget order, where the wallet belongs to your
   customer.
-- **The matched vendor settles this way.** It is a property of their offer.
+- **The matched vendor settles this way.**
 
 You cannot request delayed settlement and cannot decline it for a given amount.
 Read the flag, show it, and initiate or re-quote for a smaller amount.
@@ -31,7 +30,7 @@ X-API-Key: <api-key>
 Content-Type: application/json
 ```
 
-The response carries two new fields:
+The response carries two extra fields:
 
 ```json
 {
@@ -54,8 +53,9 @@ The response carries two new fields:
 | `delayed_settlement` | boolean | `true` when this quote would open a delayed order. Always present. |
 | `settlement_hours` | integer \| null | The payout window, counted from the release — not from now. Rounded to the nearest whole hour, never below `1`. `null` on an instant quote. |
 
-`POST /api/v1/partner/offramp/estimate` reports the same two fields, so you can find where a corridor
-stops settling instantly without burning quotes. The numbers are indicative; the class is not.
+`POST /api/v1/partner/offramp/estimate` reports the same two fields, so you can
+find where a corridor stops settling instantly without spending quotes. Its
+amounts are indicative; the two fields are the same answer a quote would give.
 
 `POST /api/v1/partner/offramp/initiate` and the escrow funding pair
 (`transfer-authorization-parameters` → `authorize-crypto-transfer`) are
@@ -72,9 +72,8 @@ unchanged. The order behaves like any other until the escrow is funded.
    `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
    `POST /api/v1/partner/orders/{order_id}/settlement-consent`.
 5. If the order is at or above the source-of-funds threshold, supply the dossier
-   and wait for the review. Either way the order then waits for Unigox to send
-   the crypto to the vendor: the consent authorises the release, it does not
-   start it.
+   and wait for the decision. Either way the order then waits for us to release
+   the crypto: your consent authorises that, it does not start it.
 6. Follow the payout on `status`, the six timestamps, and the webhooks.
 
 ### 1. Read what the order is waiting for
@@ -86,24 +85,19 @@ buyer has not paid yet. `next_action` is what tells them apart:
 | --- | --- | --- |
 | `sign_settlement_consent` | Nobody has signed the release yet. | `["settlement-consent", "cancel"]` |
 | `submit_source_of_funds` | The consent is in; this order needs a dossier and it is not complete. | `[]` |
-| `await_review` | Everything owed has been supplied. The order is waiting on us: for a reviewer's decision where a dossier was owed, and in every case for the release out of escrow. There is nothing to call. | `[]` |
-| absent | The order is held for review, or a payout of yours failed and its escrow refund is in flight. Both consent endpoints answer `409 OPERATION_NOT_ALLOWED`. | `confirm-fiat-received` is struck here too; what is left is whatever else was owed, such as `authorize-refund`. |
+| `await_review` | Everything owed has been supplied. The order is waiting on us, for the dossier decision where one is owed and for the release. Nothing to call. | `[]` |
+| absent | The order is held for review, or a payout of yours failed and its escrow refund is in flight. Both consent endpoints answer `409 OPERATION_NOT_ALLOWED`. | `[]`, or `["authorize-refund"]` when a refund is owed |
 
-`settlement-consent` and `cancel` are offered only on an order whose crypto you
-hold. `confirm-fiat-received` is removed from a parked delayed order whether or
-not it is held: the endpoint behind it refuses a delayed order, so offering it
-would advertise a `409`. On a held order it is struck out of the list rather than
-the list being emptied — an `authorize-refund` that is genuinely owed stays, and
-it is the one action that matters there.
+`settlement-consent` and `cancel` appear only on an order whose crypto you hold.
+`confirm-fiat-received` never appears on a delayed order: that endpoint refuses
+one, so offering it would advertise a `409`.
 
 `cancel` is available only while the order is parked:
 `POST /api/v1/partner/orders/{order_id}/cancel` refunds the escrow to you. Both
-actions are withdrawn once the consent is signed.
-
-`GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute
-the fields identically. If the hint cannot be computed they report
-`sign_settlement_consent`; a repeated consent answers
+actions are withdrawn once the consent is signed, and a repeated consent answers
 `409 OPERATION_NOT_ALLOWED`.
+
+The order list and the single order report the same fields.
 
 ### 2. Get the consent parameters
 
@@ -183,10 +177,9 @@ Content-Type: application/json
 
 **Both fields are required** (unlike `authorize-refund`).
 
-Two artefacts identify the same release, and either is accepted as `signed_data`:
-`safe_params.data` (the release calldata) or `tx_hash`. Both are compared
-case-insensitively and with surrounding quotes stripped; anything else answers
-`400 INVALID_REQUEST`.
+Either of two values is accepted as `signed_data`: `safe_params.data` (the release
+calldata) or `tx_hash`. Both are compared case-insensitively and with surrounding
+quotes stripped. Anything else answers `400 INVALID_REQUEST`.
 
 Sign the returned typed data (`domain`, `types`, `safe_params`) locally and submit
 only the signature.
@@ -206,9 +199,9 @@ only the signature.
 
 `release_started` says whether the crypto has begun leaving escrow. A consent
 leaves the order waiting to be released, above and below the threshold alike, so
-it reads `false`; `next_action` then says what is still owed, if anything. The
-release itself shows up on the order as `settlement_in_progress` and the marks
-under **Follow the payout** below.
+it reads `false`. `next_action` then says what is still owed, if anything. Watch
+for the release on `status` — it becomes `settlement_in_progress` — and on the
+marks under **Follow the payout** below.
 
 A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while
 the order is still parked, `INVALID_STATUS` once the release has started.
@@ -220,10 +213,10 @@ An order whose fiat leg is worth at least the source-of-funds threshold —
 money came from. An order whose USD equivalent cannot be computed is treated as
 above it.
 
-The figure is configurable on our side, so read it from the order rather than
-from this page: `source_of_funds_threshold_usd` is the threshold being applied to
-that order and `source_of_funds_required` says which side of it the order fell
-on. `threshold_usd` on the dossier read below carries the same figure.
+The figure can change, so read it from the order rather than from this page:
+`source_of_funds_threshold_usd` is the threshold applied to that order, and
+`source_of_funds_required` says whether it owes a dossier. `threshold_usd` on the
+dossier read below carries the same figure.
 
 Below the threshold there is no dossier: `source-of-funds`,
 `…/source-of-funds/declaration` and `…/source-of-funds/documents` answer
@@ -317,7 +310,7 @@ has an open request: when they last asked for more, and when that request lapses
 `404 ORDER_NOT_FOUND`: the order owes no dossier, is not yours, or its crypto is
 not held by you. An on-ramp order answers `400 INVALID_REQUEST`.
 
-The read is not fenced: a decided case still answers.
+A decided case still answers this read.
 
 #### The requirements catalogue
 
@@ -369,9 +362,8 @@ by the declaration endpoint; do not offer them.
 
 Cache against `revision`.
 
-`requirements_snapshot` on the dossier is the same catalogue **frozen** to what
-this case was opened under, and once a declaration exists that is the list to
-render instead.
+`requirements_snapshot` on the dossier is the same catalogue **frozen** at the
+moment the case was opened. Once a declaration exists, render from it instead.
 
 - `documents[].mode` is `one_of` (any single document in the group satisfies it)
   or `all_of` (every listed document is owed).
@@ -486,22 +478,20 @@ A `bank_statement` must be a bank-issued PDF.
 | `rejected` | The crypto is returned to the customer; the order ends `cancelled`. |
 | `escalated` | Moved out of the ordinary queue. |
 
-The approval and your consent are both preconditions for the release, not
-triggers. Once both are in, the order waits for Unigox to send the crypto to the
-vendor.
+An approval does not start the release. With the consent in as well, the order is
+clear to be released and waits for us to do it.
 
-**Writes are fenced; reads are not.** A declaration or an upload is accepted only
-while the order is still parked and the case is undecided. Outside that window
-both answer `409 INVALID_STATUS`.
+A declaration or an upload is accepted only while the order is still parked and
+the case is undecided; outside that window both answer `409 INVALID_STATUS`. The
+reads have no such window.
 
 ### 5. Follow the payout
 
-Every field below is present on every order response — `GET /api/v1/partner/orders/{order_id}` and
-`GET /api/v1/partner/orders`, on-ramp rows included, where the ten payout fields
-read `false` or `null` and `source_of_funds_required` reads `false`.
-`source_of_funds_threshold_usd` carries the figure in force on every order,
-delayed or not. `settlement_refund_reason` is the one key here that is absent
-rather than empty when it does not apply.
+Every field below rides on `GET /api/v1/partner/orders/{order_id}` and on
+`GET /api/v1/partner/orders`, on-ramp rows included: on an order that does not
+settle T+1 they read `false` or `null`. The one exception is
+`settlement_refund_reason`, which is absent rather than empty when it does not
+apply.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -515,8 +505,8 @@ rather than empty when it does not apply.
 | `delayed_settlement_fiat_paid_to_customer_at` | string \| null | The fiat reached the recipient. **This is the real completion of the order.** |
 | `delayed_settlement_fiat_returned_by_bank_at` | string \| null | The bank sent the payout back. Set together with clearing `paid`, `submitted` and `authorized`. |
 | `delayed_settlement_crypto_refunded_to_customer_at` | string \| null | The crypto went back to the customer instead. Only reachable while `crypto_sent_to_provider_at` is `null`. |
-| `source_of_funds_required` | boolean | Whether this order is still being held for a dossier. `false` on any order that does not settle T+1, and `false` once the order has finished, whichever way it finished — it is what the order owes now, not what it owed once. The dossier read below answers the other question: whether a case was ever opened for it. Always present, never omitted. |
-| `source_of_funds_threshold_usd` | number | The threshold being applied to this order, in USD. Present on every order, above the line and below it. Always present, never omitted. |
+| `source_of_funds_required` | boolean | Whether this order is still being held for a dossier. It reports what the order owes now, so it reads `false` once the order has finished, whichever way. Always present. |
+| `source_of_funds_threshold_usd` | number | The threshold applied to this order, in USD. Always present, above the line and below it. |
 | `settlement_refund_reason` | string | Why a delayed order ended without a payout. One of the four values below. **Absent**, not empty, when the order has not ended that way or when none of the four applies. |
 
 Two pairs are mutually exclusive: paid **or** returned, and refunded **or** sent
@@ -532,16 +522,14 @@ to the provider. A new payment after a return clears
 | --- | --- |
 | `dossier_rejected` | A reviewer refused the source-of-funds case. |
 | `consent_window_expired` | The consent was never signed and the window ran out. |
-| `not_released_in_time` | The consent **was** signed and the window still ran out. The crypto is released by Unigox, and it was not released in time. This is ours, not your customer's. |
+| `not_released_in_time` | The consent **was** signed and the window still ran out, because we did not release the crypto in time. This one is ours, not your customer's. |
 | `cancelled_by_customer` | The order was cancelled while parked. |
 
-Those four are the whole set. They are read in the order above: a refusal
-outranks an expired window, which outranks a cancellation. An expired window is
-two different endings and the consent is what separates them — unsigned, the
-window was the customer's to use; signed, they did everything asked of them.
+Those four are the whole set, read in the order above: a refusal outranks an
+expired window, which outranks a cancellation.
 
-The key is absent when no reason was recorded. An absence means exactly that;
-it never stands in for one of the four.
+The key is absent when no reason was recorded, and an absence never stands in for
+one of the four.
 
 ## Status on a delayed order
 
@@ -587,7 +575,7 @@ returns rows reporting `awaiting_crypto_transfer_authorization`.
 ### Timeline
 
 `timeline` gains an entry per mark on a delayed order. An ordinary order's
-timeline is unchanged, entry for entry.
+timeline is unchanged.
 
 | Entry `status` | `description` |
 | --- | --- |
@@ -599,16 +587,14 @@ timeline is unchanged, entry for entry.
 | `returned` | `Fiat returned by the bank` |
 | `cancelled` | `Crypto refunded to the customer` |
 
-The release is **one** entry, however many internal release statuses the order
-passes through: on a delayed order they all read `settlement_in_progress` with
-the same description, and consecutive entries are collapsed by status **and**
-description. Each mark after it keeps its own line.
+The release is **one** entry: consecutive entries with the same status and the
+same description are collapsed. Each mark after it keeps its own line.
 
 ## Webhooks
 
 `order.status.changed` fires at each mark, on top of the ordinary status events a
-delayed order already sends before the release. The underlying status does not
-move for the whole second half of a delayed order's life.
+delayed order already sends before the release. The order's own status does not
+change again after the release.
 
 The six events below fire after the release. The ordinary ones —
 `awaiting_crypto_transfer_authorization`, `crypto_received` and the rest — fire
@@ -661,7 +647,7 @@ An absent key means the step has not happened; none of them is ever sent as
 }
 ```
 
-On an ordinary order the nine are omitted; `delayed_settlement` is `true` or
+On an ordinary order these fields are omitted; `delayed_settlement` is `true` or
 absent, never `false`.
 
 A bank return can happen more than once; each is its own event with its own
