@@ -2,6 +2,10 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-21
+
+**USD payouts to China, Hong Kong and Singapore are not on the partner API yet.** The three USD bank rails can appear in `/api/v1/supported/payment-rails`, and a recipient can hold a destination on them, but a quote or an initiate for a USD payout on any of them answers `400 INVALID_REQUEST` with `provider_confirmation_pending`. This is a statement of what is offered, not a change: nothing that worked before stops working. See [Dollars to China, Hong Kong and Singapore](./api-reference/third-party-payouts.md#dollars-to-china-hong-kong-and-singapore-not-yet).
+
 ## 2026-09-18
 
 **Fiat accounts are rebuilt around one id, and the identity endpoints are gone.** An account a customer is paid into is now a resource of its own: `POST /api/v1/partner/fiat-accounts` with `{user_uuid, currency}` opens it, and everything about it is addressed by `fiat_account_id`. This replaces the whole previous surface. There is no compatibility window — the old routes are removed.
