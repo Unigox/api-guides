@@ -2,6 +2,14 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-21
+
+**Source-of-funds documents of the same type now stand side by side, up to the `maximum_files` that type allows.** See [Delayed settlement (T+1)](./api-reference/delayed-settlement.md).
+
+- **A second payslip no longer replaces the first.** Where the requirement asks for several files — `payslips` asks for two and allows three — each upload is kept and `superseded_count` comes back `0`. Sending the second file used to retire the first, so the case stayed short of the requirement however many you sent.
+- **Past the ceiling the oldest file gives way,** so a replacement is still possible without a delete endpoint. A type that allows one file behaves exactly as before.
+- **Nothing changed in the request, the response fields or the statuses.**
+
 ## 2026-09-20
 
 **Unigox now releases a delayed settlement (T+1) order; your consent authorises the release rather than starting it. Three fields are added to the order response.** See the [Delayed settlement (T+1)](./api-reference/delayed-settlement.md) reference.

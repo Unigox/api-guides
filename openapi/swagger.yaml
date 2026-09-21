@@ -9000,7 +9000,8 @@ components:
           type: integer
           format: int64
           description: >-
-            How many earlier documents of the same type this one replaced.
+            How many earlier documents of the same type this one replaced. Files stand side by side
+            up to the `maximum_files` for their type; past that ceiling the oldest one gives way.
         case_status:
           type: string
           description: Where the case landed — the last upload may have completed it.

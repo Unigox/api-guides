@@ -460,7 +460,9 @@ A `bank_statement` must be a bank-issued PDF.
   `expected_document_types` then lists what is owed. Absent before a declaration
   exists.
 - `superseded_count` names how many earlier files of the same type this one
-  replaced. A superseded file is kept, not deleted.
+  replaced. A superseded file is kept, not deleted. Files stand side by side up
+  to the `maximum_files` for their type: send two payslips where the requirement
+  asks for two, and both count. Past that ceiling the oldest one gives way.
 - `case_status` is where the case landed; the last upload may have completed it.
 - The **same bytes under the same `document_type`** twice answers
   `409 INVALID_STATUS`.
