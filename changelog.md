@@ -16,6 +16,14 @@ Notable changes to the Unigox partner API, newest first.
 - **On-ramp orders paid from the customer's own account say `fiat_funding_source: "own_account"`** (it was `own_iban`, which was wrong the moment the product covered sterling) and carry the `fiat_account_id` they are funded from. `next_action` is still `deposit_to_user_account` and `confirm-payment-sent` is still refused with `409 OPERATION_NOT_ALLOWED`.
 - Gone with the removed routes: `CLIENT_NOT_APPROVED`, `ACCOUNT_HOLDER_NOT_FOUND`, `IDENTIFICATION_MISSING`, `IDENTIFICATION_ALREADY_LINKED`, `HOLDER_REGISTRATION_IN_PROGRESS` and `HOLDER_UNAVAILABLE`. New: `KYC_NOT_CLEARED` and `ISSUANCE_NOT_READY`.
 
+## 2026-09-15
+
+**Interac e-Transfer no longer asks for an `institution_id` the catalog said it did not need.** `/api/v1/supported/payment-rails` reports `institution_required: false` for `interac-e-transfer` — an e-Transfer is addressed to the recipient's email or phone number, not to a bank you pick — but creating a destination on it without an `institution_id` failed with `institution_id is required for this rail`. A partner following the catalog was refused, which was our bug, the same one fixed for the Chinese wallet rails on 2026-08-28.
+
+- Omitting `institution_id` on `interac-e-transfer` now works. The destination resolves to `interac-e-transfers` and goes through the same checks as if you had named it.
+- Sending an `institution_id` is still accepted: `interac-e-transfers`, or any bank `/api/v1/supported/institutions?rail=interac-e-transfer` lists.
+- Destinations you already created are unchanged.
+
 ## 2026-09-14
 
 **An on-ramp order can now be paid from the fiat account you issued the customer.** Instead of wiring the order's fiat to a vendor and calling `confirm-payment-sent`, the customer transfers the amount into their own account and the order moves on by itself.
