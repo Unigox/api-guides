@@ -66,6 +66,8 @@ unchanged. The order behaves like any other until the escrow is funded.
 1. Quote. If `delayed_settlement` is `true`, show `settlement_hours` before the
    customer commits.
 2. Initiate and fund the escrow, as on any off-ramp order.
+   Capacity is reserved when the trade is created, including the time before
+   funding. Cancellation or funding expiry releases that reservation.
 3. The order parks at `crypto_received` with
    `next_action: "sign_settlement_consent"`.
 4. Sign the release:
@@ -598,6 +600,20 @@ same description are collapsed. Each mark after it keeps its own line.
 `order.status.changed` fires at each mark, on top of the ordinary status events a
 delayed order already sends before the release. The order's own status does not
 change again after the release.
+
+The payout after the crypto reaches the agent is currently performed manually.
+The operator or vendor records the payment with its receipt. This records
+submission and payment together, so that action emits one `completed` event
+containing both timestamps, not an intermediate submission event.
+
+Each new post-release mark, its audit record and the webhook outbox entry commit
+together. Repeating the same paid report does not create another completion
+event. A payment after a bank return is a new attempt and has a new completion
+event. Webhook delivery remains at least once: deduplicate by `event_id`.
+
+Completion accounting is retried by the backend after a process restart or a
+temporary failure. This retry does not submit another payout or release escrow
+again. A released but unpaid order remains `settlement_in_progress`.
 
 The six events below fire after the release. The ordinary ones —
 `awaiting_crypto_transfer_authorization`, `crypto_received` and the rest — fire
