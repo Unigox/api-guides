@@ -71,9 +71,9 @@ unchanged. The order behaves like any other until the escrow is funded.
 4. Sign the release:
    `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
    `POST /api/v1/partner/orders/{order_id}/settlement-consent`.
-5. If the order is at or above the source-of-funds threshold, supply the dossier
-   and wait for the decision. Either way the order then waits for us to release
-   the crypto: your consent authorises that, it does not start it.
+5. Below the source-of-funds threshold the consent releases the crypto there and
+   then. At or above it, supply the dossier and wait for the decision: the
+   approval is what releases the order.
 6. Follow the payout on `status`, the six timestamps, and the webhooks.
 
 ### 1. Read what the order is waiting for
@@ -85,7 +85,7 @@ buyer has not paid yet. `next_action` is what tells them apart:
 | --- | --- | --- |
 | `sign_settlement_consent` | Nobody has signed the release yet. | `["settlement-consent", "cancel"]` |
 | `submit_source_of_funds` | The consent is in; this order needs a dossier and it is not complete. | `[]` |
-| `await_review` | Everything owed has been supplied. The order is waiting on us, for the dossier decision where one is owed and for the release. Nothing to call. | `[]` |
+| `await_review` | Everything owed has been supplied. The order is waiting on our dossier decision, and that decision releases it. Nothing to call. | `[]` |
 | absent | The order is held for review, or a payout of yours failed and its escrow refund is in flight. Both consent endpoints answer `409 OPERATION_NOT_ALLOWED`. | `[]`, or `["authorize-refund"]` when a refund is owed |
 
 `settlement-consent` and `cancel` appear only on an order whose crypto you hold.
@@ -197,11 +197,12 @@ only the signature.
 }
 ```
 
-`release_started` says whether the crypto has begun leaving escrow. A consent
-leaves the order waiting to be released, above and below the threshold alike, so
-it reads `false`. `next_action` then says what is still owed, if anything. Watch
-for the release on `status` — it becomes `settlement_in_progress` — and on the
-marks under **Follow the payout** below.
+`release_started` says whether the crypto has begun leaving escrow. Below the
+source-of-funds threshold it reads `true`: the consent is the whole of the
+permission and the crypto goes at once. At or above the threshold it reads
+`false` and `next_action` says what is still owed — the release then happens on
+the dossier decision. Either way, watch the release on `status`, which becomes
+`settlement_in_progress`, and on the marks under **Follow the payout** below.
 
 A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while
 the order is still parked, `INVALID_STATUS` once the release has started.
@@ -476,12 +477,12 @@ A `bank_statement` must be a bank-issued PDF.
 | `in_review` | A reviewer has picked it up. |
 | `additional_information_required` | A reviewer asked for something else — see `requested_documents`. |
 | `resubmitted` | The answer to that request is in. |
-| `approved` | Nothing more is owed on the dossier; the order waits for the release. |
+| `approved` | Nothing more is owed on the dossier, and the approval releases the order. |
 | `rejected` | The crypto is returned to the customer; the order ends `cancelled`. |
 | `escalated` | Moved out of the ordinary queue. |
 
-An approval does not start the release. With the consent in as well, the order is
-clear to be released and waits for us to do it.
+An approval releases the order when the consent is already in. If it is not, the
+release happens on the consent instead — whichever of the two lands last.
 
 A declaration or an upload is accepted only while the order is still parked and
 the case is undecided; outside that window both answer `409 INVALID_STATUS`. The

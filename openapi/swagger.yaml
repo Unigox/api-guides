@@ -3797,7 +3797,7 @@ paths:
         |---|---|---|
         | `crypto_received` | `sign_settlement_consent` | **Partner** signs the release |
         | `crypto_received` | `submit_source_of_funds` | **Partner** supplies the dossier |
-        | `crypto_received` | `await_review` | **Unigox**: the dossier decision, where one is owed, and the release |
+        | `crypto_received` | `await_review` | **Unigox**: the dossier decision, which releases the order |
         | `crypto_received` | — | Held: flagged, or a failed payout whose escrow refund is in flight |
         | `settlement_in_progress` | — | Payout in flight; the fiat has not arrived |
         | `returned` | — | The bank sent the payout back; it will be paid again |
@@ -4632,7 +4632,7 @@ paths:
         submit only the resulting signature.
 
         A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while the order
-        is still parked (the release waits for the source-of-funds review), `INVALID_STATUS` once the
+        is still parked (the release waits for the source-of-funds decision), `INVALID_STATUS` once the
         release has started.
       operationId: submitSettlementConsent
       security:
@@ -4700,10 +4700,10 @@ paths:
                           release_started:
                             type: boolean
                             description: |
-                              Whether the crypto has begun leaving escrow. A consent leaves the order
-                              waiting to be released, above and below the source-of-funds threshold
-                              alike, so it reads `false`; `next_action` then says what is still owed,
-                              if anything.
+                              Whether the crypto has begun leaving escrow. Below the source-of-funds
+                              threshold the consent releases the order at once and this reads `true`;
+                              at or above it the release waits for the dossier decision, so it reads
+                              `false` and `next_action` says what is still owed.
               example:
                 success: true
                 data:
@@ -4747,7 +4747,7 @@ paths:
                 success: false
                 error:
                   code: OPERATION_NOT_ALLOWED
-                  message: "this order has already been consented to: it is waiting to be released"
+                  message: "this order has already been consented to"
         '502':
           description: >-
             The consent signature could not be accepted. A signature from a key that does not own the
@@ -8054,7 +8054,7 @@ components:
             - `submit_source_of_funds` — the consent is in, and this delayed order is at or above the
               source-of-funds threshold with its dossier incomplete. See the `source-of-funds` endpoints
             - `await_review` — everything owed on a delayed order has been supplied and the order is
-              waiting on us, for the dossier decision where one is owed and for the release
+              waiting on our dossier decision, which is what releases it
             - absent — no required action (waiting for buyer or system). On a parked delayed order
               the key is absent when the order is held for review, or a payout of yours failed and its
               escrow refund is in flight: both consent endpoints then answer

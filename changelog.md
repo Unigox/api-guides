@@ -2,6 +2,15 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-21 (later)
+
+**A delayed settlement (T+1) order releases on your consent again — below the source-of-funds threshold, the signature is the whole of the permission.** See [Delayed settlement (T+1)](./api-reference/delayed-settlement.md).
+
+- **`POST …/settlement-consent` now answers `release_started: true`** on an order below the threshold: the crypto leaves escrow as the consent lands, and `status` is already `settlement_in_progress` when you read the order back. Yesterday's note said a consent never releases — that was a step we have taken back out.
+- **At or above the threshold nothing changed for you:** the consent still answers `release_started: false`, `next_action` asks for the dossier, and the order releases when the review is approved.
+- **`payout_deadline_at` therefore starts ticking at the consent** on an order below the threshold, since that is the release.
+- **No endpoint, request field, status or webhook changed.**
+
 ## 2026-09-21
 
 **Source-of-funds documents of the same type now stand side by side, up to the `maximum_files` that type allows.** See [Delayed settlement (T+1)](./api-reference/delayed-settlement.md).
