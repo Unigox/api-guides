@@ -2,48 +2,69 @@
 
 Notable changes to the Unigox partner API, newest first.
 
-## 2026-09-21 (later)
+## 2026-09-22
 
-**A delayed settlement (T+1) order releases on your consent again — below the source-of-funds threshold, the signature is the whole of the permission.** See [Delayed settlement (T+1)](./api-reference/delayed-settlement.md).
+**T+1 release, source-of-funds review and retry behaviour clarified.** The
+[current integration guide](./api-reference/delayed-settlement.md) and OpenAPI
+specification describe the current contract and replace earlier release-timing guidance.
 
-- **`POST …/settlement-consent` now answers `release_started: true`** on an order below the threshold: the crypto leaves escrow as the consent lands, and `status` is already `settlement_in_progress` when you read the order back. Yesterday's note said a consent never releases — that was a step we have taken back out.
-- **At or above the threshold nothing changed for you:** the consent still answers `release_started: false`, `next_action` asks for the dossier, and the order releases when the review is approved.
-- **`payout_deadline_at` therefore starts ticking at the consent** on an order below the threshold, since that is the release.
-- **No endpoint, request field, status or webhook changed.**
+- A successful consent response confirms a stored signature. Release requires
+  consent and, where applicable, source-of-funds approval. Unigox supplies the
+  second escrow signature after those conditions are met.
+- `release_started` does not prove blockchain confirmation. The payout window
+  starts at confirmed crypto release, not at signature submission.
+- Consent is refused after its deadline, even if the order status has not changed.
+  A concurrent refund does not report `release_started: true`.
+- Both supported `signed_data` values — the returned `safe_params.data` and
+  `tx_hash` — are accepted. Sign the complete returned EIP-712 transaction.
+- Source-of-funds review applies at USD 50,000 or above, or when the order already
+  has a case. Read `source_of_funds_required` and the current threshold from the
+  order. A missing case (404) alone does not mean review is unnecessary.
+- The first declaration saves the case's document requirements. Later edits
+  cannot change its source categories. File counts apply even when the customer
+  chooses one of several document types. Receiving files is not approval.
+- A repeated upload returns 409 with `duplicate_document` and `retry_safe`.
+  Read the case after an uncertain upload; only `retry_safe: true` confirms that
+  no new request for those files remains unanswered.
+- `settlement_in_progress` includes crypto release in progress. It does not mean
+  a bank payment has been sent. Transfers to the payout provider and bank payments
+  after release remain manual.
+- A bank return clears payout authorization, submission and paid timestamps.
+  Later webhooks can omit earlier fields; read the order for its current state.
+- Endpoint names and existing response field names are unchanged.
 
 ## 2026-09-21
 
-**Source-of-funds documents of the same type now stand side by side, up to the `maximum_files` that type allows.** See [Delayed settlement (T+1)](./api-reference/delayed-settlement.md).
-
-- **A second payslip no longer replaces the first.** Where the requirement asks for several files — `payslips` asks for two and allows three — each upload is kept and `superseded_count` comes back `0`. Sending the second file used to retire the first, so the case stayed short of the requirement however many you sent.
-- **Past the ceiling the oldest file gives way,** so a replacement is still possible without a delete endpoint. A type that allows one file behaves exactly as before.
-- **Nothing changed in the request, the response fields or the statuses.**
+**Source-of-funds uploads preserve multiple files of the same type.** A second
+payslip no longer replaces the first. Files remain active up to the document
+type's `maximum_files`; beyond that limit, a new file replaces the oldest one.
+`superseded_count` reports replacements. Request and response formats are unchanged.
 
 ## 2026-09-20
 
-**Unigox now releases a delayed settlement (T+1) order; your consent authorises the release rather than starting it. Three fields are added to the order response.** See the [Delayed settlement (T+1)](./api-reference/delayed-settlement.md) reference.
-
-- **The consent is still required and still the customer's authorisation** for the crypto to leave escrow. Once it is in, and once the source-of-funds case is decided where one is owed, the order waits for us to release it.
-- **`release_started` reads `false` on an order still waiting to be released,** below the threshold as well as above it. Earlier versions of this page said the crypto went as soon as the consent landed; that was wrong. Watch `status` for `settlement_in_progress` instead.
-- **`settlement_hours` still counts from the release,** not from the consent, and `payout_deadline_at` is still release time plus that window.
-- **`settlement_refund_reason` says why a delayed order ended without a payout,** where every ending used to read `cancelled`. Four values: `dossier_rejected`, `consent_window_expired`, `not_released_in_time` (the consent *was* signed and we did not release in time) and `cancelled_by_customer`. A refusal outranks an expired window, which outranks a cancellation. Omitted, not empty, when none applies.
-- **`source_of_funds_required` and `source_of_funds_threshold_usd` publish the dossier rule applied to this order.** Read the threshold from the order instead of copying the figure from this page: it can change. Both are always present, on instant and on-ramp orders too.
-- **`confirm-fiat-received` no longer appears in `allowed_actions` on a held delayed order.** That endpoint refuses every delayed order, so offering it advertised a `409`. An `authorize-refund` that is genuinely owed still appears.
-- **No endpoint, request field, status or webhook changed.** The three new fields are on the order response only, not on `order.status.changed`.
+**Three fields added to order responses:** `source_of_funds_required`,
+`source_of_funds_threshold_usd` and optional `settlement_refund_reason`.
+They are not included in `order.status.changed` webhooks. The refund reason
+explains document rejection, expiry without consent, failure to release before
+the deadline, or customer cancellation. See the reference for exact enum values.
 
 ## 2026-09-18
 
-**Some off-ramp quotes now come back as delayed settlement (T+1): the crypto leaves escrow on your own release signature and the fiat follows within a stated window.** See the [Delayed settlement (T+1)](./api-reference/delayed-settlement.md) reference.
+**Delayed settlement (T+1) added to eligible off-ramp orders.** Crypto is released
+to the licensed partner before the bank payment; the quoted payout window starts
+when crypto release is confirmed.
 
-- **`POST /offramp/quote` and `POST /offramp/estimate` carry two new fields:** `delayed_settlement` (boolean, always present) and `settlement_hours` (integer or `null`, the payout window in whole hours from the release). You cannot request or decline it; read the flag on every quote.
-- **Ten new fields on every order response** (single read and list, on-ramp rows included): `delayed_settlement`, `settlement_hours`, `consent_deadline_at`, `payout_deadline_at` and the six `delayed_settlement_*_at` marks — always present, `false`/`null` on an order that does not settle T+1.
-- **New endpoints for the release signature:** `GET /partner/orders/{order_id}/settlement-consent-parameters` returns the EIP-712 Safe transaction; `POST …/settlement-consent` takes it. Both are required; `signed_data` is the returned `safe_params.data` or `tx_hash`. `release_started: false` is a success: the release waits for the review.
-- **New endpoints for the source-of-funds dossier,** owed at or above `threshold_usd`, USD 50 000 today: `GET …/source-of-funds`, `POST …/source-of-funds/declaration`, `POST …/source-of-funds/documents` (multipart), `GET …/source-of-funds/requirements`. Below the threshold the first three answer `404 ORDER_NOT_FOUND`.
-- **A parked delayed order reports `next_action: sign_settlement_consent`** — then `submit_source_of_funds` or `await_review` — and `allowed_actions: ["settlement-consent", "cancel"]`, without `confirm-fiat-received`. `cancel` is offered on a funded escrow, which no other order allows. Both actions are withdrawn once the consent is signed. On a held order `next_action` is omitted and both consent endpoints answer `409 OPERATION_NOT_ALLOWED`.
-- **Two new statuses:** `settlement_in_progress` (released, fiat not arrived) and `returned` (the bank sent the payout back, no fresh authorisation). `completed` on a delayed order now means the fiat reached the customer.
-- **`?status=` accepts every status this API reports,** including both new ones and values that used to answer `400`. `completed` no longer returns a delayed order that released but has not paid, and `cancelled` now also returns one refunded after the release. A ramp-specific status implies its `type`: `status=crypto_received` and both new statuses return off-ramp rows only, and `type=onramp` beside one answers an empty page, not an error.
-- **`order.status.changed` fires at six new points:** crypto sent to the provider, payout authorised, payout submitted, fiat paid, bank returned, crypto refunded. Nine T+1 fields travel on every event for a delayed order, omitted on any other; an unreached mark is absent, not `null`. `event_id` is unique per emission — de-duplicate on it.
-- **Nothing changes for an instant order.**
+- Quotes and estimates report `delayed_settlement` and `settlement_hours`.
+  Order reads include consent and payout deadlines and six payout/refund timestamps.
+- New consent-parameter and consent endpoints support the release signature.
+  New source-of-funds endpoints provide the requirements, declaration, uploads and
+  review status. Follow `next_action` and `allowed_actions` on the order.
+- New order statuses: `settlement_in_progress` and `returned`. On T+1 orders,
+  `completed` means the bank payment reached the recipient.
+- Payout, return and refund updates emit `order.status.changed`. Deduplicate by
+  `event_id`; T+1 fields are omitted on ordinary orders.
+- Instant-order behaviour is unchanged. See the current guide for release conditions,
+  status filters, cancellation and error handling.
 
 ## 2026-09-14
 
