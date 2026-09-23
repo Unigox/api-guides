@@ -6,6 +6,7 @@ Notable changes to the Unigox partner API, newest first.
 
 **The markup you set in the partner dashboard now applies to API orders too.** Until now it was applied only to trades made through the embedded widget; an API order earned a markup only when the quote or estimate request carried `partner_fee_pct`. A quote or estimate that omits `partner_fee_pct` now takes the dashboard rate. Sending `partner_fee_pct` still wins for that order, and an explicit `"0"` means no markup on it regardless of the dashboard. Partners with no dashboard rate set (it is 0 by default) see no change.
 
+- `POST /partner/onramp/estimate` and `POST /partner/offramp/estimate` stay public, but now honour an `X-API-Key` when you send one, so an estimate prices the same way as the quote after it (dashboard markup included). An invalid key on an estimate is now refused with `401` instead of being ignored.
 - `GET /api/v1/partner/stats` is new: `total_orders`, `completed_orders`, and `volume_usd` and `earned_usd` over completed orders, each order converted to USD at the rate snapshotted when it was created. This is what the partner dashboard tiles now show; they previously summed the first page of the orders list, which is served pending-first, so they could show a stale unaccepted request in its own fiat currency instead of your completed volume.
 
 ## 2026-09-21

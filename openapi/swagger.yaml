@@ -2054,7 +2054,11 @@ paths:
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
-        **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
+        **Authentication:** Optional. Without credentials this is a public endpoint (same as
+        `/partner/liquidity`) and no partner markup is applied. Send your `X-API-Key` and the estimate
+        is priced exactly like the quote that follows it: your dashboard markup applies unless the
+        request carries `partner_fee_pct`. A credential that is present but invalid is refused with
+        `401`, not priced anonymously.
       operationId: getOnRampEstimate
       security: []
       requestBody:
@@ -2911,7 +2915,11 @@ paths:
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
-        **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
+        **Authentication:** Optional. Without credentials this is a public endpoint (same as
+        `/partner/liquidity`) and no partner markup is applied. Send your `X-API-Key` and the estimate
+        is priced exactly like the quote that follows it: your dashboard markup applies unless the
+        request carries `partner_fee_pct`. A credential that is present but invalid is refused with
+        `401`, not priced anonymously.
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
