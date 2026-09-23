@@ -2060,7 +2060,10 @@ paths:
         request carries `partner_fee_pct`. A credential that is present but invalid is refused with
         `401`, not priced anonymously.
       operationId: getOnRampEstimate
-      security: []
+      # Optional: anonymous, or ApiKeyAuth for a partner-priced estimate.
+      security:
+        - {}
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -2145,6 +2148,12 @@ paths:
                 error:
                   code: NO_OFFERS_AVAILABLE
                   message: "no matching offers found for the provided criteria"
+        '401':
+          description: Unauthorized — a credential was sent but is invalid or missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '500':
           description: Internal Server Error
 
@@ -2925,7 +2934,10 @@ paths:
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
         See `PATCH /partner/users/{user_uuid}/kyc` to update.
       operationId: getOffRampEstimate
-      security: []
+      # Optional: anonymous, or ApiKeyAuth for a partner-priced estimate.
+      security:
+        - {}
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -3010,6 +3022,12 @@ paths:
                 error:
                   code: NO_OFFERS_AVAILABLE
                   message: "no matching offers found for the provided criteria"
+        '401':
+          description: Unauthorized — a credential was sent but is invalid or missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '500':
           description: Internal Server Error
 
@@ -6759,7 +6777,7 @@ components:
           example: 161
         completed_orders:
           type: integer
-          description: Orders whose crypto was released.
+          description: Orders whose crypto was released or is being released.
           example: 54
         volume_usd:
           type: number
