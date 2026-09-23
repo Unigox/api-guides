@@ -2156,8 +2156,9 @@ paths:
         The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
-        `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
-        by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
+        `platform_fee` (our fee in crypto), `partner_fee` (your markup in crypto — the rate set in your
+        partner dashboard, or the `partner_fee_pct` you pass on the quote/estimate request to override it
+        for that order, where `1` means 1%), `partner_fee_pct`
         (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
         crypto base as the platform fee (non-compounding). There's no separate transfer leg for on-ramp:
         at release the full buyer amount lands in your partner wallet, and the markup is captured by
@@ -3285,8 +3286,9 @@ paths:
         - Integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS): `fiat_amount` must be a whole number.
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
-        `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
-        by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
+        `platform_fee` (our fee in crypto), `partner_fee` (your markup in crypto — the rate set in your
+        partner dashboard, or the `partner_fee_pct` you pass on the quote/estimate request to override it
+        for that order, where `1` means 1%), `partner_fee_pct`
         (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
         crypto base as the platform fee (non-compounding) and is settled on-chain to your partner wallet
         on successful release. An order that does not settle is never charged the markup, and the refund
@@ -4557,6 +4559,43 @@ paths:
                     limit: 20
                     total_count: 42
                     total_pages: 3
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/stats:
+    get:
+      tags:
+        - Orders
+      summary: Order stats
+      description: |
+        Headline numbers for your whole order history in one call: how many orders you have, how many
+        completed, and the fiat volume and markup earned on the completed ones. This is what the partner
+        dashboard tiles show.
+
+        Volume and earnings cover **completed** orders only and are reported in **USD**, each order
+        converted at the rate snapshotted when it was created, so the totals are comparable across the
+        fiat currencies you trade in and do not move with today's FX. `total_orders` equals
+        `pagination.total_count` of `GET /partner/orders` with no filter.
+      operationId: getOrderStats
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Aggregate order statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/PartnerStatsResponse'
         '401':
           description: Unauthorized — invalid or missing API key
           content:
@@ -6164,7 +6203,8 @@ components:
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
             as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
-            from this request payload — or sending `0` — means no markup; the markup cannot be
+            applies the markup set in your partner dashboard (0 until you set one); sending `0`
+            means no markup on this order whatever the dashboard says; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
             rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
@@ -6549,7 +6589,8 @@ components:
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
             as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
-            from this request payload — or sending `0` — means no markup; the markup cannot be
+            applies the markup set in your partner dashboard (0 until you set one); sending `0`
+            means no markup on this order whatever the dashboard says; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
             rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
@@ -6700,6 +6741,26 @@ components:
             - $ref: '#/components/schemas/PartnerComplianceCase'
           nullable: true
           description: Durable case shown in Compliance admin for third-party payout.
+
+    PartnerStatsResponse:
+      type: object
+      properties:
+        total_orders:
+          type: integer
+          description: Every order you have, including ones no liquidity provider accepted yet.
+          example: 161
+        completed_orders:
+          type: integer
+          description: Orders whose crypto was released.
+          example: 54
+        volume_usd:
+          type: number
+          description: Fiat volume of completed orders, in USD at each order's snapshotted rate.
+          example: 26386.79
+        earned_usd:
+          type: number
+          description: Your markup captured on completed orders, in USD.
+          example: 131.93
 
     PartnerOrderResponse:
       type: object
@@ -7221,7 +7282,8 @@ components:
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
             as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
-            from this request payload — or sending `0` — means no markup; the markup cannot be
+            applies the markup set in your partner dashboard (0 until you set one); sending `0`
+            means no markup on this order whatever the dashboard says; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
             rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
