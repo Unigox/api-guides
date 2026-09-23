@@ -4639,7 +4639,9 @@ paths:
         of the bank payment. After storing the signature, Unigox attempts release if all checks pass.
         An existing source-of-funds case must be approved. Approval also attempts release when consent
         is already stored. A 200 confirms the signature was saved, not that crypto has left escrow.
-        The later transfer to the payout provider and bank payment are manual operations.
+        After the release, Unigox records the crypto reaching the payout provider, approves the
+        payment and sends it through the provider where the licensed partner is connected to one;
+        each step stamps a timestamp on the order and sends an `order.status.changed` event.
         GET and POST refuse consent after its deadline, even if the order status has not changed yet.
 
         **Both fields are required**, which is where this differs from `authorize-refund`: the
@@ -8174,7 +8176,7 @@ components:
             - `created` → `["cancel"]`
             - `awaiting_liquidity_provider` → `["cancel"]`
             - `awaiting_crypto_transfer_authorization` → `["authorize-crypto-transfer", "cancel"]`
-            - `crypto_transfer_authorization_pending` → `["cancel"]`
+            - `crypto_transfer_authorization_pending` → `[]` (the transfer is in flight; cancel is refused)
             - `crypto_received` → `["confirm-fiat-received"]` (optional fast-track)
             - `fiat_payment_started` → `["confirm-fiat-received"]` (optional fast-track after buyer proof submission)
             - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]` (required)

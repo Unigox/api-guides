@@ -2,6 +2,27 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-23
+
+**The T+1 guide was rewritten for integrators, and the payment after the release is no longer
+described as manual.** Endpoints, fields and error codes are unchanged.
+
+- Where the licensed partner is connected to a payout provider, the bank payment is sent
+  through it automatically once Unigox approves it. The order then stamps
+  `delayed_settlement_fiat_payout_submitted_by_provider_at` and sends a
+  `settlement_in_progress` event when the provider accepts the payment, and a separate
+  `completed` event when the money arrives. A payment recorded by hand with a receipt still
+  stamps both at once and sends one `completed` event.
+- `returned` covers every payment attempt that did not go through, including one the payout
+  provider cancelled before it was sent. Unigox approves a new attempt; `returned_at` stays on
+  the order until the new payment arrives.
+- A return reported by the provider after the money was already recorded as paid does not
+  change the order. Only an operator correcting the record clears `paid_at`.
+- `crypto_transfer_authorization_pending` offers no `cancel`: the transfer is in flight. The
+  specification said otherwise.
+- Read `delayed_settlement` and `settlement_hours` from the order; the `initiate` and
+  `authorize-crypto-transfer` responses do not carry them.
+
 ## 2026-09-22
 
 **T+1 release, source-of-funds review and retry behaviour clarified.** The
@@ -27,8 +48,8 @@ specification describe the current contract and replace earlier release-timing g
   Read the case after an uncertain upload; only `retry_safe: true` confirms that
   no new request for those files remains unanswered.
 - `settlement_in_progress` includes crypto release in progress. It does not mean
-  a bank payment has been sent. Transfers to the payout provider and bank payments
-  after release remain manual.
+  a bank payment has been sent. (Superseded on 2026-09-23: the payment is sent through the
+  payout provider automatically where one is connected.)
 - A bank return clears payout authorization, submission and paid timestamps.
   Later webhooks can omit earlier fields; read the order for its current state.
 - Endpoint names and existing response field names are unchanged.
