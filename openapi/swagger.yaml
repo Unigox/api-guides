@@ -66,16 +66,6 @@ tags:
       opened for that same person. There is no second identity to register and no separate customer
       record for banking — the person Unigox verified is the person the account belongs to.
 
-      ## Fiat accounts
-
-      Issue dedicated fiat accounts (IBANs) for your customers and read their balances, ledger and
-      incoming payments. Every account is reached through the customer that holds it — which is why
-      these routes live here rather than under a product of their own, and why an account id on its
-      own will not read an account. It is an optional product that Unigox activates per partner, it
-      covers individuals rather than companies, and money movement is not on this API. The
-      [Fiat accounts guide](https://developers.unigox.com/tutorials/fiat-accounts) has the flow end
-      to end, what has to be switched on before you start, and the error codes.
-
     x-page-icon: user
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
@@ -89,6 +79,18 @@ tags:
   - name: Recipients
     description: Register and manage third parties paid by KYC-verified senders
     x-page-icon: users
+  - name: Fiat Accounts
+    description: |
+      Accounts Unigox issues to your customers, in their own name, for them to be paid into.
+
+      A fiat account belongs to a customer you created with `POST /api/v1/partner/users` and put
+      through KYC, and it is addressed by its own `fiat_account_id`. Open one, show the customer
+      where to pay in, and read what lands on it. In v1 an account only receives: moving money off
+      it is not on this API, and converting it is an order.
+
+      An optional product Unigox activates per partner. `GET /api/v1/partner/fiat-accounts/config`
+      answers whether it is on for you, before any customer is in scope.
+    x-page-icon: building-columns
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
     x-page-icon: receipt
@@ -99,13 +101,36 @@ tags:
 
       **Event model**
 
-      Three event types are delivered:
+      These event types are delivered:
 
       | Event type | Fired when |
       |---|---|
       | `order.status.changed` | An order transitions to a new status |
       | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
+      | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
+      | `fiat_account.deposit.received` | Money arrived on an issued fiat account |
+
+      **Payload shape — the fiat account events**
+
+      ```json
+      {
+        "event_id": "evt_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "event_type": "fiat_account.deposit.received",
+        "created_at": "2026-09-18T10:04:23Z",
+        "data": {
+          "fiat_account_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
+          "transaction_id": "5f1b2c9a-1d44-4f0e-9c1a-2b5f0d7e9a31",
+          "amount": "500.00",
+          "currency": "EUR",
+          "order_id": null
+        }
+      }
+      ```
+
+      `order_id` is the on-ramp this deposit funded, or `null` when it matched no order.
+      `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`.
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
       and the same signature scheme. The structure of the `data` object differs per event type.
@@ -410,9 +435,15 @@ paths:
         Current partner API omission support is explicitly available for:
         - `iban-sepa`
         - `nip-nigeria`
+        - `faster-payments`
         - `imps-neft-india`
+        - `alipay-wallet`
+        - `wechat-wallet`
+        - `interac-e-transfer`
 
-        For `iban-sepa` and `nip-nigeria`, partners may omit `institution_id` and the backend resolves the generic `other-bank` payment method automatically.
+        For `iban-sepa`, `nip-nigeria` and `faster-payments`, partners may omit `institution_id` and the backend resolves the generic `other-bank` payment method automatically.
+
+        For `alipay-wallet`, `wechat-wallet` and `interac-e-transfer`, an omitted `institution_id` resolves to the rail's own institution (`alipay`, `wechat-pay`, `interac-e-transfers`), which goes through the same checks as if you had sent it. An Interac e-Transfer is addressed to the recipient's `email` or `phone`, not to a bank.
 
         `imps-neft-india` returns `institution_required: false` and has **no** `institution_id` field: the IFSC code encodes both bank and branch and routes the payout on its own. Required fields are `bank_name`, `ifsc_code`, `account_number`, and `full_name`. Sending `institution_id` is accepted but ignored (it resolves to the generic `imps-or-neft-transfer` method); the receiving bank comes from `bank_name` + `ifsc_code`.
 
@@ -1700,11 +1731,12 @@ paths:
 
         Institution handling:
         - for most rails, `institution_id` must be provided from `/api/v1/supported/institutions`
-        - partners may omit `institution_id` only for the explicitly supported rails below; the backend will assign the generic `other-bank` payment method automatically
+        - partners may omit `institution_id` only for the explicitly supported rails below
 
         Currently supported omission rails:
-        - `iban-sepa`
-        - `nip-nigeria`
+        - `iban-sepa`, `nip-nigeria`, `faster-payments` — resolve to the generic `other-bank` payment method
+        - `imps-neft-india` — resolves to the generic `imps-or-neft-transfer` method; the bank comes from `bank_name` + `ifsc_code`
+        - `alipay-wallet`, `wechat-wallet`, `interac-e-transfer` — resolve to the rail's own institution (`alipay`, `wechat-pay`, `interac-e-transfers`) and go through the same checks as if you had sent it
       operationId: createPaymentDetails
       security:
         - ApiKeyAuth: []
@@ -2286,7 +2318,7 @@ paths:
         `awaiting_fiat_transfer` when the crypto is locked in escrow.
 
         At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order —
-        unless the order's `fiat_funding_source` is `own_iban`. Then `next_action` is
+        unless the order's `fiat_funding_source` is `own_account`. Then `next_action` is
         `deposit_to_user_account`: the customer transfers the order's fiat amount into the fiat account
         issued to them, that transfer confirms the payment, and `confirm-payment-sent` is not used.
         If the order type is `payment_request`, call `submit-payer-details` first before confirming.
@@ -5818,20 +5850,17 @@ paths:
   /api/v1/partner/fiat-accounts/config:
     get:
       tags:
-        - User Management
-      summary: What you can offer
+        - Fiat Accounts
+      summary: What fiat accounts you can offer
       operationId: getFiatAccountsConfig
       description: |
-        Whether this partner may use fiat accounts right now, which currencies an account may be
-        denominated in, and which jurisdictions each currency can be issued from.
+        Whether you may issue fiat accounts right now, which currencies an account may be
+        denominated in, and which jurisdictions each currency can be issued from. The one fiat
+        account route that names no customer.
 
-        The one route outside the customer tree, and deliberately: it answers what you may offer AT
-        ALL, before any customer is in scope. It is not an account.
-
-        Never errors on entitlement: when the product is not active it answers `200` with
-        `enabled: false` and a `disabled_reason`, so a console can render the reason rather than a
-        failure. `issues_accounts: false` with `enabled: true` is a real shape — the partner may put
-        customers through verification but not open accounts for them.
+        Entitlement is never an error here: when the product is not active it answers `200` with
+        `enabled: false` and a `disabled_reason`. `issues_accounts: false` with `enabled: true`
+        means you may read accounts but not open them.
       security:
         - ApiKeyAuth: []
       responses:
@@ -5840,7 +5869,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FiatConfigResponse'
+                $ref: '#/components/schemas/FiatAccountConfigResponse'
         '401':
           description: Missing or invalid credential
           content:
@@ -5848,179 +5877,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
-  /api/v1/partner/users/{user_uuid}/identity:
+  /api/v1/partner/fiat-accounts:
     get:
       tags:
-        - User Management
-      summary: What identity we hold, and what is still needed
-      operationId: getFiatCustomerIdentity
+        - Fiat Accounts
+      summary: List a customer's fiat accounts
+      operationId: listFiatAccounts
       description: |
-        What Unigox KYC already established about this customer, and `missing` — the fields the
-        banking layer still needs before an account can be opened. `ready: true` means the
-        identification submission will be accepted with an empty body.
+        Every fiat account issued to one of your customers. A customer with none yet answers an
+        empty list.
 
-        A read: it creates nothing, calls no one and stays available when the product is switched
-        off, so a partner can always see WHY a customer cannot be issued an account.
-
-        The document number is never returned — only its last four digits.
+        Only the last four digits of the identifier travel here. Read a single account for the
+        pay-in details a customer needs.
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
-      responses:
-        '200':
-          description: Known identity and remaining gaps
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FiatIdentityResponse'
-        '404':
-          description: No such customer, or not yours (`CUSTOMER_NOT_FOUND`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-
-  /api/v1/partner/users/{user_uuid}/identification:
-    get:
-      tags:
-        - User Management
-      summary: Verification status of the account holder
-      operationId: getFiatIdentification
-      description: |
-        The holder's current verification state. Poll this until `can_open_accounts` is `true`.
-
-        A `GET` on purpose: checking a verification changes nothing, so it is safe to retry and safe
-        to run on a schedule. Where the identity has already reached the banking layer this re-reads
-        their verdict; before that it answers from the holder record.
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
-      responses:
-        '200':
-          description: Holder status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FiatHolderResponse'
-        '404':
-          description: |
-            No such customer, or not yours (`CUSTOMER_NOT_FOUND`), or the customer has not been
-            submitted for verification yet (`ACCOUNT_HOLDER_NOT_FOUND`) — polling never creates a
-            holder record.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '502':
-          description: The banking layer could not be read
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-    post:
-      tags:
-        - User Management
-      summary: Submit the customer's identity
-      operationId: submitFiatIdentification
-      description: |
-        Submits the customer's identity to the banking layer, registering them as an account holder
-        if this is the first call.
-
-        **Every body field is optional.** What Unigox verified at KYC is always preferred over what
-        is sent here, so send only what `GET /users/{user_uuid}/identity` reported as `missing`. The
-        name, the country of residence and the document are taken from the verification and cannot
-        be overridden — the identity a bank opens an account on has to be the one that was verified.
-
-        The customer must be KYC-verified by Unigox first. The document number is used for the
-        submission and is not stored; only its last four digits are kept.
-
-        Idempotent: a customer already submitted answers `200` with their current holder record and
-        makes no second submission.
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FiatIdentificationRequest'
-      responses:
-        '200':
-          description: Submitted (or already submitted)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FiatHolderResponse'
-        '400':
-          description: |
-            Identity gaps (`MISSING_FIELDS`, with `error.details.missing_fields`) or a document type
-            outside the accepted set (`INVALID_DOCUMENT_TYPE`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '403':
-          description: Not entitled (`PRODUCT_NOT_ACTIVATED`, `ISSUANCE_DISABLED`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '404':
-          description: No such customer, or not yours (`CUSTOMER_NOT_FOUND`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '409':
-          description: |
-            The banking layer matched this person to an identity another holder already owns
-            (`IDENTIFICATION_ALREADY_LINKED`), or this customer is already being registered as a
-            holder by a request in flight (`HOLDER_REGISTRATION_IN_PROGRESS`) — retry once it
-            settles.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '422':
-          description: The customer is not KYC-verified (`CUSTOMER_NOT_VERIFIED`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '502':
-          description: The banking layer refused or failed the submission
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-
-  /api/v1/partner/users/{user_uuid}/fiat-accounts:
-    get:
-      tags:
-        - User Management
-      summary: This customer's accounts
-      operationId: listFiatAccountsForUser
-      description: |
-        Every account issued to this customer. A read: a customer with no issuance yet has no
-        accounts, which is an empty list rather than a reason to create anything.
-
-        Only the last four digits of the identifier travel here — fetch a single account for the
-        full details a payer needs.
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
+        - name: user_uuid
+          in: query
+          required: true
+          description: The customer whose accounts to list.
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
       responses:
         '200':
           description: Accounts
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FiatAccountsResponse'
+                $ref: '#/components/schemas/FiatAccountListResponse'
         '404':
           description: No such customer, or not yours (`CUSTOMER_NOT_FOUND`)
           content:
@@ -6029,52 +5915,50 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
     post:
       tags:
-        - User Management
-      summary: Issue an account
+        - Fiat Accounts
+      summary: Issue a fiat account
       operationId: issueFiatAccount
       description: |
-        Opens a fiat account (IBAN) for the customer, registering them as an account holder first if
-        needed. The holder must already be approved — see
-        `GET /users/{user_uuid}/identification`.
+        Opens a fiat account for one of your customers. The customer must be KYC-verified by
+        Unigox; everything the bank needs about them comes from that verification, so there is no
+        identity to submit here.
 
-        **Idempotent per (customer, currency, jurisdiction).** A repeat answers `201` with the same
-        account and `created: false`; it does not open a second one. One customer may hold accounts
-        in several currencies, and in several jurisdictions of the same currency — `EUR/NL` and
-        `EUR/MT` are two accounts, each opened by naming its `issuer_country`.
+        The account is opened asynchronously. It answers `201` with `status: "pending"` and no
+        pay-in details; watch for `fiat_account.updated` — or poll the account — until it reads
+        `active`, and only then tell the customer where to transfer.
 
-        Two requests racing for the same account answer `409 PROVISIONING_IN_PROGRESS`. Retry once
-        it settles rather than treating it as a failure.
+        **Idempotent per (user_uuid, currency, issuer_country).** A repeat answers `201` with the
+        same account and `created: false`.
+
+        When the bank needs a field the KYC record does not have, this answers `422
+        ISSUANCE_NOT_READY` and names those fields in `error.details.missing_fields`. They are KYC
+        field names: fill them with `PATCH /api/v1/partner/users/{user_uuid}/kyc` and post again.
       security:
         - ApiKeyAuth: []
-      parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FiatIssueAccountRequest'
+              $ref: '#/components/schemas/FiatAccountCreateRequest'
       responses:
         '201':
           description: |
-            Account issued, or the existing one for this (customer, currency, jurisdiction).
-            `created` distinguishes the two.
+            Opened, or the existing account for this (customer, currency, jurisdiction). `created`
+            distinguishes the two.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FiatAccountIssuedResponse'
+                $ref: '#/components/schemas/FiatAccountResponse'
         '400':
           description: |
-            `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY`, `POSTAL_CODE_REQUIRED` or
-            `INVALID_POSTAL_CODE`.
+            `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY` or `POSTAL_CODE_REQUIRED`.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '403':
-          description: |
-            Not entitled (`PRODUCT_NOT_ACTIVATED`, `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`) or
-            the currency is outside this customer's issuance (`CURRENCY_NOT_PERMITTED`).
+          description: Not entitled (`PRODUCT_NOT_ACTIVATED`, `ISSUANCE_NOT_GRANTED`)
           content:
             application/json:
               schema:
@@ -6086,57 +5970,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: |
-            The same account is already being opened (`PROVISIONING_IN_PROGRESS`), or this customer
-            is already being registered as a holder by a request in flight
-            (`HOLDER_REGISTRATION_IN_PROGRESS`). Both settle on their own — retry.
+          description: The same account is already being opened (`PROVISIONING_IN_PROGRESS`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '422':
           description: |
-            The holder is not approved or not submitted (`CLIENT_NOT_APPROVED`,
-            `IDENTIFICATION_MISSING`), the customer is no longer verified
-            (`CUSTOMER_NOT_VERIFIED`), or the currency is not priced (`CURRENCY_NOT_PRICED`).
+            The customer is not verified (`KYC_NOT_CLEARED`), the bank needs fields the KYC record
+            does not have (`ISSUANCE_NOT_READY`, with `error.details.missing_fields`), or the
+            currency has no pricing (`CURRENCY_NOT_PRICED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-        '502':
-          description: The banking layer refused to open the account
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '500':
-          description: |
-            The account was opened at the banking layer but the local record write failed — do not
-            retry (`RECORD_FAILED`); contact Unigox so it can be reconciled.
+        '503':
+          description: The bank could not be reached (`BANKING_UNAVAILABLE`). Safe to retry.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
-  /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}:
+  /api/v1/partner/fiat-accounts/{fiat_account_id}:
     get:
       tags:
-        - User Management
-      summary: One account, with balances
+        - Fiat Accounts
+      summary: One fiat account
       operationId: getFiatAccount
       description: |
-        The full account details a payer needs — including the complete IBAN or account number — the
-        holder it belongs to, and the live balances.
+        One account: its status, its live balances, and — once it is `active` — the pay-in details
+        to show the customer.
 
-        An account is always addressed through the customer that holds it. One that belongs to a
-        different customer answers `404`, the same as one that does not exist.
+        Those details are shaped by the rail the account is on: `iban` and `bic` for a euro (SEPA)
+        account, `account_number` and `sort_code` for a sterling (Faster Payments) one. Keys that
+        do not apply are absent rather than empty.
 
-        `balances_unavailable: true` means the balance read failed — the balances are reported as
-        unavailable rather than as zero, because a zero a partner acts on is worse than a gap.
+        `balances_unavailable: true` means the balance read failed. Balances are reported as
+        unavailable rather than as zero: a zero you act on is worse than a gap.
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
         - $ref: '#/components/parameters/FiatAccountId'
       responses:
         '200':
@@ -6144,38 +6017,31 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FiatAccountDetailResponse'
+                $ref: '#/components/schemas/FiatAccountResponse'
         '404':
-          description: |
-            No such customer, or not yours (`CUSTOMER_NOT_FOUND`); or no such account under that
-            customer (`FIAT_ACCOUNT_NOT_FOUND`). An account that exists but belongs to a DIFFERENT
-            customer answers the same way — it is not addressable through this path.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '422':
-          description: The account has not finished being opened (`ACCOUNT_NOT_PROVISIONED`)
+          description: No such account, or not yours (`FIAT_ACCOUNT_NOT_FOUND`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
-  /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}/ledger:
+  /api/v1/partner/fiat-accounts/{fiat_account_id}/transactions:
     get:
       tags:
-        - User Management
-      summary: Transaction history
-      operationId: getFiatAccountLedger
+        - Fiat Accounts
+      summary: Money that moved on a fiat account
+      operationId: getFiatAccountTransactions
       description: |
-        One page of ledger entries for the account.
+        One page of the money that moved on the account, newest first. v1 is receive-only, so every
+        row is a `credit`: a transfer the customer's payer sent to the account.
 
-        `pagination` is present only when the upstream page metadata is available. **Its absence
-        means unknown, not "one page"** — fall back to judging by the length of the page you got.
+        A credit that funded an on-ramp carries that order in `order_id`; one that matched no order
+        carries `null` and simply sits on the account.
+
+        Paging is `page`. `has_more` says whether another page exists.
       security:
         - ApiKeyAuth: []
       parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
         - $ref: '#/components/parameters/FiatAccountId'
         - name: page
           in: query
@@ -6184,74 +6050,22 @@ paths:
           schema:
             type: integer
             minimum: 1
-          example: 2
+          example: 1
       responses:
         '200':
-          description: Ledger page
+          description: Transactions page
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FiatLedgerResponse'
+                $ref: '#/components/schemas/FiatTransactionsResponse'
         '404':
-          description: |
-            No such customer, or not yours (`CUSTOMER_NOT_FOUND`); or no such account under that
-            customer (`FIAT_ACCOUNT_NOT_FOUND`). An account that exists but belongs to a DIFFERENT
-            customer answers the same way — it is not addressable through this path.
+          description: No such account, or not yours (`FIAT_ACCOUNT_NOT_FOUND`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-        '422':
-          description: The account has not finished being opened (`ACCOUNT_NOT_PROVISIONED`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '502':
-          description: The banking layer could not be read (`BANKING_ERROR` / `BANKING_UNAVAILABLE`)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-
-  /api/v1/partner/users/{user_uuid}/fiat-accounts/{account_id}/payments:
-    get:
-      tags:
-        - User Management
-      summary: Payment records
-      operationId: getFiatAccountPayments
-      description: |
-        One page of payment records for the account — the incoming payments that credited it.
-        Same pagination caveat as the ledger.
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - $ref: '#/components/parameters/FiatUserUuid'
-        - $ref: '#/components/parameters/FiatAccountId'
-        - name: page
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-      responses:
-        '200':
-          description: Payments page
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FiatPaymentsResponse'
-        '404':
-          description: |
-            No such customer, or not yours (`CUSTOMER_NOT_FOUND`); or no such account under that
-            customer (`FIAT_ACCOUNT_NOT_FOUND`). An account that exists but belongs to a DIFFERENT
-            customer answers the same way — it is not addressable through this path.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
-        '502':
-          description: The banking layer could not be read
+        '503':
+          description: The bank could not be read (`BANKING_UNAVAILABLE`)
           content:
             application/json:
               schema:
@@ -6950,6 +6764,25 @@ components:
                       format: date-time
                       description: Last update timestamp for KYC status
                       example: "2026-01-06T14:30:00Z"
+                fiat_account_issuance:
+                  type: object
+                  description: |
+                    Whether a fiat account can be opened for this customer, and what the bank is still
+                    short of if not. It lives here because there is no second identity to register for
+                    an account: the gaps are gaps in this customer's KYC record.
+                  properties:
+                    ready:
+                      type: boolean
+                      description: True when `POST /api/v1/partner/fiat-accounts` will be accepted for this customer.
+                      example: false
+                    missing_fields:
+                      type: array
+                      items: { type: string }
+                      description: |
+                        The fields the bank needs that the KYC record does not have, in the names
+                        `PATCH /api/v1/partner/users/{user_uuid}/kyc` takes: `address`, `city`,
+                        `postal_code`, `dob`, `id_number`, `id_type`.
+                      example: ["address", "postal_code"]
                 payment_profiles:
                   type: array
                   items:
@@ -8099,7 +7932,7 @@ components:
             - `authorize_refund` — the order ended without a payout and its crypto is still in escrow; only your
               signature can send it back. Note that this appears on an order whose `status` is `cancelled`, which
               is the one case where a terminal status still needs something from you
-            - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_iban` is waiting for the
+            - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_account` is waiting for the
               customer to transfer the order's fiat amount into the fiat account issued to them. The transfer
               itself confirms the payment; there is nothing to call
             - `sign_settlement_consent` — a **delayed settlement (T+1)** order remains at `crypto_received`
@@ -8189,7 +8022,7 @@ components:
               rather than assuming a cancelled order is finished with. `next_action` is
               `authorize_refund` and `action_required` names the endpoint at the same time.
 
-            On-ramp orders with `fiat_funding_source: own_iban` never offer `confirm-payment-sent`: the
+            On-ramp orders with `fiat_funding_source: own_account` never offer `confirm-payment-sent`: the
             transfer into the customer's own account is the confirmation.
 
             On a funded **delayed settlement (T+1)** order awaiting release whose crypto you hold,
@@ -8213,17 +8046,26 @@ components:
           example: ["authorize-crypto-transfer", "cancel"]
         fiat_funding_source:
           type: string
-          enum: [vendor_details, own_iban]
+          enum: [vendor_details, own_account]
           description: |
             On-ramp orders only. Where the fiat for this order is paid:
             - `vendor_details` — to the vendor's bank account in `vendor_payment_details`; then call
               `confirm-payment-sent`.
-            - `own_iban` — into the fiat account you issued to the customer. There are no
-              `vendor_payment_details` and no `confirm-payment-sent`: the transfer landing on the customer's
-              account is matched to the order by amount and the order proceeds on its own.
+            - `own_account` — into the fiat account you issued to the customer, named by
+              `fiat_account_id`. There are no `vendor_payment_details` and no `confirm-payment-sent`:
+              the transfer landing on the customer's account is matched to the order by amount and the
+              order proceeds on its own.
 
             Read it on every order rather than assuming one or the other.
-          example: own_iban
+          example: own_account
+        fiat_account_id:
+          type: string
+          format: uuid
+          description: |
+            On an `own_account` order: the fiat account the customer transfers into. The same id the
+            Fiat Accounts endpoints take, so the deposit that funds this order can be found on that
+            account's transactions carrying this order's id.
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
         crypto_transfer_authorization_seconds_left:
           type: integer
           format: int64
@@ -8546,7 +8388,7 @@ components:
         **On-ramp statuses (fiat → crypto):**
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
         - `awaiting_vendor_escrow_funding` — vendor accepted, funding escrow with crypto
-        - `awaiting_fiat_transfer` — crypto locked in escrow; the partner pays the vendor and confirms payment sent (`fiat_funding_source: vendor_details`), or the customer transfers into their own fiat account (`own_iban`)
+        - `awaiting_fiat_transfer` — crypto locked in escrow; the partner pays the vendor and confirms payment sent (`fiat_funding_source: vendor_details`), or the customer transfers into their own fiat account (`own_account`)
         - `fiat_transfer_pending` — fiat payment confirmed, awaiting vendor confirmation of receipt
         - `completed` — vendor confirmed fiat received, crypto released to end-user wallet
         - `cancelled` — order cancelled
@@ -9134,7 +8976,7 @@ components:
           description: |
             Event type. `order.status.changed` for a status transition, `order.refund.required` for an
             order whose crypto is stuck in escrow awaiting your signature (see the Webhooks section).
-          enum: [order.status.changed, order.refund.required]
+          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.deposit.received]
           example: "order.status.changed"
         created_at:
           type: string
@@ -9477,156 +9319,160 @@ components:
                 current_rate: 1545.00
 
     # ---- Fiat Accounts ----
-    FiatConfig:
+    FiatAccountConfigResponse:
       type: object
+      required: [success, data]
       properties:
-        enabled:
-          type: boolean
-          description: Whether this partner may use fiat accounts at all.
-          example: true
-        issues_accounts:
-          type: boolean
-          description: |
-            Whether this partner may OPEN accounts, as opposed to only putting customers through
-            verification. `false` with `enabled: true` is a real product shape, not a degraded one.
-          example: true
-        disabled_reason:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+              description: Whether you may use fiat accounts at all.
+              example: true
+            issues_accounts:
+              type: boolean
+              description: |
+                Whether you may OPEN accounts, as opposed to only reading the ones you have.
+              example: true
+            disabled_reason:
+              type: string
+              description: Why the product is unavailable. Present only when `enabled` is false.
+              example: PRODUCT_NOT_ACTIVATED
+            currencies:
+              type: array
+              items: { type: string }
+              description: ISO 4217 currencies an account may be denominated in.
+              example: ["EUR", "GBP"]
+            issuers:
+              type: object
+              additionalProperties:
+                type: array
+                items: { type: string }
+              description: Currency to issuing jurisdictions (ISO 3166-1 alpha-2), default first.
+              example: { "EUR": ["NL", "MT"], "GBP": ["GB"] }
+
+    FiatAccountCreateRequest:
+      type: object
+      required: [user_uuid, currency]
+      properties:
+        user_uuid:
+          type: string
+          format: uuid
+          description: One of your customers, KYC-verified by Unigox.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        currency:
+          type: string
+          description: One of `config.currencies`.
+          example: EUR
+        issuer_country:
           type: string
           description: |
-            Why the surface is unavailable, when `enabled` is false because of something about this
-            partner. Absent when the product is simply switched off platform-wide.
-          example: PRODUCT_NOT_ACTIVATED
-        currencies:
-          type: array
-          items: { type: string }
-          description: ISO 4217 currencies an account may be denominated in, narrowed to what this partner's plan prices.
-          example: ["EUR", "GBP"]
-        issuers:
-          type: object
-          additionalProperties:
-            type: array
-            items: { type: string }
-          description: Currency → issuing jurisdictions (ISO 3166-1 alpha-2), default first.
-          example: { "EUR": ["NL", "MT"], "GBP": ["GB"] }
-        postal_code_issuers:
-          type: array
-          items: { type: string }
-          description: Jurisdictions that will not issue unless a postal code is on the identity record.
-          example: ["NL"]
+            ISO 3166-1 alpha-2, one of `config.issuers[currency]`. Omitted, the currency's default
+            jurisdiction is used.
+          example: NL
+        postal_code:
+          type: string
+          description: |
+            Only needed when the chosen jurisdiction requires one and the customer's KYC record has
+            none. Sent here, it is written onto that KYC record.
+          example: "1011 AB"
 
     FiatAccount:
       type: object
       description: |
-        One issued account. Only the last four digits of the identifier travel in list views; the
-        single-account view carries what a payer needs in full.
+        One issued account. The pay-in fields appear once `status` is `active`, and only the ones
+        the account's rail uses.
 
-        No field identifies the bank or banking platform Unigox routes through. `bank_name` and
-        `bic` describe the account itself, which is different — those are for display to a payer.
+        Nothing here names the bank or banking platform Unigox routes through. `bank_name` and
+        `bic` describe the account a payer sends money to, which is different — those are for the
+        customer to see.
       properties:
-        id:
+        fiat_account_id:
           type: string
+          format: uuid
           description: |
-            Opaque account id, carrying its holder kind: `retail_412`. This is what every
-            `/users/{user_uuid}/fiat-accounts/{account_id}` route takes. Pass it back verbatim and
-            do not parse it — the prefix is part of the id, not decoration, and ids are not unique
-            across holder kinds without it.
-          example: "retail_412"
-        holder_type:
+            The account's id, and the only one. It is what every `/fiat-accounts/{fiat_account_id}`
+            route takes, what a webhook names the account by, and what an order funded from this
+            account carries.
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        user_uuid:
           type: string
-          enum: [retail]
-          description: |
-            The kind of holder this account belongs to. `retail` — an individual you onboarded
-            through KYC — is the only kind addressable on this API. Published so a client can tell
-            the kinds apart if another becomes available; do not assume it is the only value
-            forever.
-          example: retail
-        holder_id:
-          type: string
-          description: |
-            The holder — the customer's `user_uuid`, the same value that appears in the path. Sent
-            so an account object is self-describing when it is passed around on its own.
+          format: uuid
+          description: The customer who holds the account.
+          example: "550e8400-e29b-41d4-a716-446655440000"
         currency:
           type: string
           example: EUR
         issuer_country:
           type: string
-          description: The jurisdiction the account was actually issued in, read off the IBAN.
+          description: The jurisdiction the account was issued in.
           example: NL
         status:
           type: string
+          enum: [pending, active, failed, closed]
           description: |
-            `active`, `pending`, `closed` or `unknown`. A CLOSED account stays readable: closing
-            retires the IBAN without removing the account, its history, or any money still behind it.
+            `pending` — being opened, no pay-in details yet, do not send the customer to it.
+            `active` — ready, and the pay-in details below are on this response.
+            `failed` — the bank refused; this account will not become usable.
+            `closed` — retired; its history stays readable and new deposits will not credit it.
           example: active
+        created:
+          type: boolean
+          description: |
+            On the issue response only: whether THIS request opened the account. `false` means it
+            already existed and is being handed back.
+          example: true
         iban:
           type: string
-          description: Single-account view only — the list views carry `iban_last4`.
+          description: Euro (SEPA) accounts. Pay-in detail.
           example: "NL91ABNA0417164300"
-        iban_last4:
+        bic:
           type: string
-          example: "8827"
+          description: Euro (SEPA) accounts. Pay-in detail.
+          example: ABNANL2A
         account_number:
           type: string
-          description: Single-account view only, on a non-IBAN (GB sterling) account.
-        account_number_last4:
-          type: string
-          description: Present instead of `iban_last4` on a non-IBAN account (a GB sterling one).
-          example: "4471"
+          description: Sterling (Faster Payments) accounts. Pay-in detail.
+          example: "25976129"
         sort_code:
           type: string
-          description: Present on a GB sterling account.
-          example: "04-00-04"
+          description: Sterling (Faster Payments) accounts. Pay-in detail.
+          example: "23-08-01"
+        iban_last4:
+          type: string
+          description: List views, where the full identifier does not travel.
+          example: "8827"
+        account_number_last4:
+          type: string
+          description: List views of a sterling account.
+          example: "4471"
+        bank_name:
+          type: string
+          description: The bank to show the customer.
+          example: ABN AMRO
         holder_name:
           type: string
           description: The name the account is held in.
-        bank_name:
-          type: string
-          description: The bank a payer should be shown, resolved from the BIC or the IBAN's bank code.
-          example: ABN AMRO
-        bic:
-          type: string
-          example: ABNANL2A
-        holder_full_name:
-          type: string
-          description: List views only — who the account belongs to, so a list needs no second call.
-        holder_email:
-          type: string
-        holder_status:
-          type: string
+          example: Maria ZALISHCHUK
+        balances:
+          type: array
+          description: Single-account view only.
+          items:
+            $ref: '#/components/schemas/FiatBalance'
+        balances_unavailable:
+          type: boolean
+          description: |
+            Single-account view only. True when the balance read failed — the balances are reported
+            as unavailable rather than as zero.
+          example: false
         created_at:
           type: string
+          format: date-time
+          example: "2026-09-18T10:00:00Z"
 
-    FiatAccountHolder:
-      type: object
-      description: |
-        The customer, as the account holder. There is no separate identity here: `user_uuid` is the
-        customer created with `POST /api/v1/partner/users`, and the names and country are the ones
-        Unigox KYC verified.
-      properties:
-        user_uuid:
-          type: string
-          format: uuid
-        first_name: { type: string }
-        last_name: { type: string }
-        full_name: { type: string }
-        email: { type: string }
-        phone: { type: string }
-        country_of_residence: { type: string, example: GB }
-        kyc_status:
-          type: string
-          description: Unigox's own verdict on the customer.
-          example: approved
-        status:
-          type: string
-          description: 'Holder lifecycle: `draft`, `pending_review`, `approved`, `rejected`.'
-          example: approved
-        can_open_accounts:
-          type: boolean
-          description: Whether an account may be opened for this holder right now. Poll on this.
-          example: true
-        created_at: { type: string }
-
-    FiatBalanceLine:
+    FiatBalance:
       type: object
       properties:
         currency: { type: string, example: EUR }
@@ -9634,71 +9480,15 @@ components:
         pending: { type: string, example: "0.00" }
         total: { type: string, example: "1250.00" }
 
-    FiatLedgerEntry:
+    FiatAccountResponse:
       type: object
+      required: [success, data]
       properties:
-        id: { type: string }
-        type: { type: string }
-        category: { type: string }
-        amount: { type: string, example: "500.00" }
-        currency: { type: string, example: EUR }
-        reference:
-          type: string
-          description: The entry's own upstream reference, for reconciliation.
-        note: { type: string }
-        created_at:
-          type: integer
-          format: int64
-          description: Unix seconds.
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/FiatAccount'
 
-    FiatPayment:
-      type: object
-      properties:
-        id: { type: string }
-        amount: { type: string, example: "500.00" }
-        currency: { type: string, example: EUR }
-        kind: { type: string }
-        status: { type: string }
-        recipient: { type: string }
-        description: { type: string }
-        payment_rail: { type: string }
-        iban: { type: string }
-        bic: { type: string }
-        created_at: { type: integer, format: int64 }
-        updated_at: { type: integer, format: int64 }
-
-    FiatPagination:
-      type: object
-      description: |
-        Upstream page metadata, present only when it is available. **Absence means unknown, not
-        "one page"** — fall back to the length of the page you received.
-      properties:
-        current_page: { type: integer }
-        per_page: { type: integer }
-        total_pages: { type: integer }
-        total_count: { type: integer }
-
-    FiatIdentity:
-      type: object
-      description: What Unigox KYC established. The document number is never returned — only its last four digits.
-      properties:
-        first_name: { type: string }
-        last_name: { type: string }
-        email: { type: string }
-        phone: { type: string }
-        country_of_residence: { type: string }
-        address: { type: string }
-        city: { type: string }
-        postal_code: { type: string }
-        birthdate: { type: string, example: "1990-04-17" }
-        document_type: { type: string, example: PASSPORT }
-        document_last4: { type: string, example: "6789" }
-        sources:
-          type: object
-          additionalProperties: { type: string }
-          description: Per-field provenance, so a caller can tell a verified value from a declared one.
-
-    FiatConfigResponse:
+    FiatAccountListResponse:
       type: object
       required: [success, data]
       properties:
@@ -9706,185 +9496,76 @@ components:
         data:
           type: object
           properties:
-            config:
-              $ref: '#/components/schemas/FiatConfig'
-
-    FiatAccountsResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            accounts:
+            fiat_accounts:
               type: array
               items:
                 $ref: '#/components/schemas/FiatAccount'
 
-    FiatAccountDetailResponse:
+    FiatTransaction:
       type: object
-      required: [success, data]
+      description: One movement of money on a fiat account.
       properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            account:
-              $ref: '#/components/schemas/FiatAccount'
-            holder:
-              $ref: '#/components/schemas/FiatAccountHolder'
-            balances:
-              type: array
-              items:
-                $ref: '#/components/schemas/FiatBalanceLine'
-            balances_unavailable:
-              type: boolean
-              description: |
-                True when the balance read failed. The balances are reported as unavailable rather
-                than as zero — a zero a partner acts on is worse than a gap.
-
-    FiatAccountIssuedResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            account:
-              $ref: '#/components/schemas/FiatAccount'
-            created:
-              type: boolean
-              description: |
-                Whether THIS request opened the account. `false` means it already existed and is
-                being handed back — the endpoint is idempotent per (customer, currency,
-                jurisdiction).
-              example: true
-
-    FiatHolderResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            holder:
-              $ref: '#/components/schemas/FiatAccountHolder'
-
-    FiatLedgerResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            entries:
-              type: array
-              items:
-                $ref: '#/components/schemas/FiatLedgerEntry'
-            pagination:
-              $ref: '#/components/schemas/FiatPagination'
-
-    FiatPaymentsResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            payments:
-              type: array
-              items:
-                $ref: '#/components/schemas/FiatPayment'
-            pagination:
-              $ref: '#/components/schemas/FiatPagination'
-
-    FiatIdentityResponse:
-      type: object
-      required: [success, data]
-      properties:
-        success: { type: boolean, example: true }
-        data:
-          type: object
-          properties:
-            identity:
-              $ref: '#/components/schemas/FiatIdentity'
-            missing:
-              type: array
-              items: { type: string }
-              description: The fields the banking layer still needs. Empty means nothing is missing.
-              example: ["address", "birthdate"]
-            ready:
-              type: boolean
-              description: True when `missing` is empty — the identification submission will be accepted with an empty body.
-
-    FiatIdentificationRequest:
-      type: object
-      description: |
-        Every field is optional. What Unigox verified at KYC is preferred over anything sent here,
-        so send only what `GET /users/{user_uuid}/identity` reported as missing. The name, the country
-        of residence and the document are taken from the verification and cannot be overridden.
-      properties:
-        address: { type: string, example: "10 Downing Street" }
-        city: { type: string, example: London }
-        birthdate: { type: string, example: "1990-04-17" }
-        document_type:
+        transaction_id:
           type: string
-          enum: [PASSPORT, NATIONAL_ID, DRIVERS_LICENCE, WORK_PERMIT]
-        document_number:
+          description: The transaction's id, and the id a deposit webhook names it by.
+          example: "5f1b2c9a-1d44-4f0e-9c1a-2b5f0d7e9a31"
+        type:
           type: string
-          description: Used for the submission and not stored; only the last four digits are kept.
-        email: { type: string }
-        country_of_residence: { type: string, example: GB }
-
-    FiatIssueAccountRequest:
-      type: object
-      required: [currency]
-      properties:
+          enum: [credit]
+          description: |
+            `credit` — money arrived on the account. v1 is receive-only, so this is the only value.
+          example: credit
+        amount:
+          type: string
+          example: "500.00"
         currency:
           type: string
-          description: ISO 4217; must be one `GET /fiat-accounts/config` offers. Upper-cased server-side.
           example: EUR
-        issuer_country:
+        order_id:
           type: string
+          nullable: true
           description: |
-            Issuing jurisdiction (ISO 3166-1 alpha-2). Omit for the currency's default; supplied, it
-            must be one of that currency's `issuers`.
-          example: NL
-        postal_code:
+            The on-ramp order this credit funded, or `null` when it matched no order and simply
+            stays on the account.
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        description:
           type: string
-          description: Required only when the chosen jurisdiction is in `postal_code_issuers`; ignored otherwise.
-          example: "1011 AB"
+          description: What the payer sent the transfer with, when it carried anything.
+          example: "Invoice 2026-114"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-09-18T10:04:22Z"
+
+    FiatTransactionsResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            transactions:
+              type: array
+              items:
+                $ref: '#/components/schemas/FiatTransaction'
+            has_more:
+              type: boolean
+              description: Whether another page exists after this one.
+              example: false
 
   parameters:
-    FiatUserUuid:
-      name: user_uuid
+    FiatAccountId:
+      name: fiat_account_id
       in: path
       required: true
       description: |
-        Public uuid of a customer owned by the authenticated partner — the id returned by
-        `POST /api/v1/partner/users`. A customer you do not own answers `404`, indistinguishable
-        from one that does not exist.
+        The account's id, as returned in `fiat_account_id`. An id that names no account and one
+        that is not yours both answer `404`; they are indistinguishable on purpose.
       schema:
         type: string
         format: uuid
-      example: "550e8400-e29b-41d4-a716-446655440000"
-    FiatAccountId:
-      name: account_id
-      in: path
-      required: true
-      description: |
-        Opaque id of a fiat account, as returned in `FiatAccount.id` — `retail_412`. An id that
-        names no account, one that is not yours, and one that belongs to a different customer than
-        the path names all answer `404`; they are indistinguishable on purpose.
-      schema:
-        type: string
-      example: "retail_412"
-
+      example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
   securitySchemes:
     ApiKeyAuth:
       type: apiKey

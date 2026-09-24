@@ -61,6 +61,10 @@ payslip no longer replaces the first. Files remain active up to the document
 type's `maximum_files`; beyond that limit, a new file replaces the oldest one.
 `superseded_count` reports replacements. Request and response formats are unchanged.
 
+## 2026-09-21
+
+**USD payouts to China, Hong Kong and Singapore are not on the partner API yet.** The three USD bank rails can appear in `/api/v1/supported/payment-rails`, and a recipient can hold a destination on them, but a quote or an initiate for a USD payout on any of them answers `400 INVALID_REQUEST` with `provider_confirmation_pending`. This is a statement of what is offered, not a change: nothing that worked before stops working. See [Dollars to China, Hong Kong and Singapore](./api-reference/third-party-payouts.md#dollars-to-china-hong-kong-and-singapore-not-yet).
+
 ## 2026-09-20
 
 **Three fields added to order responses:** `source_of_funds_required`,
@@ -86,6 +90,28 @@ when crypto release is confirmed.
   `event_id`; T+1 fields are omitted on ordinary orders.
 - Instant-order behaviour is unchanged. See the current guide for release conditions,
   status filters, cancellation and error handling.
+
+## 2026-09-18
+
+**Fiat accounts are rebuilt around one id, and the identity endpoints are gone.** An account a customer is paid into is now a resource of its own: `POST /api/v1/partner/fiat-accounts` with `{user_uuid, currency}` opens it, and everything about it is addressed by `fiat_account_id`. This replaces the whole previous surface. There is no compatibility window — the old routes are removed.
+
+- **One id, called `fiat_account_id`.** A uuid we mint, the way `user_uuid` names a person. There is no field called `id` on an account, no `retail_` prefix, and nothing that names the bank behind it. It is what the path takes, what a webhook names the account by, and what an order funded from the account carries.
+- **`GET /users/{user_uuid}/identity` and `/identification` are removed.** They were the banking vendor's own KYC push in partner clothing, and they asked you to maintain a second identity for a person you had already verified with us. Everything the bank needs now comes from the KYC record. When it needs a field that record does not have, issuance answers `422 ISSUANCE_NOT_READY` and names the fields the way `PATCH /api/v1/partner/users/{user_uuid}/kyc` takes them — `address`, `city`, `postal_code`, `dob`, `id_number`, `id_type`. `GET /api/v1/partner/users/{user_uuid}` carries the same answer up front, under `fiat_account_issuance`.
+- **Accounts are no longer nested under the customer.** `GET /fiat-accounts?user_uuid=`, `GET /fiat-accounts/{fiat_account_id}` and `…/transactions` replace the `/users/{user_uuid}/fiat-accounts` tree. An account id is enough to read an account; one that is not yours answers `404`.
+- **An account has a status you can act on:** `pending`, `active`, `failed`, `closed`. A `pending` account carries no pay-in details, because there is nowhere to pay in yet. `fiat_account.updated` fires when that changes.
+- **A deposit has its own webhook at last.** `fiat_account.deposit.received` fires on every credit that lands on an issued account, carrying `transaction_id`, the amount, and `order_id` when the deposit funded an on-ramp. Previously nothing told you money had arrived unless collection into your own account was switched on, which for most partners it is not.
+- **`retail.settlement.completed` is no longer published.** Collecting a customer's deposit into your operating account is an internal arrangement most partners do not have on, and it was never the event you needed: the deposit is. It will come back, named from your side, if and when collection ships as a product.
+- **One transactions list.** `GET /fiat-accounts/{fiat_account_id}/transactions` replaces the separate ledger and payments reads. v1 is receive-only, so every row is a `credit`, and a credit that funded an order names it.
+- **On-ramp orders paid from the customer's own account say `fiat_funding_source: "own_account"`** (it was `own_iban`, which was wrong the moment the product covered sterling) and carry the `fiat_account_id` they are funded from. `next_action` is still `deposit_to_user_account` and `confirm-payment-sent` is still refused with `409 OPERATION_NOT_ALLOWED`.
+- Gone with the removed routes: `CLIENT_NOT_APPROVED`, `ACCOUNT_HOLDER_NOT_FOUND`, `IDENTIFICATION_MISSING`, `IDENTIFICATION_ALREADY_LINKED`, `HOLDER_REGISTRATION_IN_PROGRESS` and `HOLDER_UNAVAILABLE`. New: `KYC_NOT_CLEARED` and `ISSUANCE_NOT_READY`.
+
+## 2026-09-15
+
+**Interac e-Transfer no longer asks for an `institution_id` the catalog said it did not need.** `/api/v1/supported/payment-rails` reports `institution_required: false` for `interac-e-transfer` — an e-Transfer is addressed to the recipient's email or phone number, not to a bank you pick — but creating a destination on it without an `institution_id` failed with `institution_id is required for this rail`. A partner following the catalog was refused, which was our bug, the same one fixed for the Chinese wallet rails on 2026-08-28.
+
+- Omitting `institution_id` on `interac-e-transfer` now works. The destination resolves to `interac-e-transfers` and goes through the same checks as if you had named it.
+- Sending an `institution_id` is still accepted: `interac-e-transfers`, or any bank `/api/v1/supported/institutions?rail=interac-e-transfer` lists.
+- Destinations you already created are unchanged.
 
 ## 2026-09-14
 
