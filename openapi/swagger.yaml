@@ -2054,16 +2054,9 @@ paths:
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
-        **Authentication:** Optional. Without credentials this is a public endpoint (same as
-        `/partner/liquidity`) and no partner markup is applied. Send your `X-API-Key` and the estimate
-        is priced exactly like the quote that follows it: your dashboard markup applies unless the
-        request carries `partner_fee_pct`. A credential that is present but invalid is refused with
-        `401`, not priced anonymously.
+        **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
       operationId: getOnRampEstimate
-      # Optional: anonymous, or ApiKeyAuth for a partner-priced estimate.
-      security:
-        - {}
-        - ApiKeyAuth: []
+      security: []
       requestBody:
         required: true
         content:
@@ -2148,12 +2141,6 @@ paths:
                 error:
                   code: NO_OFFERS_AVAILABLE
                   message: "no matching offers found for the provided criteria"
-        '401':
-          description: Unauthorized — a credential was sent but is invalid or missing
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
         '500':
           description: Internal Server Error
 
@@ -2169,9 +2156,8 @@ paths:
         The `user_uuid` is the public UUID returned by `POST /partner/users` (the `id` field).
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
-        `platform_fee` (our fee in crypto), `partner_fee` (your markup in crypto — the rate set in your
-        partner dashboard, or the `partner_fee_pct` you pass on the quote/estimate request to override it
-        for that order, where `1` means 1%), `partner_fee_pct`
+        `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
+        by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
         (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
         crypto base as the platform fee (non-compounding). There's no separate transfer leg for on-ramp:
         at release the full buyer amount lands in your partner wallet, and the markup is captured by
@@ -2924,20 +2910,13 @@ paths:
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
-        **Authentication:** Optional. Without credentials this is a public endpoint (same as
-        `/partner/liquidity`) and no partner markup is applied. Send your `X-API-Key` and the estimate
-        is priced exactly like the quote that follows it: your dashboard markup applies unless the
-        request carries `partner_fee_pct`. A credential that is present but invalid is refused with
-        `401`, not priced anonymously.
+        **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
         See `PATCH /partner/users/{user_uuid}/kyc` to update.
       operationId: getOffRampEstimate
-      # Optional: anonymous, or ApiKeyAuth for a partner-priced estimate.
-      security:
-        - {}
-        - ApiKeyAuth: []
+      security: []
       requestBody:
         required: true
         content:
@@ -3022,12 +3001,6 @@ paths:
                 error:
                   code: NO_OFFERS_AVAILABLE
                   message: "no matching offers found for the provided criteria"
-        '401':
-          description: Unauthorized — a credential was sent but is invalid or missing
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
         '500':
           description: Internal Server Error
 
@@ -3312,9 +3285,8 @@ paths:
         - Integer-minor-unit currencies (NGN, UGX, TZS, KES, GHS): `fiat_amount` must be a whole number.
 
         **Fee structure:** The `fee_breakdown` object shows all fee components transparently:
-        `platform_fee` (our fee in crypto), `partner_fee` (your markup in crypto — the rate set in your
-        partner dashboard, or the `partner_fee_pct` you pass on the quote/estimate request to override it
-        for that order, where `1` means 1%), `partner_fee_pct`
+        `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
+        by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
         (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
         crypto base as the platform fee (non-compounding) and is settled on-chain to your partner wallet
         on successful release. An order that does not settle is never charged the markup, and the refund
@@ -6229,8 +6201,7 @@ components:
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
             as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
-            applies the markup set in your partner dashboard (0 until you set one); sending `0`
-            means no markup on this order whatever the dashboard says; the markup cannot be
+            from this request payload — or sending `0` — means no markup; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
             rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
@@ -6615,8 +6586,7 @@ components:
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
             as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
-            applies the markup set in your partner dashboard (0 until you set one); sending `0`
-            means no markup on this order whatever the dashboard says; the markup cannot be
+            from this request payload — or sending `0` — means no markup; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
             rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
@@ -7308,8 +7278,7 @@ components:
           description: |
             Optional per-order markup you charge your end user, applied on the same crypto base
             as the platform fee (non-compounding). Percent units: `1` means 1%. Omitting the field
-            applies the markup set in your partner dashboard (0 until you set one); sending `0`
-            means no markup on this order whatever the dashboard says; the markup cannot be
+            from this request payload — or sending `0` — means no markup; the markup cannot be
             negative. Fiat-anchored offramp orders have no cap — the deposit grows to cover the
             markup. Every other case hits a formula domain bound, not a business cap: onramp
             rejects `partner_fee_pct >= 100` (the withheld or grossed-up fee would consume the
