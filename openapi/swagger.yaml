@@ -289,6 +289,8 @@ tags:
       | `cancelled` | Order cancelled or payment declined |
       | `failed` | Escrow error, or fiat-anchored safety bound exceeded (see below) |
       | `dispute_started` | Dispute opened |
+      | `settlement_in_progress` | Delayed settlement (T+1): the crypto has left escrow and the fiat has not arrived |
+      | `returned` | Delayed settlement (T+1): the bank sent the payout back and no fresh authorization stands |
 
       **Fiat-anchored safety bound failure**
 
@@ -2910,6 +2912,11 @@ paths:
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
+        It also reports `delayed_settlement` and `settlement_hours`, so you can discover at which
+        amounts a corridor stops settling instantly without burning quotes. This response is
+        indicative about the **numbers**, not about the class: the price may move before the quote,
+        but a T+1 estimate does not become an instant order.
+
         **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
@@ -2956,10 +2963,15 @@ paths:
                     partner_fee: "0.975610"
                     partner_fee_pct: 1
                     total_fee: "2.439025"
+                    fiat_rail_fee: "0.00"
                   payment_method_slug: access-bank
                   payment_network_slug: nibss
                   provider_scope: all
                   is_indicative: true
+                  matching_type: network
+                  network_matching_available: true
+                  delayed_settlement: false
+                  settlement_hours: null
         '400':
           description: |
             Bad request — invalid parameters, missing required fields, 
@@ -3403,10 +3415,15 @@ paths:
                         partner_fee: "0.975610"
                         partner_fee_pct: 1
                         total_fee: "2.439025"
+                        fiat_rail_fee: "0.00"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
-                      expires_at: "2026-02-01T12:00:30Z"
+                      matching_type: network
+                      network_matching_available: true
+                      expires_at: "2026-02-01T12:01:00Z"
+                      delayed_settlement: false
+                      settlement_hours: null
                 fiat_anchored:
                   summary: Fiat-anchored quote
                   value:
@@ -3423,10 +3440,40 @@ paths:
                         partner_fee: "3.23"
                         partner_fee_pct: 1
                         total_fee: "8.15"
+                        fiat_rail_fee: "0.00"
                       payment_details_id: 987
                       payment_method_id: 5
                       payment_network_id: 12
-                      expires_at: "2026-02-01T12:00:30Z"
+                      matching_type: network
+                      network_matching_available: true
+                      expires_at: "2026-02-01T12:01:00Z"
+                      delayed_settlement: false
+                      settlement_hours: null
+                delayed_settlement:
+                  summary: Delayed settlement (T+1) quote
+                  value:
+                    success: true
+                    data:
+                      quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                      anchor_type: "fiat"
+                      rate: "7.18"
+                      crypto_amount: "3000.00"
+                      fiat_amount: "21540.00"
+                      fee_breakdown:
+                        platform_fee: "45.00"
+                        platform_fee_pct: 1.5
+                        partner_fee: "30.00"
+                        partner_fee_pct: 1
+                        total_fee: "75.00"
+                        fiat_rail_fee: "0.00"
+                      payment_details_id: 987
+                      payment_method_id: 5
+                      payment_network_id: 12
+                      matching_type: network
+                      network_matching_available: true
+                      expires_at: "2026-09-18T12:01:00Z"
+                      delayed_settlement: true
+                      settlement_hours: 24
         '400':
           description: Bad request — invalid parameters or missing required fields
           content:
@@ -3732,10 +3779,20 @@ paths:
         for the counterparty (e.g. the buyer to submit fiat payment proof).
 
         The `allowed_actions` array lists all API actions the partner **can** perform at the current
-        status. An action can be in `allowed_actions` even when `next_action` is `null` — this means
-        the action is optional. For example, `confirm-fiat-received` is available at `crypto_received`
-        as a fast-track: if you already know the fiat has arrived (via your own systems), you can
-        confirm immediately without waiting for the buyer's payment proof flow to complete.
+        status. An action can be in `allowed_actions` even when `next_action` is absent — this means
+        the action is optional. For example, on an ordinary off-ramp order `confirm-fiat-received` is
+        available at `crypto_received` as a fast-track: if you already know the fiat has arrived (via
+        your own systems), you can confirm immediately without waiting for the buyer's payment proof
+        flow to complete.
+
+        **That fast-track does not exist on a delayed settlement (T+1) order.** There the crypto
+        leaves escrow before the customer is paid, so at `crypto_received` `confirm-fiat-received` is
+        **removed** from `allowed_actions` and the endpoint refuses the order; `["settlement-consent",
+        "cancel"]` take its place and `next_action` is `sign_settlement_consent`, then
+        `submit_source_of_funds` or `await_review` — the latter meaning the order is waiting on us, for
+        any required source-of-funds approval and for crypto release. Branch on
+        `delayed_settlement` — the two orders share a status and differ in everything you may do with
+        it. See the Delayed settlement (T+1) reference.
 
         `allowed_actions` is `[]` for a **widget order** — one your customer created through the
         embedded widget under your `widgetKey`. Those orders are attributed to you, and readable
@@ -3765,13 +3822,27 @@ paths:
         | `awaiting_fiat_received_confirmation` | `confirm_fiat_received` | **Partner** |
         | `completed` | — | — |
 
+        A **delayed settlement (T+1)** order replaces the `crypto_received` row — no buyer submits
+        proof, because the fiat is paid after the release, not before:
+
+        | Status | next_action | Who acts |
+        |---|---|---|
+        | `crypto_received` | `sign_settlement_consent` | **Partner** signs the release |
+        | `crypto_received` | `submit_source_of_funds` | **Partner** supplies the source-of-funds case |
+        | `crypto_received` | `await_review` | **Unigox**: document review or release processing |
+        | `crypto_received` | — | Held: flagged, or a failed payout whose escrow refund is in flight |
+        | `settlement_in_progress` | — | Payout in flight; the fiat has not arrived |
+        | `returned` | — | The bank sent the payout back; it will be paid again |
+
         The "Who acts" column describes an order **you** created. On a widget order the rows
         reading **Partner** are your customer's step, not yours — `next_action` is populated the
         same way for both, because it describes where the order stands rather than who may move
         it. `allowed_actions` is what tells you apart: `[]` on a widget order at every status.
-        Acting on a `next_action` for a widget order returns `404 ORDER_NOT_FOUND`.
+        Acting on a `next_action` for a widget order returns `404 ORDER_NOT_FOUND`. A delayed order
+        is never a widget order: the wallet must be yours for anyone on this API to sign the release.
 
-        **Fiat settlement and confirmation:**
+        **Fiat settlement and confirmation** (ordinary orders; a delayed order never takes a fiat
+        confirmation)**:**
 
         You can call `confirm-fiat-received` at any time after crypto is in escrow.
         You do not need to wait for a system notification. If you know through your
@@ -3792,8 +3863,10 @@ paths:
           know fiat has been received.
         - Do not wait for `next_action` if you already have confirmation from your
           own banking or payment systems.
+        - On a delayed order implement `settlement-consent` instead, and treat `completed` as
+          meaning the fiat actually reached the customer.
 
-        **Possible statuses:** `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `awaiting_fiat_received_confirmation`, `fiat_received_confirmed`, `crypto_release_pending`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`.
+        **Possible statuses:** see `PartnerOrderStatus`. Off-ramp: `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `fiat_payment_review_started`, `dispute_started`, `awaiting_fiat_received_confirmation`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`, plus `settlement_in_progress` and `returned` on a delayed order. On-ramp: `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer`, `fiat_transfer_pending`, `send_out_pending`, `send_out_completed`, `send_out_failed`.
       operationId: getOrder
       security:
         - ApiKeyAuth: []
@@ -4364,6 +4437,972 @@ paths:
                   code: TRANSACTOR_ERROR
                   message: "refund execution failed, please retry"
 
+  /api/v1/partner/orders/{order_id}/settlement-consent-parameters:
+    get:
+      tags:
+        - SDK
+        - Orders
+      summary: Get settlement consent parameters
+      description: |
+        **Delayed settlement (T+1) only.** Returns the EIP-712 Safe transaction for releasing
+        a funded order's crypto to the licensed partner before the bank payment. The order must be
+        awaiting consent and pass the same eligibility checks as the signature POST.
+
+        Sign the returned typed data locally with the key that owns `signer_address`, then send the
+        signature and `signed_data` to `POST /api/v1/partner/orders/{order_id}/settlement-consent`.
+        Use `primaryType: SafeTx`, `message: safe_params` and all returned type fields unchanged.
+        The example contains placeholder calldata: always sign the actual GET response.
+        An expired or missing consent deadline returns 409 `OPERATION_NOT_ALLOWED`.
+      operationId: getSettlementConsentParameters
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      responses:
+        '200':
+          description: Settlement consent parameters returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [order_id, status, escrow_address, signer_address, recipient_address, amount_human, crypto_currency, crypto_decimals, direction, tx_hash, safe_params, domain, types, settlement_hours, consent_deadline_at, authorization_path]
+                        properties:
+                          order_id:
+                            type: string
+                            format: uuid
+                          status:
+                            $ref: '#/components/schemas/PartnerOrderStatus'
+                          escrow_address:
+                            type: string
+                            description: The Safe holding the crypto
+                          signer_address:
+                            type: string
+                            description: >-
+                              The escrow's seller-side owner — the address whose key must produce the
+                              signature. On a delayed order this is always your wallet.
+                          recipient_address:
+                            type: string
+                            description: >-
+                              Where the crypto goes: the licensed partner arranging the bank payment. Server-derived and
+                              returned for verification, not as an input.
+                          amount_human:
+                            type: string
+                            description: >-
+                              What the licensed partner receives, in whole units — not what the escrow holds. The
+                              platform fee is split off by the same release.
+                          crypto_currency:
+                            type: string
+                          crypto_decimals:
+                            type: integer
+                          direction:
+                            type: string
+                            description: Always `to_buyer`. A consent has no other direction.
+                            example: to_buyer
+                          tx_hash:
+                            type: string
+                            description: >-
+                              The release transaction's Safe hash. Accepted as `signed_data` on the
+                              POST, alongside `safe_params.data`.
+                          safe_params:
+                            type: object
+                            description: The Safe transaction fields to sign
+                            properties:
+                              to:
+                                type: string
+                                description: Contract called by the Safe; use the returned address unchanged, not the recipient address.
+                              value:
+                                type: string
+                              data:
+                                type: string
+                                description: Complete encoded transaction data, including the platform fee transfer when applicable.
+                              operation:
+                                type: integer
+                              safeTxGas:
+                                type: string
+                              baseGas:
+                                type: string
+                              gasPrice:
+                                type: string
+                              gasToken:
+                                type: string
+                              refundReceiver:
+                                type: string
+                              nonce:
+                                type: string
+                                description: Safe nonce
+                          domain:
+                            type: object
+                            description: EIP-712 domain
+                            properties:
+                              chainId:
+                                type: integer
+                              verifyingContract:
+                                type: string
+                          types:
+                            type: object
+                            description: EIP-712 type definitions (`SafeTx`)
+                          settlement_hours:
+                            type: integer
+                            nullable: true
+                            description: >-
+                              The payout window your customer is agreeing to, in whole hours, counted
+                              from the release.
+                          consent_deadline_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: >-
+                              Deadline for consent and release to start. After expiry, new consent
+                              and release are blocked and the expiry process starts the refund flow.
+                              A cancelled status does not prove a refund has reached the wallet.
+                          authorization_path:
+                            type: string
+                            description: The endpoint to POST the signature to
+              example:
+                success: true
+                data:
+                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                  status: "crypto_received"
+                  escrow_address: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
+                  signer_address: "0xd1c06c202D613594189d119Cad36E2D777b02071"
+                  recipient_address: "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4"
+                  amount_human: "3000.000000"
+                  crypto_currency: "USDT"
+                  crypto_decimals: 6
+                  direction: "to_buyer"
+                  tx_hash: "0x4c8f9b2a7e1d05c3ab84f6d29e7c1130bb5a4f8e6c2d9017a3b5e8f1c4d70a9d"
+                  safe_params:
+                    to: "0x2222222222222222222222222222222222222222"
+                    value: "0"
+                    data: "0x8d80ff0a000000000000000000000000..."
+                    operation: 1
+                    safeTxGas: "0"
+                    baseGas: "0"
+                    gasPrice: "0"
+                    gasToken: "0x0000000000000000000000000000000000000000"
+                    refundReceiver: "0x0000000000000000000000000000000000000000"
+                    nonce: "0"
+                  domain:
+                    chainId: 660279
+                    verifyingContract: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
+                  types:
+                    SafeTx:
+                      - name: "to"
+                        type: "address"
+                      - name: "value"
+                        type: "uint256"
+                      - name: "data"
+                        type: "bytes"
+                      - name: "operation"
+                        type: "uint8"
+                      - name: "safeTxGas"
+                        type: "uint256"
+                      - name: "baseGas"
+                        type: "uint256"
+                      - name: "gasPrice"
+                        type: "uint256"
+                      - name: "gasToken"
+                        type: "address"
+                      - name: "refundReceiver"
+                        type: "address"
+                      - name: "nonce"
+                        type: "uint256"
+                  settlement_hours: 24
+                  consent_deadline_at: "2026-09-21T11:58:30Z"
+                  authorization_path: "/api/v1/partner/orders/b2c3d4e5-f6a7-8901-bcde-f12345678901/settlement-consent"
+        '400':
+          description: Malformed `order_id`, or the order is an on-ramp order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: >-
+            No order with this id belongs to your partner account, or its crypto is not yours to
+            move.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: >-
+            The order does not take a settlement consent: it does not settle T+1, it is not in the funded pre-release state
+            waiting for one, or it has no funded escrow to release (`INVALID_STATUS`); or it is held
+            for review, consent is already stored, or its deadline is missing/expired (`OPERATION_NOT_ALLOWED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "this order does not settle T+1: its crypto is released when the fiat is confirmed, not before"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/settlement-consent:
+    post:
+      tags:
+        - SDK
+        - Orders
+      summary: Submit settlement consent
+      description: |
+        **Delayed settlement (T+1) only.** Submit the signature produced from
+        `GET /settlement-consent-parameters`. It authorises the order's crypto to leave escrow ahead
+        of the bank payment. After storing the signature, Unigox attempts release if all checks pass.
+        An existing source-of-funds case must be approved. Approval also attempts release when consent
+        is already stored. A 200 confirms the signature was saved, not that crypto has left escrow.
+        After the release, Unigox records the crypto reaching the payout provider, approves the
+        payment and sends it through the provider where the licensed partner is connected to one;
+        each step stamps a timestamp on the order and sends an `order.status.changed` event.
+        GET and POST refuse consent after its deadline, even if the order status has not changed yet.
+
+        **Both fields are required**, which is where this differs from `authorize-refund`: the
+        signature is checked against `signed_data`, and a `signed_data` that is not this order's
+        release transaction answers `400 INVALID_REQUEST`.
+
+        `signed_data` must be either `safe_params.data` or `tx_hash` from the same parameter response.
+        Both identify the release transaction and are compared case-insensitively after removing
+        surrounding quotes. Sign the complete EIP-712 transaction, not just the calldata.
+
+        **Security note:** your private key is never sent to the API. Sign the typed data locally and
+        submit both `signature` and `signed_data`.
+
+        After a timeout or 502, read the order before retrying. A stored consent must not be signed
+        again to retry release. A 409 can mean a changed state, hold, expired window or stored consent;
+        it is not by itself proof of success.
+
+        A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while the order
+        is still in the funded pre-release state (the release waits for the source-of-funds decision), `INVALID_STATUS` once the
+        release has started.
+      operationId: submitSettlementConsent
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - signature
+                - signed_data
+              properties:
+                signature:
+                  type: string
+                  description: Hex-encoded signature over the returned `safe_params`
+                signed_data:
+                  type: string
+                  description: >-
+                    What you signed, taken from `GET /settlement-consent-parameters`: either
+                    `safe_params.data` (the release calldata) or `tx_hash`. Required.
+            example:
+              signature: "0xabc123..."
+              signed_data: "0x8d80ff0a000000000000000000000000..."
+      responses:
+        '200':
+          description: Consent recorded
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [order_id, status, consent_signed, release_started]
+                        properties:
+                          order_id:
+                            type: string
+                            format: uuid
+                          status:
+                            $ref: '#/components/schemas/PartnerOrderStatus'
+                          next_action:
+                            type: string
+                            description: >-
+                              Required next action: `submit_source_of_funds` while required information
+                              is incomplete; `await_review` while waiting for Unigox review or release.
+                              Omitted after release starts or the order changes to another state.
+                              This successful POST already knows consent was stored and does not ask
+                              for another signature.
+                            enum: [submit_source_of_funds, await_review]
+                          consent_signed:
+                            type: boolean
+                            description: Always `true` on a 200 — the signature is stored.
+                          release_started:
+                            type: boolean
+                            description: |
+                              True when the latest order read shows release started or confirmed.
+                              Not proof of blockchain confirmation or bank payment. False can mean
+                              review is required, release needs recovery, or a concurrent refund won.
+                              Read `status` and refresh the order; do not infer success from amount alone.
+              example:
+                success: true
+                data:
+                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                  status: "crypto_received"
+                  next_action: "submit_source_of_funds"
+                  consent_signed: true
+                  release_started: false
+        '400':
+          description: >-
+            Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data`
+            is not this order's release transaction; or the order is an on-ramp order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "signed_data is not this order's release transaction: sign the payload from GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters"
+        '401':
+          description: Unauthorized
+        '404':
+          description: >-
+            No order with this id belongs to your partner account, or its crypto is not yours to move.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: >-
+            The order does not take a settlement consent — it does not settle T+1, is not in the funded pre-release state waiting
+            for one, or has no funded escrow (`INVALID_STATUS`); or it is held for review, or the
+            consent has already been given or its deadline is missing/expired (`OPERATION_NOT_ALLOWED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: OPERATION_NOT_ALLOWED
+                  message: "this order has already been consented to"
+        '502':
+          description: >-
+            The consent signature could not be accepted. A signature from a key that does not own the
+            escrow and a briefly unreachable escrow service are indistinguishable from here. Verify you
+            signed with `signer_address`, then read the order before retrying. Fetch fresh parameters
+            only if a signature is still needed. A 409 can mean stored consent, changed state,
+            a hold or an expired deadline; it does not by itself confirm success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: TRANSACTOR_ERROR
+                  message: "the settlement consent signature could not be accepted, please retry"
+        '500':
+          description: The release transaction could not be prepared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/source-of-funds:
+    get:
+      tags:
+        - Orders
+      summary: Get the source-of-funds case
+      description: |
+        **Delayed settlement (T+1) only.** An order whose fiat leg is worth at least `threshold_usd` —
+        **USD 50 000** today, and an order whose USD equivalent cannot be computed counts as above it —
+        requires approval of the customer's explanation and documents before crypto release. The figure is
+        configurable on our side, so read it from `source_of_funds_threshold_usd` on the order rather
+        than from this page. An existing case still requires approval even below the current threshold.
+        The applicability flag can stay true after approval/completion; use next_action and case status
+        to decide what is needed. Your customer supplies the evidence on your screens and you post it here.
+
+        Returns the whole case: its review status, the declaration, the documents on file, anything a
+        reviewer requested, and `requirements_snapshot` — the requirements saved when the first declaration
+        was accepted. Use those saved requirements rather than the current catalogue.
+
+        `requirements_snapshot.documents[].mode` is `one_of` (choose one document type in the group)
+        or `all_of` (every listed type is required). Meet `minimum_files[type]` for each chosen type;
+        for example, choosing payslips can require two files. `documents[].documents` holds the `document_type`
+        keys to upload under. Until a declaration exists, render the form from
+        `GET …/source-of-funds/requirements`.
+
+        This GET remains available after a decision. The case is normally created after escrow funding.
+        A 404 can mean it has not been created yet; it does not prove that review is unnecessary.
+        Check source_of_funds_required on the order and contact support if a required case remains unavailable.
+        Documents and consent alone do not release crypto: Unigox must approve the case and add the
+        second signature. A successful approval response is not blockchain confirmation.
+      operationId: getPartnerSourceOfFunds
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      responses:
+        '200':
+          description: The source-of-funds case
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerSourceOfFundsCase'
+              example:
+                success: true
+                data:
+                  trade_id: 77
+                  delayed_settlement: true
+                  case_id: "sof_9f1c4e2b"
+                  status: "documents_required"
+                  consent:
+                    signed: true
+                    signed_at: "2026-09-18T12:04:11Z"
+                  threshold_usd: 50000
+                  usd_equivalent: 62500
+                  source_of_funds:
+                    required: true
+                    threshold_usd: 50000
+                    usd_equivalent: 62500
+                    case:
+                      case_id: "sof_9f1c4e2b"
+                      status: "documents_required"
+                      catalogue_revision: 5
+                      decided_at: null
+                      rejection_reason_code: ""
+                      created_at: "2026-09-18T12:00:09Z"
+                  declaration:
+                    source_of_funds: "salary"
+                    additional_sources: []
+                    explanation: "monthly salary accumulated since 2024"
+                    funds_flow_description: ""
+                    purpose_of_payment: ""
+                    sender_recipient_relationship: ""
+                    source_wallet_address: ""
+                    source_wallet_network: ""
+                  documents:
+                    - document_id: "0f0f8a41-7b2e-4c19-9f60-1d2a3b4c5d6e"
+                      document_type: "bank_statement"
+                      file_name: "statement.pdf"
+                      content_type: "application/pdf"
+                      size_bytes: 184320
+                      superseded: false
+                      uploaded_at: "2026-09-18T12:10:02Z"
+                  requested_documents: []
+                  requirements_snapshot:
+                    catalogue_revisions:
+                      salary: 5
+                    sources: ["salary"]
+                    documents:
+                      - source_code: "salary"
+                        mode: "all_of"
+                        documents: ["bank_statement"]
+                        minimum_files:
+                          bank_statement: 1
+                        maximum_files:
+                          bank_statement: 1
+                      - source_code: "salary"
+                        mode: "one_of"
+                        documents: ["employment_contract", "payslips", "employer_letter"]
+                        minimum_files:
+                          employment_contract: 1
+                          payslips: 2
+                          employer_letter: 1
+                        maximum_files:
+                          employment_contract: 1
+                          payslips: 3
+                          employer_letter: 1
+                    requires_statement: true
+                    statement_months: 3
+                    statement_max_age_days: 31
+                    requires_explanation: true
+                    review_checks: []
+                    frozen_at: "2026-09-18T12:06:44Z"
+                  decided_at: null
+                  rejection_reason_code: ""
+                  created_at: "2026-09-18T12:00:09Z"
+        '400':
+          description: Malformed `order_id`, or the order is an on-ramp order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: >-
+            The case does not exist yet, the order is not T+1, is not yours, or its crypto is not held
+            by you. A missing case does not mean review is unnecessary: check source_of_funds_required
+            on the order and refresh if review is required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: "this order has no source-of-funds case"
+        '500':
+          description: The source-of-funds case could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '503':
+          description: Source-of-funds review is not available. Nothing was changed; retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/source-of-funds/requirements:
+    get:
+      tags:
+        - Orders
+      summary: Get the source-of-funds catalogue
+      description: |
+        **Delayed settlement (T+1) only.** The document catalogue for this order: which categories may
+        be declared, which documents each one owes, and how much statement history it asks for.
+
+        Render your form from this **before** a declaration exists.
+
+        `?source_of_funds=` narrows the answer to one category. A code that does not exist answers
+        `404`.
+
+        Field names here are `camelCase`.
+
+        Categories carrying `legacy: true` are refused by the declaration endpoint; do not offer them.
+        `reviewChecks` is not served here.
+
+        Keyed by order id like its siblings, so it answers for any delayed order of yours — including
+        one below the threshold, whose three sibling endpoints answer `404`. Cache against `revision`.
+      operationId: getPartnerSourceOfFundsRequirements
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        - name: source_of_funds
+          in: query
+          required: false
+          description: Narrow the answer to one category. Omit for the whole catalogue.
+          schema:
+            type: string
+          example: salary
+      responses:
+        '200':
+          description: The catalogue
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          revision:
+                            type: integer
+                            description: The highest rule revision in the catalogue. Cache against it.
+                          categories:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/PartnerSourceOfFundsCategory'
+              example:
+                success: true
+                data:
+                  revision: 5
+                  categories:
+                    - code: "salary"
+                      label: "Salary or wages"
+                      description: "Regular income from an employer."
+                      requiresExplanation: true
+                      requiresBankStatement: true
+                      statement:
+                        minMonths: 3
+                        maxAgeDays: 31
+                      baseDocuments:
+                        - key: "bank_statement"
+                          label: "Personal account statement"
+                          hint: "A PDF from your bank. It must show your name, the bank, the account number, dates including the year, and the balance."
+                      groups:
+                        - mode: "one_of"
+                          documents:
+                            - key: "employment_contract"
+                              label: "Employment contract"
+                            - key: "payslips"
+                              label: "2–3 recent payslips"
+                              multiple: true
+                              minFiles: 2
+                              maxFiles: 3
+                            - key: "employer_letter"
+                              label: "Letter from your employer"
+                      revision: 5
+        '400':
+          description: Malformed `order_id`, or the order is an on-ramp order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: >-
+            No such order, not yours, or not a delayed order — or `source_of_funds` names a category
+            that does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: ORDER_NOT_FOUND
+                  message: "No source-of-funds category is called lottery"
+        '503':
+          description: Source-of-funds review is not available. Retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/source-of-funds/declaration:
+    post:
+      tags:
+        - Orders
+      summary: Submit the source-of-funds declaration
+      description: |
+        **Delayed settlement (T+1) only.** Records what your customer says about where this order's
+        money came from. The first declaration saves the requirements for this case.
+        Later edits preserve the saved source set, requirements, revision and freeze time.
+        A frozen source cannot be changed or removed.
+
+        Answers with the whole source-of-funds case, in the shape `GET …/source-of-funds` returns.
+
+        A source-of-funds case declares **one** source. `additional_sources` carries only codes already on the
+        case; a new one is refused.
+
+        `catalogue_revision` and the requirement contract are computed on the server and are never read
+        from the request.
+
+        **Write availability.** Accepted only while the order is still in the funded pre-release state and the case is undecided.
+      operationId: submitPartnerSourceOfFundsDeclaration
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerSourceOfFundsDeclaration'
+            example:
+              source_of_funds: "salary"
+              explanation: "monthly salary accumulated since 2024"
+              funds_flow_description: "paid by employer to my current account"
+              purpose_of_payment: "family support"
+              sender_recipient_relationship: "self"
+      responses:
+        '200':
+          description: The declaration was recorded; the whole source-of-funds case is returned.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerSourceOfFundsCase'
+        '400':
+          description: Malformed `order_id` or request body, or the order is an on-ramp order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: No such order, not yours, not a partner-held T+1 order, or its source-of-funds case does not exist yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: >-
+            The order is no longer waiting for this information, the case has already been decided,
+            a frozen source was changed or removed, the saved requirements are unreadable, or a
+            concurrent case update prevented the save. Re-read the case before retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "This source-of-funds case has already been decided and cannot take further information"
+        '422':
+          description: >-
+            `source_of_funds` is not one of the offered categories; `additional_sources` names a new or
+            unknown code; `explanation` is required and empty; a text field is over 4000 characters; the
+            wallet address or network is over length; or `source_wallet_address` is missing on a
+            `crypto_assets` declaration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "source_of_funds must be a category from the requirements catalogue"
+        '500':
+          description: The declaration could not be saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '503':
+          description: Source-of-funds review is not available. Nothing was changed; retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/source-of-funds/documents:
+    post:
+      tags:
+        - Orders
+      summary: Upload a source-of-funds document
+      description: |
+        **Delayed settlement (T+1) only.** Uploads one document. A successful response confirms storage,
+        not approval of the document or permission to release crypto.
+
+        Accepted: PDF, JPEG, PNG, HEIC, HEIF, WebP, validated against the file's bytes rather than its
+        declared type. A `bank_statement` must be a bank-issued PDF.
+
+        An unrecognised `document_type` is stored; `satisfies_requirement` is then `false` and
+        `expected_document_types` names the types that would satisfy the case.
+
+        **Write availability.** Accepted only while the order is in the funded pre-release state
+        and the source-of-funds case is undecided.
+      operationId: uploadPartnerSourceOfFundsDocument
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - document_type
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The document. From 4096 to 15,728,640 bytes (15 MiB), inclusive.
+                document_type:
+                  type: string
+                  description: >-
+                    What this file is — a key from `requirements_snapshot.documents[].documents`, or from
+                    a `requested_documents` entry.
+                  example: bank_statement
+                period_start:
+                  type: string
+                  format: date
+                  description: "`YYYY-MM-DD`. The first day the statement covers."
+                period_end:
+                  type: string
+                  format: date
+                  description: "`YYYY-MM-DD`. Must not precede `period_start`."
+      responses:
+        '200':
+          description: The document was stored.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerSourceOfFundsDocumentStored'
+              example:
+                success: true
+                data:
+                  document_id: "0f0f8a41-7b2e-4c19-9f60-1d2a3b4c5d6e"
+                  document_type: "bank_statement"
+                  file_name: "statement.pdf"
+                  size_bytes: 184320
+                  content_type: "application/pdf"
+                  satisfies_requirement: true
+                  superseded_count: 0
+                  case_status: "documents_submitted"
+        '400':
+          description: Malformed `order_id`, the order is an on-ramp order, or the file could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: No such order, not yours, not a partner-held T+1 order, or its source-of-funds case does not exist yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: >-
+            The order is no longer waiting for this information, the case has already been decided, or
+            this exact file is already on the case under this `document_type`.
+            Duplicate files carry `error.details.code: duplicate_document` and `retry_safe`.
+            Only `retry_safe: true` may be treated as a recovered upload after a lost response;
+            false means the repeat must not be counted as answering a fresh document request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "this exact file is already on the case under this document type"
+                  details:
+                    code: duplicate_document
+                    retry_safe: true
+        '413':
+          description: The file is larger than 15 MiB (15,728,640 bytes).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "the file is larger than 15 MB"
+        '415':
+          description: >-
+            Not a format we can accept as evidence, its bytes disagree with its content type, or a
+            `bank_statement` was sent as something other than a bank-issued PDF.
+            `error.details.allowed` lists what may be sent instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "this file's own bytes are not any document format we can accept as evidence: send the PDF, the scan or the photograph itself"
+                  details:
+                    allowed: ["HEIC", "HEIF", "JPEG", "PDF", "PNG", "WebP"]
+        '422':
+          description: >-
+            `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts;
+            or the file is empty or under 4096 bytes. An undersized file includes
+            `error.details.code: document_too_small`; do not apply this explanation to every 422.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "document_type is required: it must be a document key from the requirements catalogue"
+        '500':
+          description: The document could not be saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: >-
+            The document store refused the file, or could not store it intact. The code is
+            `INTERNAL_ERROR`, not `TRANSACTOR_ERROR`. Read the case before retrying an uncertain upload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the document could not be stored"
+        '503':
+          description: The document store is not available. Nothing was stored; retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
   /api/v1/partner/orders/{order_id}/confirm-fiat-received:
     post:
       tags:
@@ -4469,11 +5508,54 @@ paths:
         - name: status
           in: query
           required: false
-          description: Filter by partner order status
+          description: |
+            Accepts exactly the values of the `PartnerOrderStatus` enum below, on-ramp and off-ramp
+            alike. Anything else answers `400 INVALID_REQUEST` — including `awaiting_vendor_acceptance`,
+            `awaiting_crypto_submit` and `crypto_submit_pending`, which are internal constants this API
+            never reports and the enum does not carry.
+
+            Four of the accepted values can never match a row and answer an empty `200`:
+            `awaiting_liquidity_provider` and `price_changed_requote_needed` live on a trade request
+            and never on an order, and `fiat_received_confirmed` and `crypto_release_pending` are
+            shadowed by `completed`, which every internal status behind them reports.
+
+            A ramp-specific status implies its trade type, so `status` and `type` need not be paired.
+            Passing a `type` that contradicts the status is not an error either — it is simply a
+            filter nothing satisfies, and answers an empty page. `send_out_pending`,
+            `send_out_completed` and `send_out_failed` narrow on an on-ramp order's send-out
+            sub-state, which lives beside `completed` rather than in the trade status. The same fact
+            runs the other way: `status=completed` can return an on-ramp row whose own `status` reads
+            `send_out_pending`, `send_out_completed` or `send_out_failed`, because the trade did
+            complete and the bridge-out is a later step — a failed one stays visible instead of
+            hiding as "completed".
+
+            On **delayed settlement (T+1)** orders the four release-bearing filters mean:
+
+            - `completed` — ordinary released orders, and delayed orders whose fiat actually reached
+              the customer. A released but unpaid delayed order is not here
+            - `settlement_in_progress` — delayed, released, and not yet resolved either way. A
+              standing bank return with no fresh authorization belongs under `returned`
+            - `returned` — the bank sent the payout back and nobody has authorized another attempt
+            - `cancelled` — orders that stopped before settlement, as before, **plus** delayed orders
+              whose crypto was refunded to the customer after the release
+
+            For these four values a filter returns exactly the orders whose `status` reports that
+            value. That does not hold for the status filter in general: several partner statuses share
+            one internal status, so `?status=crypto_transfer_authorization_pending` returns rows
+            reporting `awaiting_crypto_transfer_authorization`.
+          schema:
+            $ref: '#/components/schemas/PartnerOrderStatus'
+          example: "completed"
+        - name: type
+          in: query
+          required: false
+          description: >-
+            Restrict to one ramp: `onramp` or `offramp`. Omit for both. Any other value is ignored
+            rather than refused, so a typo widens the page instead of failing it.
           schema:
             type: string
-            enum: [created, awaiting_liquidity_provider, awaiting_crypto_transfer_authorization, crypto_transfer_authorization_pending, crypto_received, awaiting_fiat_received_confirmation, fiat_received_confirmed, crypto_release_pending, completed, cancelled, failed, price_changed_requote_needed]
-          example: "completed"
+            enum: [onramp, offramp]
+          example: offramp
         - name: page
           in: query
           required: false
@@ -4529,7 +5611,6 @@ paths:
                   orders:
                     - order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                       status: completed
-                      next_action: null
                       allowed_actions: []
                       amounts:
                         crypto_amount: "101.50"
@@ -4604,24 +5685,36 @@ paths:
                   url: "https://partner.example.com/webhooks/unigox"
                   enabled: true
         '400':
-          description: Bad request — missing or invalid URL
+          description: |
+            Bad request — missing or invalid URL.
+
+            This endpoint answers with a bare message string under `error`, not the
+            `{"success": false, "error": {"code", "message"}}` object the off-ramp and order
+            endpoints use, and not the `data.error_key` shape. Read `error` as text; there is no code
+            to branch on.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                required: [success, error]
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    description: Human-readable message. Not an object, and not a stable key.
               examples:
                 url_required:
                   summary: URL is required
                   value:
                     success: false
-                    data:
-                      error_key: "webhook URL is required"
+                    error: "webhook URL is required"
                 url_not_https:
                   summary: URL must use HTTPS
                   value:
                     success: false
-                    data:
-                      error_key: "webhook URL must use HTTPS"
+                    error: "webhook URL must use HTTPS"
         '401':
           description: Unauthorized — invalid or missing API key
 
@@ -6187,6 +7280,35 @@ components:
           default: "0"
           example: "1"
 
+    ExactPaymentMethodMatchingOffer:
+      type: object
+      description: >-
+        One route in the same crypto/fiat/network context that is reachable **only** by exact
+        payment-method matching — a counterparty on this exact method, rather than anyone on the
+        network. Quote with `payment_method_slug` and `payment_network_slug` set to these values to
+        reach it.
+      properties:
+        payment_method_slug:
+          type: string
+          example: access-bank
+        payment_method_name:
+          type: string
+          example: "Access Bank"
+        payment_network_slug:
+          type: string
+          example: nibss
+        payment_network_name:
+          type: string
+          example: "NIBSS Nigeria"
+        country_code:
+          type: string
+          description: Omitted when the route was resolved without a country scope.
+          example: NG
+        country_name:
+          type: string
+          description: Omitted with `country_code`.
+          example: Nigeria
+
     PartnerPriceEstimateResponse:
       type: object
       properties:
@@ -6233,6 +7355,42 @@ components:
           type: boolean
           description: True when response is an estimate and not a reserving quote
           example: true
+        matching_type:
+          type: string
+          enum: [network, exact_payment_method]
+          description: >-
+            How the priced offer matched. `network` — standard payment-network matching.
+            `exact_payment_method` — the offer only matches a counterparty on one of the listed exact
+            payment methods. Omitted when no offer was matched.
+          example: network
+        network_matching_available:
+          type: boolean
+          description: >-
+            `true` when `matching_type` is `network`. `false` means this price is reachable only
+            through exact payment-method matching.
+          example: true
+        exact_payment_method_matching_offers:
+          type: array
+          description: >-
+            Routes in the same context that only exact payment-method matching can reach — the
+            alternatives to the one this estimate priced. Omitted when there are none. It also
+            travels under `error.details` on a `409 NO_OFFERS_AVAILABLE`, which is where it matters
+            most: the refusal names the routes that would have worked.
+          items:
+            $ref: '#/components/schemas/ExactPaymentMethodMatchingOffer'
+        delayed_settlement:
+          type: boolean
+          description: >-
+            Whether pricing at this amount would open a **delayed settlement (T+1)** order. Always
+            present. The numbers are indicative; the class is not.
+          example: false
+        settlement_hours:
+          type: integer
+          nullable: true
+          description: >-
+            The payout window that would be promised, counted from the release. Rounded to the
+            nearest whole hour and never below `1`. `null` on an instant estimate.
+          example: 24
 
     PartnerRecipientDestinationInput:
       type: object
@@ -6621,11 +7779,38 @@ components:
           format: int64
           description: Matched payment network ID
           example: 12
+        matching_type:
+          type: string
+          enum: [network, exact_payment_method]
+          description: >-
+            How the matched offer was reached. `network` — standard payment-network matching.
+            `exact_payment_method` — the offer only matches a counterparty on one of the exact
+            payment methods listed in `exact_payment_method_matching_offers`. Omitted when no offer
+            was matched.
+          example: network
+        network_matching_available:
+          type: boolean
+          description: >-
+            `true` when `matching_type` is `network`. `false` means this quote is reachable only
+            through exact payment-method matching.
+          example: true
+        exact_payment_method_matching_offers:
+          type: array
+          description: >-
+            Routes in the same context that only exact payment-method matching can reach — the
+            alternatives to the one this quote matched. Omitted when there are none. It also travels
+            under `error.details` on a `409 NO_OFFERS_AVAILABLE`, which is where it matters most: the
+            refusal names the routes that would have worked. An absent key means none were found
+            **or** the lookup failed; it is not a promise that no such route exists.
+          items:
+            $ref: '#/components/schemas/ExactPaymentMethodMatchingOffer'
         expires_at:
           type: string
           format: date-time
-          description: Quote expiration timestamp (30 seconds from creation)
-          example: "2026-02-01T12:00:30Z"
+          description: >-
+            Quote expiration timestamp: 60 seconds from creation, in UTC (`Z`). Initiate before it,
+            or request a fresh quote.
+          example: "2026-02-01T12:01:00Z"
         has_fiat_settlement_notification:
           type: boolean
           description: |
@@ -6635,10 +7820,31 @@ components:
             You can call `confirm-fiat-received` at any time regardless of this value.
           example: true
         recipient_context:
+          type: object
           allOf:
             - $ref: '#/components/schemas/PartnerRecipientContext'
           nullable: true
           description: Immutable canonical recipient snapshot for a third-party quote; absent for self-payout.
+        delayed_settlement:
+          type: boolean
+          description: |
+            Whether initiating this quote would open a **delayed settlement (T+1)** order: the crypto
+            leaves escrow before the fiat is paid, instead of both legs completing together. Your
+            release signature authorises that move; Unigox then sends the crypto to the licensed partner, and the
+            fiat follows within `settlement_hours` of that release. **Always present.**
+
+            You cannot request it or decline it. A delayed offer is considered only when no instant
+            offer covers the amount, and only on orders whose crypto you hold — never on a widget
+            order. See the Delayed settlement (T+1) reference.
+          example: false
+        settlement_hours:
+          type: integer
+          nullable: true
+          description: |
+            The promised payout window, counted from the release — not from now. Rounded to the
+            nearest whole hour and never below `1`. `null` on an instant quote, where there is no such
+            promise to make.
+          example: 24
 
     PartnerInitiateRequest:
       type: object
@@ -6713,11 +7919,10 @@ components:
           $ref: '#/components/schemas/PartnerOrderStatus'
         next_action:
           type: string
-          nullable: true
           description: |
-            The action the partner **must** perform to advance the order. `null` means
-            no action is required from the partner at this stage — the order is waiting
-            for the counterparty or for an automated system step.
+            The action the partner **must** perform to advance the order. The key is **absent**
+            when no action is required at this stage — the order is waiting for the
+            counterparty or for an automated system step — and is never sent as `null`.
 
             Possible values:
             - `authorize_crypto_transfer` — partner must authorize escrow funding
@@ -6730,8 +7935,25 @@ components:
             - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_account` is waiting for the
               customer to transfer the order's fiat amount into the fiat account issued to them. The transfer
               itself confirms the payment; there is nothing to call
-            - `null` — no required action (waiting for buyer or system)
-          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, null]
+            - `sign_settlement_consent` — a **delayed settlement (T+1)** order remains at `crypto_received`
+              and nobody has signed the release yet. Call
+              `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
+              `POST /api/v1/partner/orders/{order_id}/settlement-consent`
+            - `submit_source_of_funds` — consent is stored and a required source-of-funds case is
+              incomplete, including an existing case below the current threshold. See the case endpoints
+            - `await_review` — consent is stored and the order is waiting for Unigox document review
+              or release processing. Do not submit another signature
+            - absent — no required action (waiting for buyer or system). On a funded delayed order awaiting release
+              the key is absent when the order is held for review, or a payout of yours failed and its
+              escrow refund is in flight: both consent endpoints then answer
+              `409 OPERATION_NOT_ALLOWED`
+
+            Once consent_deadline_at has passed, these reads no longer request a consent signature,
+            even if the order status has not changed yet.
+            `GET /api/v1/partner/orders` and `GET /api/v1/partner/orders/{order_id}` compute this
+            identically. If a lookup behind the T+1 hint fails, both fall back to
+            `sign_settlement_consent`.
+          enum: [authorize_crypto_transfer, confirm_fiat_received, request_new_quote, update_kyc_address, authorize_refund, deposit_to_user_account, sign_settlement_consent, submit_source_of_funds, await_review]
           example: authorize_crypto_transfer
         action_required:
           type: object
@@ -6775,7 +7997,7 @@ components:
             type: string
           description: |
             List of API actions the partner **can** perform at the current status. An action
-            may be present here even when `next_action` is `null` — meaning it is optional.
+            may be present here even when `next_action` is absent — meaning it is optional.
 
             Notable case: `confirm-fiat-received` appears at both `crypto_received` and
             `awaiting_fiat_received_confirmation`. At `crypto_received` it is a **fast-track**:
@@ -6787,7 +8009,7 @@ components:
             - `created` → `["cancel"]`
             - `awaiting_liquidity_provider` → `["cancel"]`
             - `awaiting_crypto_transfer_authorization` → `["authorize-crypto-transfer", "cancel"]`
-            - `crypto_transfer_authorization_pending` → `["cancel"]`
+            - `crypto_transfer_authorization_pending` → `[]` (the transfer is in flight; cancel is refused)
             - `crypto_received` → `["confirm-fiat-received"]` (optional fast-track)
             - `fiat_payment_started` → `["confirm-fiat-received"]` (optional fast-track after buyer proof submission)
             - `awaiting_fiat_received_confirmation` → `["confirm-fiat-received"]` (required)
@@ -6802,6 +8024,21 @@ components:
 
             On-ramp orders with `fiat_funding_source: own_account` never offer `confirm-payment-sent`: the
             transfer into the customer's own account is the confirmation.
+
+            On a funded **delayed settlement (T+1)** order awaiting release whose crypto you hold,
+            `confirm-fiat-received` is removed — the endpoint behind it refuses a delayed order — and
+            `["settlement-consent", "cancel"]` take its place.
+
+            `cancel` is available only while the order awaits release; the endpoint is the ordinary
+            `POST /api/v1/partner/orders/{order_id}/cancel`.
+
+            Both are withdrawn once the consent is signed, and then answer
+            `409 OPERATION_NOT_ALLOWED`. The list and the single-order read agree about all of this.
+
+            On a funded delayed order awaiting release that is **held** — flagged for review, or with a failed payout
+            whose escrow refund is in flight — `next_action` is omitted and no consent is accepted.
+            `confirm-fiat-received` is absent there too, because that endpoint refuses every delayed
+            order. An `authorize-refund` that is genuinely owed still appears.
             Custody outranks the mapping above: on a **widget order** — one your customer created
             through the embedded widget under your `widgetKey` — this is `[]` at every status,
             because the crypto is the end user's and every action endpoint answers `404
@@ -6910,6 +8147,110 @@ components:
             - $ref: '#/components/schemas/PartnerComplianceCase'
           nullable: true
           description: Current durable compliance-case state for a third-party payout.
+        delayed_settlement:
+          type: boolean
+          description: |
+            Whether this order settles **T+1**: the crypto leaves escrow before the fiat is paid.
+            Your release signature authorises it to leave and Unigox performs the release; the fiat
+            follows within `settlement_hours` of it. Present on every order, on-ramp included, along
+            with the other T+1 fields below. T+1 timestamps and the window are null on instant
+            orders. The current numeric source-of-funds threshold is still returned.
+          example: false
+        settlement_hours:
+          type: integer
+          nullable: true
+          description: >-
+            The promised payout window, rounded to the nearest whole hour and never below `1`. `null`
+            on an instant order.
+          example: 24
+        consent_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Funding time plus the consent window. After expiry, release is blocked and the expiry
+            process starts the refund flow. Set while awaiting release, `null` otherwise.
+          example: "2026-09-21T11:58:30Z"
+        payout_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Release time plus the promised window; `settlement_hours` is that window rounded to whole
+            hours. `null` until the crypto has left escrow.
+          example: "2026-09-19T12:07:55Z"
+        delayed_settlement_crypto_sent_to_provider_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            The crypto left the licensed partner's wallet for the payout provider. A refund to the customer stops
+            being possible at this mark.
+        delayed_settlement_fiat_payout_authorized_by_admin_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            Unigox authorized the licensed partner to send the bank payment. Never set before
+            `delayed_settlement_crypto_sent_to_provider_at`.
+        delayed_settlement_fiat_payout_submitted_by_provider_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Submission of the bank payment was recorded; recipient payment is not yet confirmed.
+        delayed_settlement_fiat_paid_to_customer_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: The fiat reached the recipient. This is the real completion of a delayed order.
+        delayed_settlement_fiat_returned_by_bank_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            The bank sent the payout back. Set together with clearing the paid, submitted and
+            authorized marks. Mutually exclusive with `delayed_settlement_fiat_paid_to_customer_at`.
+        delayed_settlement_crypto_refunded_to_customer_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            The crypto went back to the customer instead. Only reachable while
+            `delayed_settlement_crypto_sent_to_provider_at` is `null`.
+        source_of_funds_required:
+          type: boolean
+          description: >-
+            Whether review applies by amount or an existing source-of-funds case. Can stay true
+            after approval or completion; use case status and next_action for required action.
+            False for instant orders. Always present.
+          example: true
+        source_of_funds_threshold_usd:
+          type: number
+          description: >-
+            Current configured source-of-funds threshold in USD, not a historical snapshot.
+            Always present, including on instant orders. Current policy is USD 50,000 inclusive.
+          example: 50000
+        settlement_refund_reason:
+          type: string
+          description: |
+            Why a delayed order ended without a payout. Omitted — not empty — when the order has not
+            ended that way, or when none of the four applies; an absence means no reason was recorded
+            and never stands in for one of them.
+
+            - `dossier_rejected` — a reviewer refused the source-of-funds case
+            - `consent_window_expired` — the consent was never signed and the window ran out
+            - `not_released_in_time` — the consent **was** signed and the window still ran out,
+              because Unigox did not release the crypto in time. This one is ours, not the
+              customer's
+            - `cancelled_by_customer` — the order was cancelled before release
+
+            Read in that order: a refusal outranks an expired window, which outranks a cancellation.
+          enum:
+            - dossier_rejected
+            - consent_window_expired
+            - not_released_in_time
+            - cancelled_by_customer
+          example: not_released_in_time
 
     PartnerOrderAmounts:
       type: object
@@ -6977,6 +8318,26 @@ components:
           type: string
           description: Total fee in crypto (platform_fee + partner_fee)
           example: "16.30"
+        fiat_rail_fee:
+          type: string
+          description: |
+            What the payout rail itself charges, in the order's **fiat** currency — every field above
+            is in crypto. It is the gap between `rate × crypto_amount` and the money that actually
+            moves on the bank or wallet rail, and it is already reflected in `fiat_amount`.
+
+            Deliberately **not** summed into `total_fee`: that is a crypto figure, and adding a fiat
+            amount to it would produce a number that means nothing. Reconciling a payout, add this to
+            `fiat_amount` to get the gross the rate implies.
+
+            Always present; `"0.00"` on a rail that charges nothing.
+          example: "0.00"
+        fiat_rail_fee_currency:
+          type: string
+          description: >-
+            The currency `fiat_rail_fee` is denominated in, so a breakdown read on its own is never
+            ambiguous about which of the order's two currencies a fee is in. Omitted when there is no
+            rail fee to denominate.
+          example: CNY
 
     PartnerOrderStatus:
       type: string
@@ -6990,13 +8351,39 @@ components:
         - `crypto_transfer_authorization_pending` — authorization submitted, awaiting on-chain confirmation
         - `crypto_received` — crypto locked in escrow
         - `fiat_payment_started` — buyer submitted fiat payment proof
+        - `fiat_payment_review_started` — the proof is under review
+        - `dispute_started` — a dispute was raised on the order
         - `awaiting_fiat_received_confirmation` — waiting for partner to confirm fiat receipt
-        - `fiat_received_confirmed` — fiat confirmed, crypto release pending
-        - `crypto_release_pending` — escrow release in progress
+        - `fiat_received_confirmed`, `crypto_release_pending` — timeline vocabulary. They appear in
+          `timeline[].status`; no order reports either as its own `status`, and filtering on them
+          returns nothing
         - `completed` — order fully completed
         - `cancelled` — order cancelled
         - `failed` — terminal error
-        - `price_changed_requote_needed` — slippage exceeded at initiation (not a trade status)
+        - `price_changed_requote_needed` — slippage exceeded at initiation. Like
+          `awaiting_liquidity_provider`, it belongs to a trade request rather than a trade, so
+          `GET /partner/orders?status=` accepts it and returns nothing
+
+        **Delayed settlement (T+1) statuses:**
+
+        > Both are unreachable for an ordinary order.
+
+        - `settlement_in_progress` — crypto release has started or is confirmed; the order is not
+          yet resolved. This alone does not mean a bank payment has been sent
+        - `returned` — bank return recorded, with no new payout authorization. Crypto was not
+          refunded; an operator must arrange another payout attempt
+
+        Precedence on a delayed order, in this order — more than one mark can be set at once:
+
+        1. `delayed_settlement_fiat_paid_to_customer_at` set → `completed`
+        2. else `delayed_settlement_crypto_refunded_to_customer_at` set → `cancelled`
+        3. else `delayed_settlement_fiat_returned_by_bank_at` set **and**
+           `delayed_settlement_fiat_payout_authorized_by_admin_at` `null` → `returned`
+        4. else, on a release status → `settlement_in_progress`
+        5. before the release, the ordinary mapping applies — a funded delayed order awaiting release is
+           `crypto_received` like any other, and `next_action` is what tells them apart
+
+        A return with a fresh authorization on top reads as `settlement_in_progress` (step 4).
 
         **On-ramp statuses (fiat → crypto):**
         - `awaiting_liquidity_provider` — order initiated, waiting for vendor acceptance
@@ -7025,6 +8412,8 @@ components:
         - crypto_transfer_authorization_pending
         - crypto_received
         - fiat_payment_started
+        - fiat_payment_review_started
+        - dispute_started
         - awaiting_fiat_received_confirmation
         - fiat_received_confirmed
         - crypto_release_pending
@@ -7035,6 +8424,8 @@ components:
         - cancelled
         - failed
         - price_changed_requote_needed
+        - settlement_in_progress
+        - returned
         - send_out_pending
         - send_out_completed
         - send_out_failed
@@ -7052,8 +8443,490 @@ components:
           example: "2026-02-01T12:00:05Z"
         description:
           type: string
-          description: Human-readable description of the status change
+          description: |
+            Human-readable description of the status change.
+
+            On a **delayed settlement (T+1)** order the release entry reads
+            `Crypto released to the liquidity provider, ahead of the payout` under
+            `settlement_in_progress`, not `Order completed`: the crypto leaving escrow is the middle of
+            that order's story, not its end. Six more entries follow it —
+            `Crypto transferred to the payout provider`, `Fiat payout authorized` and
+            `Fiat payout submitted by the provider` (all `settlement_in_progress`),
+            `Fiat paid to the customer` (`completed`), `Fiat returned by the bank` (`returned`) and
+            `Crypto refunded to the customer` (`cancelled`). An ordinary order's timeline is unchanged,
+            entry for entry.
+
+            Consecutive entries are collapsed by status; on a delayed order they are collapsed by status
+            **and** description, so the three intermediate facts that all carry
+            `settlement_in_progress` each keep their own line.
           example: "Order created"
+
+    PartnerSourceOfFundsCategory:
+      type: object
+      description: |
+        One category of the source-of-funds catalogue, as
+        `GET /api/v1/partner/orders/{order_id}/source-of-funds/requirements` serves it. Field names are
+        `camelCase` here — this is the catalogue's own contract. `reviewChecks`, the reviewer's list of
+        what each document is tested against, is never served through this API.
+      properties:
+        code:
+          type: string
+          description: The value to send as `source_of_funds` on the declaration.
+          example: salary
+        label:
+          type: string
+          example: "Salary or wages"
+        description:
+          type: string
+          example: "Regular income from an employer."
+        requiresExplanation:
+          type: boolean
+          description: True for every active category. The customer must explain the source of their funds in their own words.
+        requiresBankStatement:
+          type: boolean
+          description: >-
+            Whether a personal account statement (`bank_statement`) is required. False only for
+            `crypto_assets`, where the money moves exchange to wallet and may never touch a bank.
+        statement:
+          type: object
+          nullable: true
+          description: The period the personal account statement must cover. Absent when no statement is required.
+          properties:
+            minMonths:
+              type: integer
+              description: How much history the statement must show.
+            maxMonths:
+              type: integer
+              description: The upper end of the requested range. Longer evidence is still fine.
+            maxAgeDays:
+              type: integer
+              description: Maximum age of the statement's end date, in days.
+        baseDocuments:
+          type: array
+          description: Required documents in addition to the document groups.
+          items:
+            $ref: '#/components/schemas/PartnerSourceOfFundsCatalogueDocument'
+        groups:
+          type: array
+          description: How the rest of the evidence combines.
+          items:
+            type: object
+            properties:
+              mode:
+                type: string
+                enum: [one_of, all_of]
+                description: >-
+                  `one_of` — choose one document type in the group and provide at least its minFiles
+                  count; for example, choosing payslips requires two files. `all_of` — provide every
+                  listed type with its minimum file count.
+              documents:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PartnerSourceOfFundsCatalogueDocument'
+        requiresAddressScreening:
+          type: boolean
+          description: >-
+            `true` on `crypto_assets` alone, where `source_wallet_address` is required.
+        legacy:
+          type: boolean
+          description: >-
+            A retired category, included to display existing cases but refused by the
+            declaration endpoint. Do not offer it.
+        revision:
+          type: integer
+          description: Bumped when this category's wording or requirements change.
+
+    PartnerSourceOfFundsCatalogueDocument:
+      type: object
+      description: One piece of evidence a customer can be asked for.
+      properties:
+        key:
+          type: string
+          description: >-
+            Stable, and the `document_type` an upload is filed under. Never renamed.
+          example: payslips
+        label:
+          type: string
+          example: "2–3 recent payslips"
+        hint:
+          type: string
+          description: What a good copy of this document shows.
+        multiple:
+          type: boolean
+          description: Whether this document type accepts multiple files. Read minFiles and maxFiles for the required counts.
+        minFiles:
+          type: integer
+        maxFiles:
+          type: integer
+
+    PartnerSourceOfFundsDeclaration:
+      type: object
+      description: |
+        The customer's explanation of where the money came from. Declare one active source category.
+        source_of_funds and explanation are required; source_wallet_address is also required for
+        crypto_assets. Optional text is trimmed before storage. Text limits are enforced as UTF-8
+        byte lengths: 4000 for explanation and descriptive fields, 256 for a wallet address and 64
+        for its network. Non-ASCII characters can use multiple bytes.
+      required: [source_of_funds, explanation]
+      properties:
+        source_of_funds:
+          type: string
+          description: The declared origin of the funds.
+          enum:
+            - salary
+            - business_income
+            - sale_of_property
+            - investment
+            - crypto_assets
+            - inheritance
+            - gift
+            - family_support
+            - loan
+            - savings
+            - other
+          example: salary
+        explanation:
+          type: string
+          maxLength: 4000
+          description: >-
+            The customer's own words. Required.
+          example: "monthly salary accumulated since 2024"
+        additional_sources:
+          type: array
+          items:
+            type: string
+          description: >-
+            Only codes already on the case; a new one is refused with `422`.
+          example: []
+        funds_flow_description:
+          type: string
+          maxLength: 4000
+          description: How the money reached the account it is being sold from.
+        purpose_of_payment:
+          type: string
+          maxLength: 4000
+        sender_recipient_relationship:
+          type: string
+          maxLength: 4000
+        source_wallet_address:
+          type: string
+          maxLength: 256
+          description: >-
+            **Required when `source_of_funds` is `crypto_assets`.**
+        source_wallet_network:
+          type: string
+          maxLength: 64
+          example: ethereum
+
+    PartnerSourceOfFundsCase:
+      type: object
+      description: |
+        Partner/customer view of one T+1 source-of-funds case. Reviewer identity, screening results
+        and internal checklist are not exposed; the admin response has a separate shape.
+      properties:
+        trade_id:
+          type: integer
+          format: int64
+          description: Numeric reference for this exchange. Informational; partner endpoint paths still use the order UUID.
+        delayed_settlement:
+          type: boolean
+          description: Always `true` — only a delayed order has a source-of-funds case.
+        case_id:
+          type: string
+          description: Opaque source-of-funds case identifier; pass it back unchanged.
+        status:
+          type: string
+          description: |
+            The review status.
+            - `documents_required` — the declaration or required documents are missing
+            - `documents_submitted` — required information and files were received, but have not yet been approved
+            - `in_review` — a reviewer has picked it up
+            - `additional_information_required` — a reviewer asked for something else; see
+              `requested_documents`
+            - `resubmitted` — the answer to that request is in
+            - `approved` — review passed; Unigox attempts release when consent is recorded
+            - `rejected` — review failed; follow the order's escrow refund actions
+            - `escalated` — further review is needed; wait unless more documents are requested
+
+            Approval after consent attempts release; consent after approval does the same.
+            Neither confirms blockchain settlement. Follow the order and payout_deadline_at.
+          enum:
+            - documents_required
+            - documents_submitted
+            - in_review
+            - additional_information_required
+            - resubmitted
+            - approved
+            - rejected
+            - escalated
+          example: documents_required
+        consent:
+          type: object
+          description: The release signature — your settlement consent on this order.
+          properties:
+            signed:
+              type: boolean
+            signed_at:
+              type: string
+              format: date-time
+              nullable: true
+        threshold_usd:
+          type: number
+          description: >-
+            Current configured USD threshold, not a historical per-order snapshot. The same figure
+            the order reports as `source_of_funds_threshold_usd`.
+          example: 50000
+        usd_equivalent:
+          type: number
+          description: >-
+            Fiat amount times its stored USD rate, falling back to total crypto amount times its
+            stored USD rate. If neither is available, this read reports zero but review remains
+            required; do not interpret that zero as an exemption.
+          example: 62500
+        source_of_funds:
+          type: object
+          description: The same threshold facts and a case summary, grouped.
+          properties:
+            required:
+              type: boolean
+            threshold_usd:
+              type: number
+            usd_equivalent:
+              type: number
+            case:
+              type: object
+              properties:
+                case_id:
+                  type: string
+                status:
+                  type: string
+                catalogue_revision:
+                  type: integer
+                decided_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                rejection_reason_code:
+                  type: string
+                created_at:
+                  type: string
+                  format: date-time
+        declaration:
+          type: object
+          description: What was declared. Empty strings until the declaration is posted.
+          properties:
+            source_of_funds:
+              type: string
+            additional_sources:
+              type: array
+              items:
+                type: string
+              description: Always an array, never `null`.
+            explanation:
+              type: string
+            funds_flow_description:
+              type: string
+            purpose_of_payment:
+              type: string
+            sender_recipient_relationship:
+              type: string
+            source_wallet_address:
+              type: string
+            source_wallet_network:
+              type: string
+        documents:
+          type: array
+          description: The evidence on file. A superseded document is kept, not deleted.
+          items:
+            type: object
+            properties:
+              document_id:
+                type: string
+              document_type:
+                type: string
+              file_name:
+                type: string
+              content_type:
+                type: string
+              size_bytes:
+                type: integer
+                format: int64
+              superseded:
+                type: boolean
+                description: Whether a later file of the same type replaced this one.
+              uploaded_at:
+                type: string
+                format: date-time
+        requested_documents:
+          type: array
+          description: What a reviewer came back and asked for, on top of the saved requirements. Open requests only.
+          items:
+            type: object
+            properties:
+              document_type:
+                type: string
+                description: The key to upload under.
+              label:
+                type: string
+              reason:
+                type: string
+              requested_at:
+                type: string
+                format: date-time
+              satisfied:
+                type: boolean
+              policy:
+                type: object
+                description: Additional requirements for this requested document; currently provided for bank_statement.
+                properties:
+                  accepted_content_types:
+                    type: array
+                    items:
+                      type: string
+                    example: [application/pdf]
+                  statement:
+                    type: object
+                    properties:
+                      minimum_months:
+                        type: integer
+                        description: Minimum period the statement must cover, checked during review.
+                        example: 3
+                      maximum_age_days:
+                        type: integer
+                        description: Maximum age of the statement's end date, checked during review.
+                        example: 31
+        requirements_snapshot:
+          type: object
+          description: |
+            The document requirements saved when the first declaration was accepted. Use them to build the form.
+            Absent until a declaration exists.
+          properties:
+            catalogue_revisions:
+              type: object
+              additionalProperties:
+                type: integer
+              description: The catalogue revision used for each declared source.
+            sources:
+              type: array
+              items:
+                type: string
+              description: The source categories declared for this case.
+            documents:
+              type: array
+              description: One entry per requirement group.
+              items:
+                type: object
+                properties:
+                  source_code:
+                    type: string
+                  mode:
+                    type: string
+                    enum: [one_of, all_of]
+                    description: >-
+                      `one_of` — choose one document type and meet its minimum_files count.
+                      `all_of` — every listed type is required with its minimum_files count.
+
+                  documents:
+                    type: array
+                    items:
+                      type: string
+                    description: The `document_type` keys to upload under.
+                  minimum_files:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    description: >-
+                      Minimum number of files for each document type. For example, payslips requires two.
+                  maximum_files:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    description: >-
+                      Maximum number of active files for each document type. Additional uploads replace
+                      the oldest file of that type. A multiple-file type with no explicit maximum uses 10.
+            requires_statement:
+              type: boolean
+              description: >-
+                Whether a personal account statement (`bank_statement`) is required by the saved category.
+                A reviewer can also request one through requested_documents.
+            statement_months:
+              type: integer
+              description: How much history the statement must show.
+            statement_max_months:
+              type: integer
+              description: The upper end of the requested range. Longer evidence is still fine.
+            statement_max_age_days:
+              type: integer
+              description: Maximum age in days of the statement's end date.
+            requires_explanation:
+              type: boolean
+            review_checks:
+              type: array
+              items:
+                type: string
+              description: >-
+                **Always `[]`.** The reviewer's own checklist is not served through this API; the key is
+                always present and always empty.
+              example: []
+            frozen_at:
+              type: string
+              format: date-time
+        requested_at:
+          type: string
+          format: date-time
+          description: When a reviewer last asked for more. Can remain after the request is answered; use requested_documents and status for current action.
+        request_expires_at:
+          type: string
+          format: date-time
+          description: Deadline recorded for that request. Can remain after the request is answered; absent if no deadline was recorded.
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        rejection_reason_code:
+          type: string
+          description: Empty unless the case was rejected.
+        created_at:
+          type: string
+          format: date-time
+
+    PartnerSourceOfFundsDocumentStored:
+      type: object
+      description: What a successful source-of-funds upload reports.
+      properties:
+        document_id:
+          type: string
+        document_type:
+          type: string
+        file_name:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        content_type:
+          type: string
+          description: Read from the file's own bytes, not from what the request called it.
+        satisfies_requirement:
+          type: boolean
+          description: |
+            Whether the file's type matches a saved requirement or answers a reviewer's open request.
+            This does not mean all required files have been received or approved. When false,
+            expected_document_types lists the expected types. Omitted when requirements cannot be
+            determined, including before the first declaration.
+        expected_document_types:
+          type: array
+          items:
+            type: string
+          description: Present only when `satisfies_requirement` is `false`.
+        superseded_count:
+          type: integer
+          format: int64
+          description: >-
+            How many earlier documents of the same type this one replaced. Files stand side by side
+            up to the `maximum_files` for their type; past that ceiling the oldest one gives way.
+        case_status:
+          type: string
+          description: Updated case status. Receiving all required files moves the case to review, not to approval.
 
     RegisterWebhookRequest:
       type: object
@@ -7169,6 +9042,63 @@ components:
               type: string
               description: Payment details ID used for the order
               example: "987"
+            delayed_settlement:
+              type: boolean
+              description: |
+                **Delayed settlement (T+1) only.** Omitted entirely on any other order —
+                `delayed_settlement` is `true` or absent, never `false`.
+
+                Every T+1 field here is omitted until it has a value. `delayed_settlement` and
+                `settlement_hours` are on every `order.status.changed` event of a delayed order,
+                including the ones before the release; `payout_deadline_at` from the release onwards;
+                and each `delayed_settlement_*_at` timestamp while currently set. A bank return clears
+                authorization, submission and paid timestamps, so later events can omit earlier fields.
+                An absent key means not currently set (never recorded or cleared); nulls are omitted.
+                Re-read the order to reconcile state. Deduplicate deliveries by event_id, not order_id.
+              example: true
+            settlement_hours:
+              type: integer
+              description: >-
+                The promised payout window, rounded to the nearest whole hour and never below `1`.
+              example: 24
+            payout_deadline_at:
+              type: string
+              format: date-time
+              description: >-
+                Release plus the promised window. Absent until the crypto has left escrow.
+              example: "2026-09-19T12:07:55Z"
+            delayed_settlement_crypto_sent_to_provider_at:
+              type: string
+              format: date-time
+              description: >-
+                The crypto left the licensed partner's wallet for the payout provider. A refund to the customer
+                stops being possible at this mark. Absent until it happens.
+            delayed_settlement_fiat_payout_authorized_by_admin_at:
+              type: string
+              format: date-time
+              description: Unigox authorized the licensed partner to send the bank payment. Absent until it happens.
+            delayed_settlement_fiat_payout_submitted_by_provider_at:
+              type: string
+              format: date-time
+              description: >-
+                Submission of the bank payment was recorded; recipient payment is not yet confirmed. Absent until it
+                happens.
+            delayed_settlement_fiat_paid_to_customer_at:
+              type: string
+              format: date-time
+              description: >-
+                The fiat reached the recipient — the real completion of a delayed order. Absent until
+                it happens.
+            delayed_settlement_fiat_returned_by_bank_at:
+              type: string
+              format: date-time
+              description: >-
+                The bank sent the payout back; the paid, submitted and authorized marks are cleared in
+                the same statement and the order will be paid again. Absent until it happens.
+            delayed_settlement_crypto_refunded_to_customer_at:
+              type: string
+              format: date-time
+              description: The crypto went back to the customer instead. Absent until it happens.
 
     PartnerOnRampQuoteRequest:
       type: object

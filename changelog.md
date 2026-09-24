@@ -2,9 +2,94 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-23
+
+**The T+1 guide was rewritten for integrators, and the payment after the release is no longer
+described as manual.** Endpoints, fields and error codes are unchanged.
+
+- Where the licensed partner is connected to a payout provider, the bank payment is sent
+  through it automatically once Unigox approves it. The order then stamps
+  `delayed_settlement_fiat_payout_submitted_by_provider_at` and sends a
+  `settlement_in_progress` event when the provider accepts the payment, and a separate
+  `completed` event when the money arrives. A payment recorded by hand with a receipt still
+  stamps both at once and sends one `completed` event.
+- `returned` covers every payment attempt that did not go through, including one the payout
+  provider cancelled before it was sent. Unigox approves a new attempt; `returned_at` stays on
+  the order until the new payment arrives.
+- A return reported by the provider after the money was already recorded as paid does not
+  change the order. Only an operator correcting the record clears `paid_at`.
+- `crypto_transfer_authorization_pending` offers no `cancel`: the transfer is in flight. The
+  specification said otherwise.
+- Read `delayed_settlement` and `settlement_hours` from the order; the `initiate` and
+  `authorize-crypto-transfer` responses do not carry them.
+
+## 2026-09-22
+
+**T+1 release, source-of-funds review and retry behaviour clarified.** The
+[current integration guide](./api-reference/delayed-settlement.md) and OpenAPI
+specification describe the current contract and replace earlier release-timing guidance.
+
+- A successful consent response confirms a stored signature. Release requires
+  consent and, where applicable, source-of-funds approval. Unigox supplies the
+  second escrow signature after those conditions are met.
+- `release_started` does not prove blockchain confirmation. The payout window
+  starts at confirmed crypto release, not at signature submission.
+- Consent is refused after its deadline, even if the order status has not changed.
+  A concurrent refund does not report `release_started: true`.
+- Both supported `signed_data` values — the returned `safe_params.data` and
+  `tx_hash` — are accepted. Sign the complete returned EIP-712 transaction.
+- Source-of-funds review applies at USD 50,000 or above, or when the order already
+  has a case. Read `source_of_funds_required` and the current threshold from the
+  order. A missing case (404) alone does not mean review is unnecessary.
+- The first declaration saves the case's document requirements. Later edits
+  cannot change its source categories. File counts apply even when the customer
+  chooses one of several document types. Receiving files is not approval.
+- A repeated upload returns 409 with `duplicate_document` and `retry_safe`.
+  Read the case after an uncertain upload; only `retry_safe: true` confirms that
+  no new request for those files remains unanswered.
+- `settlement_in_progress` includes crypto release in progress. It does not mean
+  a bank payment has been sent. (Superseded on 2026-09-23: the payment is sent through the
+  payout provider automatically where one is connected.)
+- A bank return clears payout authorization, submission and paid timestamps.
+  Later webhooks can omit earlier fields; read the order for its current state.
+- Endpoint names and existing response field names are unchanged.
+
+## 2026-09-21
+
+**Source-of-funds uploads preserve multiple files of the same type.** A second
+payslip no longer replaces the first. Files remain active up to the document
+type's `maximum_files`; beyond that limit, a new file replaces the oldest one.
+`superseded_count` reports replacements. Request and response formats are unchanged.
+
 ## 2026-09-21
 
 **USD payouts to China, Hong Kong and Singapore are not on the partner API yet.** The three USD bank rails can appear in `/api/v1/supported/payment-rails`, and a recipient can hold a destination on them, but a quote or an initiate for a USD payout on any of them answers `400 INVALID_REQUEST` with `provider_confirmation_pending`. This is a statement of what is offered, not a change: nothing that worked before stops working. See [Dollars to China, Hong Kong and Singapore](./api-reference/third-party-payouts.md#dollars-to-china-hong-kong-and-singapore-not-yet).
+
+## 2026-09-20
+
+**Three fields added to order responses:** `source_of_funds_required`,
+`source_of_funds_threshold_usd` and optional `settlement_refund_reason`.
+They are not included in `order.status.changed` webhooks. The refund reason
+explains document rejection, expiry without consent, failure to release before
+the deadline, or customer cancellation. See the reference for exact enum values.
+
+## 2026-09-18
+
+**Delayed settlement (T+1) added to eligible off-ramp orders.** Crypto is released
+to the licensed partner before the bank payment; the quoted payout window starts
+when crypto release is confirmed.
+
+- Quotes and estimates report `delayed_settlement` and `settlement_hours`.
+  Order reads include consent and payout deadlines and six payout/refund timestamps.
+- New consent-parameter and consent endpoints support the release signature.
+  New source-of-funds endpoints provide the requirements, declaration, uploads and
+  review status. Follow `next_action` and `allowed_actions` on the order.
+- New order statuses: `settlement_in_progress` and `returned`. On T+1 orders,
+  `completed` means the bank payment reached the recipient.
+- Payout, return and refund updates emit `order.status.changed`. Deduplicate by
+  `event_id`; T+1 fields are omitted on ordinary orders.
+- Instant-order behaviour is unchanged. See the current guide for release conditions,
+  status filters, cancellation and error handling.
 
 ## 2026-09-18
 
