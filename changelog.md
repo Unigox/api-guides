@@ -2,6 +2,12 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-23
+
+**`GET /api/v1/partner/stats` is new.** It returns `total_orders`, `completed_orders`, and `volume_usd` and `earned_usd` over completed orders, each order converted to USD at the rate snapshotted when it was created. This is what the partner dashboard tiles now show; they previously summed the first page of the orders list, which is served pending-first, so they could show a stale unaccepted request in its own fiat currency instead of your completed volume.
+
+A reminder, since it came up: the markup you set in the partner dashboard applies to trades made through the embedded widget only. An API order carries a markup only when its quote or estimate request sends `partner_fee_pct`; omitting the field means no markup on that order.
+
 ## 2026-09-21
 
 **USD payouts to China, Hong Kong and Singapore are not on the partner API yet.** The three USD bank rails can appear in `/api/v1/supported/payment-rails`, and a recipient can hold a destination on them, but a quote or an initiate for a USD payout on any of them answers `400 INVALID_REQUEST` with `provider_confirmation_pending`. This is a statement of what is offered, not a change: nothing that worked before stops working. See [Dollars to China, Hong Kong and Singapore](./api-reference/third-party-payouts.md#dollars-to-china-hong-kong-and-singapore-not-yet).
