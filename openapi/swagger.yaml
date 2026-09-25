@@ -2881,9 +2881,10 @@ paths:
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
         It also reports `delayed_settlement` and `settlement_hours`, so you can discover at which
-        amounts a corridor stops settling instantly without burning quotes. This response is
-        indicative about the **numbers**, not about the class: the price may move before the quote,
-        but a T+1 estimate does not become an instant order.
+        amounts a corridor stops settling instantly without burning quotes. Both are **indicative**,
+        like the price: the estimate reserves nothing, and the quote runs the match again, so a
+        corridor that estimates as T+1 can quote as instant if instant liquidity has appeared (and
+        the other way round). Read the class off the quote, and the order response is final.
 
         **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
 
@@ -7548,8 +7549,10 @@ components:
         delayed_settlement:
           type: boolean
           description: >-
-            Whether pricing at this amount would open a **delayed settlement (T+1)** order. Always
-            present. The numbers are indicative; the class is not.
+            Whether pricing at this amount would currently open a **delayed settlement (T+1)**
+            order. Always present. Indicative, like the numbers: the estimate reserves nothing and
+            the quote matches again, so the class can change either way before the quote. The
+            quote's `delayed_settlement` is what the order is created from.
           example: false
         settlement_hours:
           type: integer
@@ -8003,6 +8006,11 @@ components:
             You cannot request it or decline it. A delayed offer is considered only when no instant
             offer covers the amount, and only on orders whose crypto you hold — never on a widget
             order. See the Delayed settlement (T+1) reference.
+
+            The class is kept with the quote. `false` here means the order can never be T+1,
+            whatever happens to the offer in the meantime. `true` means it will be T+1 unless instant
+            liquidity has appeared by the time you initiate, in which case the order is instant — the
+            money arrives sooner than quoted. The order response says which.
           example: false
         settlement_hours:
           type: integer
