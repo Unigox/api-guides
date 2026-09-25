@@ -2,13 +2,37 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-09-25
+
+**T+1 corrections from an audit of the delayed-settlement flow.** No endpoint or field was
+removed.
+
+- The licensed partner can decline a funded T+1 order until you sign the release, and no longer
+  after. A declined order reads `cancelled` with a new `settlement_refund_reason` value,
+  `cancelled_by_licensed_partner`.
+- A release signature the escrow refuses, because it does not recover to `signer_address` over
+  the release, now answers `400 INVALID_REQUEST` instead of `502 TRANSACTOR_ERROR`. Sign again;
+  the same signature can never succeed. A `502` now means only that the escrow service failed.
+- `has_fiat_settlement_notification` is `true` on every T+1 quote and order: the fiat leg ends in
+  the `completed` webhook, and `confirm-fiat-received` refuses a T+1 order.
+- `order_type` is on every order response, including an order no liquidity provider has accepted
+  yet, where it was missing.
+- When a payment came back and was sent again, the timeline keeps every attempt; its entries end
+  in `(attempt N)`. A T+1 order cancelled before the release shows one `cancelled` entry, not two.
+- Corrected in the specification: approval does not send the payment by itself (the 2026-09-23
+  entry said it did); `consent_deadline_at` stays set after your signature while a source of
+  funds review is open; T+1 events carry `provider: "p2p"`; declaration text is limited to 4,000
+  bytes of UTF-8, not characters; source of funds endpoints answer `409 INVALID_STATUS` before a
+  liquidity provider accepts the order; a refund goes to the wallet that funded the escrow.
+
 ## 2026-09-23
 
 **The T+1 guide was rewritten for integrators, and the payment after the release is no longer
 described as manual.** Endpoints, fields and error codes are unchanged.
 
 - Where the licensed partner is connected to a payout provider, the bank payment is sent
-  through it automatically once Unigox approves it. The order then stamps
+  through it once Unigox approves it. (Corrected on 2026-09-25: approval does not send it by
+  itself; Unigox or the licensed partner then sends it.) The order then stamps
   `delayed_settlement_fiat_payout_submitted_by_provider_at` and sends a
   `settlement_in_progress` event when the provider accepts the payment, and a separate
   `completed` event when the money arrives. A payment recorded by hand with a receipt still
@@ -49,7 +73,7 @@ specification describe the current contract and replace earlier release-timing g
   no new request for those files remains unanswered.
 - `settlement_in_progress` includes crypto release in progress. It does not mean
   a bank payment has been sent. (Superseded on 2026-09-23: the payment is sent through the
-  payout provider automatically where one is connected.)
+  payout provider where one is connected, once Unigox or the licensed partner sends it.)
 - A bank return clears payout authorization, submission and paid timestamps.
   Later webhooks can omit earlier fields; read the order for its current state.
 - Endpoint names and existing response field names are unchanged.

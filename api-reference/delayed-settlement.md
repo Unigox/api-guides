@@ -108,6 +108,11 @@ Until the escrow is funded you can cancel as usual:
 `POST /api/v1/partner/orders/{order_id}/cancel` answers `cancelled` at once and
 `settlement_refund_reason` reads `cancelled_by_customer`.
 
+The licensed partner can decline a funded order until you sign the release. The
+order then reads `cancelled`, `settlement_refund_reason` reads
+`cancelled_by_licensed_partner`, and the crypto comes back through the usual
+refund. Once you have signed, it can no longer decline.
+
 ## Step 3: read what the order is waiting for
 
 A funded delayed order stays at `crypto_received`, the same status an ordinary
@@ -190,8 +195,10 @@ Content-Type: application/json
 
 Both fields are required. `signed_data` may be either `safe_params.data` (the
 release calldata) or `tx_hash`; both are compared case-insensitively, with any
-surrounding quotes removed. Anything else answers `400 INVALID_REQUEST`. Never
-send a private key.
+surrounding quotes removed. Anything else answers `400 INVALID_REQUEST`. A
+signature that does not recover to `signer_address` over this release also
+answers `400 INVALID_REQUEST`: sign again with the wallet that funded the order,
+because retrying the same signature cannot succeed. Never send a private key.
 
 ```json
 {
@@ -286,7 +293,9 @@ hard-coding a document list. `?source_of_funds=salary` narrows it to one
 category; an unknown code answers `404 ORDER_NOT_FOUND`. Field names here are
 `camelCase`. `requiresAddressScreening` is `true` on `crypto_assets`, where
 `source_wallet_address` is required. Categories marked `"legacy": true` are
-refused by the declaration endpoint; do not offer them. Cache on `revision`.
+refused by the declaration endpoint; do not offer them. To cache, compare each
+category's own `revision`: the top-level `revision` is the highest of them and
+does not change when a lower one does.
 
 `requirements_snapshot` on the case is what was saved when the first declaration
 was accepted. Its shape differs from the catalogue. Once it exists, use it to
@@ -370,10 +379,12 @@ Content-Type: multipart/form-data
 | `period_start` | no | `YYYY-MM-DD`. The period a statement covers. |
 | `period_end` | no | `YYYY-MM-DD`. Not before `period_start`. |
 
-Accepted: PDF, JPEG, PNG, HEIC, HEIF, WebP, checked against the file's bytes. A
-`bank_statement` must be a bank-issued PDF, sent with
-`Content-Type: application/pdf` on the file part, not a generic binary type. The
-API checks format and size; a reviewer checks the contents.
+Accepted: PDF, JPEG, PNG, HEIC, HEIF, WebP, checked against the file's bytes. The
+file part's `Content-Type` may name one of these, or be absent or
+`application/octet-stream`; the file name's extension then decides, and the bytes
+are checked either way. Any other declared type answers `415`. A `bank_statement`
+must be a bank-issued PDF. The API checks format and size; a reviewer checks the
+contents. A long file name is shortened when it is stored.
 
 ```json
 {
@@ -429,7 +440,9 @@ the transaction has confirmed on chain.
 
 A declaration or an upload is accepted only while the order is still waiting for
 the release and the case is undecided; outside that window both answer
-`409 INVALID_STATUS`. Reads have no such window.
+`409 INVALID_STATUS`. Reads have no such window, except that before a liquidity
+provider has accepted the order every source of funds endpoint answers
+`409 INVALID_STATUS`: there is no case to read yet.
 
 ## Step 6: follow the payment
 
@@ -439,10 +452,11 @@ order and sends a webhook:
 
 1. **The crypto reaches the payout provider.** The licensed partner moves it
    from its wallet; Unigox records it as `delayed_settlement_crypto_sent_to_provider_at`.
-   From this moment a refund of the crypto to your customer is no longer possible.
+   From this moment a refund of the crypto is no longer possible.
 2. **Unigox approves the payment:** `delayed_settlement_fiat_payout_authorized_by_admin_at`.
-3. **The payment is sent.** Where the licensed partner is connected to a payout
-   provider, the payment is sent through it automatically, and
+3. **The payment is sent.** Approval does not send it by itself. Where the
+   licensed partner is connected to a payout provider, Unigox or the licensed
+   partner then sends it through that provider, and
    `delayed_settlement_fiat_payout_submitted_by_provider_at` is stamped when the
    provider accepts it. Where the licensed partner pays by hand, it records the
    payment with its receipt; submitted and paid are then stamped together.
@@ -458,9 +472,14 @@ Two things can go wrong after the release:
   a new attempt: the order goes back to `settlement_in_progress`, keeps
   `returned_at` until the new payment arrives, and then reads `completed` with
   `returned_at` cleared. This can happen more than once.
-- **The crypto goes back to your customer** instead of being paid out, which is
-  possible only while step 1 has not happened. The order reads `cancelled` with
-  `delayed_settlement_crypto_refunded_to_customer_at` set.
+- **The crypto goes back** instead of being paid out, which is possible only
+  while step 1 has not happened. It goes to the wallet that funded the escrow,
+  which on an order whose crypto you hold is yours. The order reads `cancelled`
+  with `delayed_settlement_crypto_refunded_to_customer_at` set.
+
+Nothing happens on its own when `payout_deadline_at` passes: the status does not
+change and no event is sent. Unigox follows the payment up; contact support if
+you need an answer for your customer.
 
 A return that the payout provider reports after the money was already recorded
 as paid does not change the order; Unigox keeps it on file. Only an operator
@@ -478,17 +497,17 @@ the one exception: it is absent, not empty, when it does not apply.
 | --- | --- | --- |
 | `delayed_settlement` | boolean | Whether this order settles T+1. `false`, not `null`, on an ordinary order. Fixed when the order is created. |
 | `settlement_hours` | integer \| null | The promised window in whole hours, never below `1`. `null` on an instant order. |
-| `consent_deadline_at` | string \| null | Funding time plus the signing window. After it the release is blocked and the order moves to a refund. Set only while the order waits for your signature; `null` otherwise. |
+| `consent_deadline_at` | string \| null | Funding time plus the signing window. After it the release is blocked and the order moves to a refund. Set while the crypto is in escrow, including after your signature while a source of funds review is open: the review must also finish by then. `null` once the crypto has left the escrow or the order has ended. |
 | `payout_deadline_at` | string \| null | Release time plus the promised window. `null` until the crypto has left the escrow. |
-| `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto reached the payout provider. **No refund to the customer is possible after this.** |
+| `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto reached the payout provider. **No refund of the crypto is possible after this.** |
 | `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox approved the bank payment. Never set before the one above. |
 | `delayed_settlement_fiat_payout_submitted_by_provider_at` | string \| null | The payment was sent. Not yet confirmation that it arrived. |
 | `delayed_settlement_fiat_paid_to_customer_at` | string \| null | The money reached your customer. **This is the real completion of the order.** |
 | `delayed_settlement_fiat_returned_by_bank_at` | string \| null | The payment did not go through and came back. Set together with clearing the approval, submission and paid timestamps. |
-| `delayed_settlement_crypto_refunded_to_customer_at` | string \| null | The crypto went back to your customer instead. Only possible while `crypto_sent_to_provider_at` is `null`. |
+| `delayed_settlement_crypto_refunded_to_customer_at` | string \| null | The crypto went back to the wallet that funded the escrow instead: yours, on an order whose crypto you hold. Only possible while `crypto_sent_to_provider_at` is `null`. |
 | `source_of_funds_required` | boolean | Whether a source of funds review applies, by threshold or because a case exists. Can stay `true` after approval and completion. Always present. |
 | `source_of_funds_threshold_usd` | number | The threshold in force now, not the one saved with the order. Always present. |
-| `settlement_refund_reason` | string | Why a delayed order ended without a payment. One of the four values below. **Absent** when the order did not end that way. |
+| `settlement_refund_reason` | string | Why a delayed order ended without a payment. One of the five values below. **Absent** when the order did not end that way. |
 
 Two pairs never hold at once: paid and returned, and refunded and sent to the
 provider. A new payment after a return clears `returned_at` and sets `paid_at`.
@@ -502,11 +521,12 @@ provider. A new payment after a return clears `returned_at` and sets `paid_at`.
 | `dossier_rejected` | A reviewer refused the source of funds. |
 | `consent_window_expired` | The release was never signed and the window ran out. |
 | `not_released_in_time` | The release was signed, but Unigox did not release the crypto before the deadline. |
-| `cancelled_by_customer` | The order was cancelled before the release. |
+| `cancelled_by_customer` | The order was cancelled on your side before the release. |
+| `cancelled_by_licensed_partner` | The licensed partner declined the order before your signature. |
 
-These four are the whole set, read in that order: a refusal outranks an expired
+These five are the whole set, read in that order: a refusal outranks an expired
 window, which outranks a cancellation. When none was recorded the key is absent,
-and an absent key never stands for one of the four.
+and an absent key never stands for one of the five.
 
 ### The two extra statuses
 
@@ -560,7 +580,14 @@ timeline is unchanged.
 | `cancelled` | `Crypto refunded to the customer` |
 
 The release is one entry: consecutive entries with the same status and the same
-description are collapsed. Every later step keeps its own line.
+description are collapsed. Every later step keeps its own line. Before the
+release, a cancelled delayed order shows one `cancelled` entry, like an ordinary
+order.
+
+When a payment came back and was sent again, every attempt stays on the
+timeline, and the approval, sending and return entries end in `(attempt N)`,
+for example `Fiat payout authorized (attempt 2)`. The order's timestamps hold
+only the current attempt; the timeline holds all of them.
 
 ## Webhooks
 
@@ -575,7 +602,15 @@ ordinary events a delayed order sends before it (`awaiting_crypto_transfer_autho
 | The payment was sent | `settlement_in_progress` |
 | The money reached the customer | `completed` |
 | The payment came back | `returned` |
-| The crypto was refunded to the customer | `cancelled` |
+| The crypto was refunded | `cancelled` |
+
+An order that ends before the release and needs your refund signature also
+sends `order.refund.required`, once, with the same `action_required` block the
+order carries. Follow it with `authorize-refund`.
+
+`data.provider` is `p2p` on every delayed order: the licensed partner takes part
+as a P2P liquidity provider. For the same reason `provider_scope=licensed_only`
+does not match a T+1 offer.
 
 A payment recorded by hand with a receipt stamps submitted and paid together and
 sends one `completed` event with both timestamps. A repeat of the same report
@@ -610,7 +645,7 @@ T+1 fields on `data` are omitted until they have a value; none is ever sent as
     "crypto_currency": "USDT",
     "fiat_amount": "21540.00",
     "fiat_currency": "CNY",
-    "provider": "licensed",
+    "provider": "p2p",
     "payment_details_id": "987",
     "partner_fee": "30",
     "partner_fee_pct": 1,
@@ -633,14 +668,14 @@ Every endpoint on this page answers in the standard partner envelope.
 | `error.code` | Status | When |
 | --- | --- | --- |
 | `UNAUTHORIZED` | 401 | `X-API-Key` is missing or names no partner. |
-| `INVALID_REQUEST` | 400 | Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the uploaded file could not be read; the order is an on-ramp order. |
+| `INVALID_REQUEST` | 400 | Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the signature does not recover to `signer_address` over it; the uploaded file could not be read; the order is an on-ramp order. |
 | `ORDER_NOT_FOUND` | 404 | No such order, not yours, or not one whose crypto you hold. On source of funds endpoints: the order is not delayed, the case does not exist yet, or the category does not exist. A missing case does not prove the review is unnecessary. |
-| `INVALID_STATUS` | 409 | A consent call on an order that is not delayed, not funded, or no longer waiting for the release. On source of funds writes: the order is past the release, the case is decided, the declaration conflicts with its saved requirements or a concurrent edit, or the same file is already held under that `document_type`. |
+| `INVALID_STATUS` | 409 | A consent call on an order that is not delayed, not funded, or no longer waiting for the release. On source of funds endpoints: no liquidity provider has accepted the order yet. On source of funds writes: the order is past the release, the case is decided, the declaration conflicts with its saved requirements or a concurrent edit, or the same file is already held under that `document_type`. |
 | `OPERATION_NOT_ALLOWED` | 409 | The order is on hold and no crypto may move; the signature is already stored; or its deadline is missing or has passed. Read the order. |
 | `INVALID_REQUEST` | 413 | The file is larger than 15 MiB (15,728,640 bytes). |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes do not match its content type, or a `bank_statement` is not a bank-issued PDF. `error.details.allowed` lists what is accepted. |
-| `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or too long; `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes. |
-| `TRANSACTOR_ERROR` | 502 | The escrow service refused the signature or was unreachable. Check `signer_address`, then retry. |
+| `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes. |
+| `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order, then retry the same signature. |
 | `INTERNAL_ERROR` | 500 / 502 / 503 | `502` when document storage failed; `503` when the source of funds service or document storage is unavailable; `500` for any other server failure. Read the case before retrying an upload: an error does not prove nothing was stored. |
 
 413, 415 and 422 share `INVALID_REQUEST`; branch on the HTTP status.
