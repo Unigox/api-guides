@@ -12,7 +12,10 @@ and how to follow the payment to the end.
 ## The words on this page
 
 - **You** are the business integrating this API. **Your customer** is the person
-  selling crypto and receiving the bank payment.
+  selling crypto and receiving the bank payment. On a
+  [third-party payout](./third-party-payouts.md) the bank payment goes to the
+  recipient instead: where this page says the money reaches your customer, read
+  the recipient.
 - The **escrow** is the wallet that holds the crypto while an order is open. It
   needs two signatures to move the crypto: yours and Unigox's.
 - The **licensed partner** is the regulated business on the other side of the
@@ -55,6 +58,11 @@ An order is delayed when all three hold:
   are never delayed, because there the wallet is theirs.
 - **The matched licensed partner offers T+1.**
 
+A [third-party payout](./third-party-payouts.md#when-a-payout-is-delayed) can be
+delayed too. It is matched only to licensed partners that can pay a recipient,
+so for it the first condition reads: no instant offer from such a licensed
+partner covers the amount.
+
 There is no parameter to ask for or refuse a delayed order. Show the window and
 let the customer decide: they can create the order, or ask for a new quote for a
 different amount.
@@ -91,6 +99,22 @@ Content-Type: application/json
 `POST /api/v1/partner/offramp/estimate` reports the same two fields, so you can
 find where a corridor stops settling instantly without spending quotes. Its
 amounts are indicative; the matched offer can change by the time you quote.
+
+The estimate takes two optional booleans. Each can only narrow the offers it
+prices, and neither changes what a quote or an order matches:
+
+| Request field | Effect |
+| --- | --- |
+| `recipient_payout` | `true` prices only on the licensed partners a [third-party payout](./third-party-payouts.md) can be matched to. Send it when you price a payout to a recipient. |
+| `exclude_delayed_settlement` | `true` leaves T+1 offers out of the price. When no instant offer covers the amount, the estimate answers `409 NO_OFFERS_AVAILABLE`. |
+
+The estimate also says whether the order would need a source of funds review
+([Step 5](#step-5-source-of-funds-on-large-orders)):
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `source_of_funds_required` | boolean | `true` when the price is on a T+1 offer and the order it would open reaches the threshold, valued the way Step 5 values an order, at current USD rates. Always present; `false` on an instant estimate. Indicative: the order's own field decides. |
+| `source_of_funds_threshold_usd` | number | The threshold in force. Present only when `delayed_settlement` is `true`. |
 
 ## Step 2: create and fund the order
 
@@ -475,7 +499,8 @@ Two things can go wrong after the release:
 - **The crypto goes back** instead of being paid out, which is possible only
   while step 1 has not happened. It goes to the wallet that funded the escrow,
   which on an order whose crypto you hold is yours. The order reads `cancelled`
-  with `delayed_settlement_crypto_refunded_to_customer_at` set.
+  with `delayed_settlement_crypto_refunded_to_customer_at` set, and
+  `settlement_refund_reason` reads `refunded_after_release`.
 
 Nothing happens on its own when `payout_deadline_at` passes: the status does not
 change and no event is sent. Unigox follows the payment up; contact support if
@@ -507,7 +532,7 @@ the one exception: it is absent, not empty, when it does not apply.
 | `delayed_settlement_crypto_refunded_to_customer_at` | string \| null | The crypto went back to the wallet that funded the escrow instead: yours, on an order whose crypto you hold. Only possible while `crypto_sent_to_provider_at` is `null`. |
 | `source_of_funds_required` | boolean | Whether a source of funds review applies, by threshold or because a case exists. Can stay `true` after approval and completion. Always present. |
 | `source_of_funds_threshold_usd` | number | The threshold in force now, not the one saved with the order. Always present. |
-| `settlement_refund_reason` | string | Why a delayed order ended without a payment. One of the five values below. **Absent** when the order did not end that way. |
+| `settlement_refund_reason` | string | Why a delayed order ended without a payment. One of the six values below. **Absent** when the order did not end that way. |
 
 Two pairs never hold at once: paid and returned, and refunded and sent to the
 provider. A new payment after a return clears `returned_at` and sets `paid_at`.
@@ -518,15 +543,17 @@ provider. A new payment after a return clears `returned_at` and sets `paid_at`.
 
 | Value | Meaning |
 | --- | --- |
+| `refunded_after_release` | The crypto had been released to the licensed partner and was sent back before it reached the payout provider. No payment was made. |
 | `dossier_rejected` | A reviewer refused the source of funds. |
 | `consent_window_expired` | The release was never signed and the window ran out. |
 | `not_released_in_time` | The release was signed, but Unigox did not release the crypto before the deadline. |
 | `cancelled_by_customer` | The order was cancelled on your side before the release. |
 | `cancelled_by_licensed_partner` | The licensed partner declined the order before your signature. |
 
-These five are the whole set, read in that order: a refusal outranks an expired
-window, which outranks a cancellation. When none was recorded the key is absent,
-and an absent key never stands for one of the five.
+These six are the whole set, read in that order: a refund after the release
+outranks a refusal, which outranks an expired window, which outranks a
+cancellation. When none was recorded the key is absent, and an absent key never
+stands for one of the six.
 
 ### The two extra statuses
 
@@ -563,6 +590,11 @@ For these four values a filter returns exactly the orders whose `status` reports
 that value. That does not hold for every filter: several partner statuses share
 one internal status, so `?status=crypto_transfer_authorization_pending` returns
 rows that report `awaiting_crypto_transfer_authorization`.
+
+`GET /api/v1/partner/stats` counts completed orders by the same rule: a delayed
+order adds to `completed_orders`, `volume_usd` and `earned_usd` only once its
+payment is recorded paid. Released but unpaid, returned, or refunded after the
+release, it is not counted as completed.
 
 ### The timeline
 

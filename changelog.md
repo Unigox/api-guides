@@ -2,6 +2,30 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-02
+
+**Third-party payouts can settle T+1.** No endpoint or field was removed.
+
+- A third-party payout can now be a delayed settlement (T+1) order. Among the licensed partners
+  that can pay a recipient, one that settles instantly takes the payout whenever it can, and one
+  that settles T+1 takes it only when none can. The quote and the order say so with
+  `delayed_settlement` and `settlement_hours`, and the
+  [delayed settlement guide](./api-reference/delayed-settlement.md) applies unchanged: you sign
+  the release, large orders need the source of funds approved, and `completed` means the
+  recipient was paid. See
+  [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
+- `POST /api/v1/partner/offramp/estimate` takes two optional booleans: `recipient_payout` prices
+  only on the licensed partners a recipient payout can be matched to, and
+  `exclude_delayed_settlement` leaves T+1 offers out of the price. Both only narrow the estimate;
+  neither changes what a quote matches. The response adds `source_of_funds_required`, always
+  present, and `source_of_funds_threshold_usd`, present when `delayed_settlement` is `true`.
+- A new `settlement_refund_reason` value, `refunded_after_release`: the crypto had been released
+  to the licensed partner and was sent back before it reached the payout provider. It outranks
+  the other five. The order reads `cancelled`.
+- `GET /api/v1/partner/stats` counts a T+1 order as completed, in `completed_orders`,
+  `volume_usd` and `earned_usd`, only once its payment is recorded paid: the rule the `completed`
+  filter of `GET /api/v1/partner/orders` already applies.
+
 ## 2026-09-25
 
 **T+1 corrections from an audit of the delayed-settlement flow.** No endpoint or field was

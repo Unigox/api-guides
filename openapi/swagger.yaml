@@ -2913,6 +2913,9 @@ paths:
 
         Use this when you need quick pricing discovery before calling `/partner/offramp/quote`.
         Optional filters: `payment_method_slug`, `payment_network_slug`, `provider_scope`, `country_code`.
+        Two optional booleans narrow the offers priced: `recipient_payout` prices only what a
+        third-party (recipient) payout can be matched to, and `exclude_delayed_settlement` leaves
+        delayed settlement (T+1) offers out. Neither changes what a quote or an order matches.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
         It also reports `delayed_settlement` and `settlement_hours`, so you can discover at which
@@ -2920,6 +2923,9 @@ paths:
         like the price: the estimate reserves nothing, and the quote runs the match again, so a
         corridor that estimates as T+1 can quote as instant if instant liquidity has appeared (and
         the other way round). Read the class off the quote, and the order response is final.
+        `source_of_funds_required` says whether the order would need a source-of-funds review before
+        its release, and a delayed estimate carries the threshold in force as
+        `source_of_funds_threshold_usd`. Both are indicative too: the order's own fields decide.
 
         **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
 
@@ -2976,6 +2982,7 @@ paths:
                   network_matching_available: true
                   delayed_settlement: false
                   settlement_hours: null
+                  source_of_funds_required: false
         '400':
           description: |
             Bad request — invalid parameters, missing required fields, 
@@ -5664,6 +5671,12 @@ paths:
         converted at the rate snapshotted when it was created, so the totals are comparable across the
         fiat currencies you trade in and do not move with today's FX. `total_orders` equals
         `pagination.total_count` of `GET /partner/orders` with no filter.
+
+        A delayed settlement (T+1) order counts as completed — in `completed_orders`, `volume_usd`
+        and `earned_usd` — only once its payment is recorded paid
+        (`delayed_settlement_fiat_paid_to_customer_at`), the rule the `completed` filter of
+        `GET /partner/orders` applies. Released but unpaid, returned, or refunded after the release,
+        it is not counted.
       operationId: getOrderStats
       security:
         - ApiKeyAuth: []
@@ -7321,6 +7334,24 @@ components:
             | Crypto-anchored offramp: the carved fee-exclusive gross falls outside the matched offer's min/max | `NO_OFFERS_AVAILABLE` | 409 |
           default: "0"
           example: "1"
+        recipient_payout:
+          type: boolean
+          default: false
+          description: >-
+            Off-ramp estimate only; the on-ramp estimate ignores it. `true` prices only on the
+            licensed partners a third-party (recipient) payout can be matched to, so the estimate
+            describes a payout to a recipient. It can only narrow the offers priced; the estimate
+            still reserves nothing.
+          example: true
+        exclude_delayed_settlement:
+          type: boolean
+          default: false
+          description: >-
+            Off-ramp estimate only; the on-ramp estimate ignores it. `true` leaves delayed settlement
+            (T+1) offers out of the price, so when no instant offer covers the amount the estimate
+            answers `409 NO_OFFERS_AVAILABLE`. It changes this estimate only, not what a quote or
+            an order matches.
+          example: false
 
     ExactPaymentMethodMatchingOffer:
       type: object
@@ -7435,6 +7466,23 @@ components:
             The payout window that would be promised, counted from the release. Rounded to the
             nearest whole hour and never below `1`. `null` on an instant estimate.
           example: 24
+        source_of_funds_required:
+          type: boolean
+          description: >-
+            Whether the order this price would open needs a source-of-funds review before its
+            release: `true` when the price is on a delayed settlement (T+1) offer and the order's
+            USD equivalent (the fiat amount at the current USD rate, falling back to the crypto
+            amount at the current USD rate) is at or above `source_of_funds_threshold_usd`, or
+            cannot be computed. Always present; `false` on an instant estimate and on every on-ramp
+            estimate. Indicative like the rest of the estimate: the order's own
+            `source_of_funds_required` decides.
+          example: false
+        source_of_funds_threshold_usd:
+          type: number
+          description: >-
+            The source-of-funds threshold in force, in USD. Present only when `delayed_settlement`
+            is `true`; absent on an instant estimate and on every on-ramp estimate.
+          example: 50000
 
     PartnerRecipientDestinationInput:
       type: object
@@ -7965,7 +8013,9 @@ components:
           example: 161
         completed_orders:
           type: integer
-          description: Orders whose crypto was released or is being released.
+          description: >-
+            Orders whose crypto was released or is being released. A delayed settlement (T+1) order
+            counts only once its payment is recorded paid.
           example: 54
         volume_usd:
           type: number
@@ -8304,9 +8354,12 @@ components:
           type: string
           description: |
             Why a delayed order ended without a payout. Omitted — not empty — when the order has not
-            ended that way, or when none of the five applies; an absence means no reason was recorded
+            ended that way, or when none of the six applies; an absence means no reason was recorded
             and never stands in for one of them.
 
+            - `refunded_after_release` — the crypto had been released to the licensed partner and
+              was sent back before it reached the payout provider. No payment was made; the order
+              reads `cancelled`
             - `dossier_rejected` — a reviewer refused the source-of-funds case
             - `consent_window_expired` — the consent was never signed and the window ran out
             - `not_released_in_time` — the consent **was** signed and the window still ran out,
@@ -8316,8 +8369,10 @@ components:
             - `cancelled_by_licensed_partner` — the licensed partner declined the order before the
               release was signed
 
-            Read in that order: a refusal outranks an expired window, which outranks a cancellation.
+            Read in that order: a refund after the release outranks a refusal, which outranks an
+            expired window, which outranks a cancellation.
           enum:
+            - refunded_after_release
             - dossier_rejected
             - consent_window_expired
             - not_released_in_time
