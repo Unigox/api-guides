@@ -223,6 +223,17 @@ that is easiest.
 Paying a Chinese company from your company (B2C) is not available on this rail
 yet.
 
+### Dollars to China, Hong Kong and Singapore: not yet
+
+The catalog can list three USD bank rails — `usd-wire-china`, `usd-wire-hong-kong` and
+`usd-wire-singapore` — and a recipient may hold a destination on one of them. Paying
+it is not available on this API yet: a quote or an initiate for a USD payout on any of
+the three answers `400 INVALID_REQUEST` with `provider_confirmation_pending` in the
+message, before any money moves.
+
+Read that as "not offered", not as a fault to retry. When USD payouts open to partners,
+it will be announced here and in the changelog.
+
 ### Paying a company: `beneficiary_type`
 
 A format may have a business sibling (`cnaps-bank` ↔ `cnaps-bank_business`) that
