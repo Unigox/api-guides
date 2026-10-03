@@ -56,10 +56,13 @@ An order is delayed when all four hold:
   which in practice means the amount is above the corridor's instant ceiling.
 - **You hold the crypto.** Orders your customers create in the embedded widget
   are never delayed, because there the wallet is theirs.
-- **Unigox has enabled delayed settlement for you.** It does so once your
-  integration signs the release ([Step 4](#step-4-sign-the-release)). Until then
-  your orders match instant offers only, whatever the estimate reports: a quote
-  for an amount no instant offer covers answers `409 NO_OFFERS_AVAILABLE`.
+- **Unigox has enabled delayed settlement for you.** Delayed settlement is
+  switched on for your account by Unigox on request: tell us once your
+  integration can sign the release ([Step 4](#step-4-sign-the-release)). It is a
+  configuration change on our side, not an automatic consequence of a signature.
+  Until then your orders match instant offers only, whatever the estimate
+  reports: a quote for an amount no instant offer covers answers
+  `409 NO_OFFERS_AVAILABLE`.
 - **The matched licensed partner offers T+1.**
 
 A [third-party payout](./third-party-payouts.md#when-a-payout-is-delayed) can be
@@ -118,7 +121,7 @@ The estimate also says whether the order would need a source of funds review
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `source_of_funds_required` | boolean | `true` when the price is on a T+1 offer and the order it would open reaches the threshold, valued the way Step 5 values an order, at current USD rates. Always present; `false` on an instant estimate. Indicative: the order's own field decides. |
-| `source_of_funds_threshold_usd` | number | The threshold in force. Present only when `delayed_settlement` is `true`. |
+| `source_of_funds_threshold_usd` | number | The threshold in force. Present only when `delayed_settlement` is `true`: the estimate carries the figure only when it priced a T+1 offer and omits it on an instant estimate, whereas the order carries it always, instant or delayed, so read it from the order when you need it for every order. |
 
 ## Step 2: create and fund the order
 

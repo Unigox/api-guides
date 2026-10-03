@@ -384,9 +384,11 @@ takes the payout whenever it can, and one that settles T+1 takes it only when
 none can. The quote has no parameter to ask for it or refuse it.
 
 Your payouts can be delayed only once Unigox has enabled delayed settlement for
-you, which it does once your integration signs the release
-([Step 4](./delayed-settlement.md#step-4-sign-the-release)). Until then they match
-instant offers only.
+you. Delayed settlement is switched on for your account by Unigox on request:
+tell us once your integration can sign the release
+([Step 4](./delayed-settlement.md#step-4-sign-the-release)). It is a
+configuration change on our side, not an automatic consequence of a signature.
+Until then they match instant offers only.
 
 You recognise it on the same fields as any delayed order:
 
