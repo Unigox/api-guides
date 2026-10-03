@@ -7457,7 +7457,9 @@ components:
             Whether pricing at this amount would currently open a **delayed settlement (T+1)**
             order. Always present. Indicative, like the numbers: the estimate reserves nothing and
             the quote matches again, so the class can change either way before the quote. Read the
-            class off the quote (`false` there is binding), and the order response is final.
+            class off the quote (`false` there is binding), and the order response is final. The
+            estimate does not check whether Unigox has enabled delayed settlement for you; until it
+            has, your quotes match instant offers only.
           example: false
         settlement_hours:
           type: integer
@@ -7927,7 +7929,9 @@ components:
 
             You cannot request it or decline it. A delayed offer is considered only when no instant
             offer covers the amount, and only on orders whose crypto you hold — never on a widget
-            order. See the Delayed settlement (T+1) reference.
+            order. It is also considered only once Unigox has enabled delayed settlement for you,
+            which it does once your integration signs the release; until then your orders match
+            instant offers only. See the Delayed settlement (T+1) reference.
 
             The class is kept with the quote. `false` here means the order can never be T+1,
             whatever happens to the offer in the meantime. `true` means it will be T+1 unless instant
@@ -8280,8 +8284,8 @@ components:
           type: integer
           nullable: true
           description: >-
-            The promised payout window, rounded to the nearest whole hour and never below `1`. `null`
-            on an instant order.
+            The promised payout window, counted from the release — not from the order. Rounded to
+            the nearest whole hour and never below `1`. `null` on an instant order.
           example: 24
         consent_deadline_at:
           type: string
@@ -9187,7 +9191,8 @@ components:
             settlement_hours:
               type: integer
               description: >-
-                The promised payout window, rounded to the nearest whole hour and never below `1`.
+                The promised payout window, counted from the release. Rounded to the nearest whole
+                hour and never below `1`.
               example: 24
             payout_deadline_at:
               type: string

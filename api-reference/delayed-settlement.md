@@ -3,8 +3,8 @@
 On an ordinary off-ramp order the crypto stays locked until your customer's bank
 payment has been confirmed. On a **delayed settlement** order the two sides swap
 places: once you sign a release, the crypto leaves the lock first, and the bank
-payment follows within a fixed window, usually 24 hours. Larger amounts on some
-corridors are only available this way.
+payment follows within a fixed window counted from the release, usually 24 hours.
+Larger amounts on some corridors are only available this way.
 
 This page tells you how to spot such an order, what you have to do differently,
 and how to follow the payment to the end.
@@ -37,7 +37,7 @@ full schemas.
 Three things, and only on orders that are delayed:
 
 1. **Show the window before the customer commits.** The quote tells you the order
-   will settle T+1 and how many hours the window is.
+   will settle T+1 and how many hours the window is, counted from the release.
 2. **Sign the release once the escrow is funded.** Two calls: fetch what to sign,
    post the signature. Without it nothing moves.
 3. **On large orders, collect the source of funds.** Above the threshold your
@@ -49,13 +49,17 @@ the status, a few timestamps and the webhooks tell you when the money arrived.
 
 ## When an order is delayed
 
-An order is delayed when all three hold:
+An order is delayed when all four hold:
 
 - **No instant offer covers the amount.** An instant offer that covers it always
   wins, whatever its rate. Delayed offers are considered only when none does,
   which in practice means the amount is above the corridor's instant ceiling.
 - **You hold the crypto.** Orders your customers create in the embedded widget
   are never delayed, because there the wallet is theirs.
+- **Unigox has enabled delayed settlement for you.** It does so once your
+  integration signs the release ([Step 4](#step-4-sign-the-release)). Until then
+  your orders match instant offers only, whatever the estimate reports: a quote
+  for an amount no instant offer covers answers `409 NO_OFFERS_AVAILABLE`.
 - **The matched licensed partner offers T+1.**
 
 A [third-party payout](./third-party-payouts.md#when-a-payout-is-delayed) can be
@@ -521,7 +525,7 @@ the one exception: it is absent, not empty, when it does not apply.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `delayed_settlement` | boolean | Whether this order settles T+1. `false`, not `null`, on an ordinary order. Fixed when the order is created. |
-| `settlement_hours` | integer \| null | The promised window in whole hours, never below `1`. `null` on an instant order. |
+| `settlement_hours` | integer \| null | The promised window in whole hours, counted from the release; never below `1`. `null` on an instant order. |
 | `consent_deadline_at` | string \| null | Funding time plus the signing window. After it the release is blocked and the order moves to a refund. Set while the crypto is in escrow, including after your signature while a source of funds review is open: the review must also finish by then. `null` once the crypto has left the escrow or the order has ended. |
 | `payout_deadline_at` | string \| null | Release time plus the promised window. `null` until the crypto has left the escrow. |
 | `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto reached the payout provider. **No refund of the crypto is possible after this.** |

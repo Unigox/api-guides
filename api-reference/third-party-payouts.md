@@ -377,11 +377,16 @@ path.
 
 A third-party payout can settle T+1: once you have signed its release, the
 crypto goes to the licensed partner before the recipient is paid, and the
-payment follows within a fixed window. The rule is the one in
-[When an order is delayed](./delayed-settlement.md#when-an-order-is-delayed),
+payment follows within a fixed window counted from the release. The rule is the
+one in [When an order is delayed](./delayed-settlement.md#when-an-order-is-delayed),
 among the licensed partners that can pay a recipient: one that settles instantly
 takes the payout whenever it can, and one that settles T+1 takes it only when
 none can. The quote has no parameter to ask for it or refuse it.
+
+Your payouts can be delayed only once Unigox has enabled delayed settlement for
+you, which it does once your integration signs the release
+([Step 4](./delayed-settlement.md#step-4-sign-the-release)). Until then they match
+instant offers only.
 
 You recognise it on the same fields as any delayed order:
 
@@ -394,7 +399,9 @@ You recognise it on the same fields as any delayed order:
 To see it before you quote, call `POST /api/v1/partner/offramp/estimate` with
 `"recipient_payout": true` and the destination's rail as `payment_network_slug`.
 Its `delayed_settlement`, `settlement_hours` and `source_of_funds_required` then
-describe the payout you would quote; like the price, they are indicative.
+describe the payout you would be quoted once delayed settlement is enabled for
+you; the estimate does not check whether it is. Like the price, they are
+indicative.
 
 From there the [delayed settlement guide](./delayed-settlement.md) applies
 unchanged. Once the escrow is funded, sign the release

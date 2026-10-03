@@ -14,6 +14,9 @@ Notable changes to the Unigox partner API, newest first.
   the release, large orders need the source of funds approved, and `completed` means the
   recipient was paid. See
   [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
+- Delayed settlement applies to a partner's orders only once Unigox has enabled it for that
+  partner; until then they match instant offers only. Ask us when your integration signs the
+  release.
 - `POST /api/v1/partner/offramp/estimate` takes two optional booleans: `recipient_payout` prices
   only on the licensed partners a recipient payout can be matched to, and
   `exclude_delayed_settlement` leaves T+1 offers out of the price. Both only narrow the estimate;
