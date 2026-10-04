@@ -448,6 +448,8 @@ paths:
 
         For `alipay-wallet`, `wechat-wallet` and `interac-e-transfer`, an omitted `institution_id` resolves to the rail's own institution (`alipay`, `wechat-pay`, `interac-e-transfers`), which goes through the same checks as if you had sent it. An Interac e-Transfer is addressed to the recipient's `email` or `phone`, not to a bank.
 
+        These omissions apply to a customer's own payment details. A **recipient destination** (`POST /api/v1/partner/recipients/{recipient_id}/destinations`) always needs `institution_id`, whatever `institution_required` says: send `alipay` or `wechat-pay` on the wallet rails.
+
         `imps-neft-india` returns `institution_required: false` and has **no** `institution_id` field: the IFSC code encodes both bank and branch and routes the payout on its own. Required fields are `bank_name`, `ifsc_code`, `account_number`, and `full_name`. Sending `institution_id` is accepted but ignored (it resolves to the generic `imps-or-neft-transfer` method); the receiving bank comes from `bank_name` + `ifsc_code`.
 
         **Multi-format rails:** some rails accept more than one field-set depending on the
@@ -459,7 +461,10 @@ paths:
         2. find the format whose `institution_types` contains that `institution_type`,
         3. submit that format's `fields`.
         Each format also carries `has_liquidity`, indicating whether a vendor/provider can
-        currently settle it in the corridor (omitted when undetermined).
+        currently settle it in the corridor. It is computed only when the query names both
+        `country` and `currency`, and omitted otherwise or when it could not be determined: an
+        absent `has_liquidity` means unknown, not `false`. The parameter is `country`;
+        `country_code` is not read, so a query that sends it is answered as if no country was given.
 
         **Individual vs business beneficiary:** a format may also carry `beneficiary_type`
         (`individual` | `business`). A business variant applies to the SAME institutions as its
@@ -594,11 +599,25 @@ paths:
                   links:
                     search_institutions: /api/v1/supported/institutions
         '400':
-          description: Bad request - missing required parameters or invalid values
+          description: >-
+            Bad request: `direction` is missing (`direction parameter is required (onramp or offramp)`)
+            or is not `onramp` or `offramp`, neither `country` nor `currency` is given, or one of them
+            has the wrong length. On this endpoint `error` is a plain string, not an object.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                required: [success, error]
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "direction parameter is required (onramp or offramp)"
+              example:
+                success: false
+                error: "direction parameter is required (onramp or offramp)"
         '500':
           description: Internal Server Error
           content:
@@ -2342,8 +2361,9 @@ paths:
               quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
               reference_id: "your-internal-order-id"
       responses:
-        '201':
-          description: On-ramp order created successfully
+        '200':
+          description: >-
+            On-ramp order created. Success answers `200`, not `201`.
           content:
             application/json:
               schema:
@@ -3222,6 +3242,32 @@ paths:
         Adds a payout route for this recipient. `rail` and `institution_id` are resolved to
         the platform payment-network and payment-method IDs. `details` is validated against
         the selected rail configuration. Relationship and purpose are supplied later on the quote.
+
+        `country_code`, `currency`, `rail`, `institution_id` and `details` are all required, on
+        every rail. Unlike a customer's own payment details, `institution_id` cannot be omitted on a
+        rail that reports `institution_required: false`: on `alipay-wallet` send `alipay`, on
+        `wechat-wallet` send `wechat-pay`. A request missing any of the five answers `400
+        INVALID_REQUEST` with the message `invalid recipient destination request body`, which does
+        not name the field.
+
+        **The recipient's kind picks the format.** On a rail with an individual and a business
+        format (`cnaps-bank` and `cnaps-bank_business`), a recipient registered with
+        `recipient_kind: business` is validated against the business format and one registered as
+        `individual` against the individual format. `details.beneficiary_type` does not choose: it
+        is overwritten with the recipient's kind and returned that way. A wallet rail has no
+        business format, so a business recipient cannot hold a wallet destination.
+
+        **Names on the wallet rails.** `alipay-wallet` and `wechat-wallet` take `first_name`,
+        `last_name`, `account_number` and `mobile_number`, as `/api/v1/supported/payment-rails`
+        advertises. A `full_name` is still accepted from older integrations and split at the first
+        space: the first word becomes `first_name`, the rest `last_name`. `"Li Wei"` is stored as
+        `first_name: "Li"`, `last_name: "Wei"`. Send the two halves yourself to control the order; a
+        one-word `full_name` is refused.
+
+        **Chinese mobile numbers.** On `cnaps`, `mobile_number` accepts the 11-digit number with or
+        without a `86` or `+86` prefix; spaces and dashes are removed and the number is stored with
+        the prefix you sent. On the wallet rails only the bare 11 digits pass (`13800138000`). Send
+        the bare 11 digits on every rail.
       operationId: createPartnerRecipientDestination
       security:
         - ApiKeyAuth: []
@@ -3250,10 +3296,15 @@ paths:
                         $ref: '#/components/schemas/PartnerRecipientDestination'
         '400':
           description: |
-            The destination was rejected. `error.message` is the validator's own diagnostic and
-            names the offending field — e.g. `unknown field 'company_name' is not allowed for this
-            payment network` when `details.beneficiary_type` was omitted for a company, or
-            `field 'mobile_number' does not match required pattern`.
+            The destination was rejected (`INVALID_REQUEST`). When a top-level field is missing or
+            the body is not JSON the message is `invalid recipient destination request body` and
+            names nothing; check `country_code`, `currency`, `rail`, `institution_id` and `details`.
+            Otherwise `error.message` is the validator's own diagnostic. It names the rail, the
+            institution and the format the details were measured against, then every problem at once
+            — e.g. `unknown fields for this format: company_name, company_name_native` when company
+            fields are sent for an `individual` recipient, `missing required fields: ...`, or
+            `field 'mobile_number' does not match the required pattern` — and `error.details.reason`
+            carries a machine slug such as `invalid_destination_details` or `unknown_institution`.
         '404':
           description: Recipient not found for this partner
         '503':
@@ -3486,12 +3537,32 @@ paths:
                       delayed_settlement: true
                       settlement_hours: 24
         '400':
-          description: Bad request — invalid parameters or missing required fields
+          description: >-
+            Bad request — invalid parameters or missing required fields (`INVALID_REQUEST`).
+
+
+            On a self-payout, a `rail` or `route` that does not match the payment details answers
+            `RAIL_ROUTE_MISMATCH`. A third-party payout never answers `RAIL_ROUTE_MISMATCH`: a `rail`
+            that is not the destination's own is a `422 THIRD_PARTY_CONTEXT_INVALID`.
+
+
+            On a third-party payout, `INVALID_REQUEST` also covers: a missing third-party field,
+            `payment_details_id` sent with `recipient_destination_id`, a `fiat_currency` no recipient
+            payout route serves (`third-party recipient payout is not available for {CURRENCY}`, checked
+            before the destination is read), a relationship or purpose the corridor cannot declare, and a
+            USD payout to China, Hong Kong or Singapore (`provider_confirmation_pending`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
               examples:
+                rail_route_mismatch:
+                  summary: Self-payout rail does not match the payment details
+                  value:
+                    success: false
+                    error:
+                      code: RAIL_ROUTE_MISMATCH
+                      message: "rail does not match payment details"
                 missing_currency:
                   summary: Missing required field
                   value:
@@ -3536,33 +3607,89 @@ paths:
                   code: INVALID_PAYMENT_DETAILS
                   message: "Payment details not found or do not belong to user"
         '409':
-          description: No offers available for the requested pair
+          description: >-
+            `NO_OFFERS_AVAILABLE` — no offer serves the requested pair and amount.
+
+
+            On a third-party payout also: `THIRD_PARTY_RAIL_NOT_SUPPORTED` — the currency is open to
+            recipient payouts, but not over the rail the destination settles on; and
+            `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` — recipient payouts are switched off on our side, or
+            their availability could not be determined. Both are opened on our side; do not retry in a
+            loop.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: NO_OFFERS_AVAILABLE
-                  message: "No offers available for USDT/NGN"
+              examples:
+                no_offers:
+                  summary: No offer serves the pair and amount
+                  value:
+                    success: false
+                    error:
+                      code: NO_OFFERS_AVAILABLE
+                      message: "No offers available for USDT/NGN"
+                rail_not_supported:
+                  summary: Recipient payouts are not open on the destination's rail
+                  value:
+                    success: false
+                    error:
+                      code: THIRD_PARTY_RAIL_NOT_SUPPORTED
+                      message: "third-party recipient payout is not available for CNY over wechat-wallet"
         '422':
           description: >-
-            The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
-            partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`, `PENDING_DOCUMENTS`,
-            `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a manual compliance
-            review (up to 24h); keep the customer waiting and re-check. The message stays generic.
+            `KYC_NOT_CLEARED` — the customer is not KYC-cleared. `error.details.kyc_status` carries the
+            customer's current partner-facing KYC status — one of `IN_PROGRESS`, `UNDER_REVIEW`,
+            `PENDING_DOCUMENTS`, `VERIFICATION_REJECTED`, or `NOT_INITIATED`. `UNDER_REVIEW` means a
+            manual compliance review (up to 24h); keep the customer waiting and re-check. The message
+            stays generic.
+
+
+            On a third-party payout also:
+
+
+            `THIRD_PARTY_CONTEXT_INVALID` — the sender, recipient or destination cannot be used for this
+            quote. The message says which: `sender_id` is not `user_uuid`; the sender, recipient or
+            destination is not found for your partner account or is archived; the recipient is not
+            cleared by screening; the destination route is incomplete; the `rail` you sent is not the
+            destination's rail (`rail does not match the recipient destination`); or the destination's
+            currency is not `fiat_currency` (`recipient destination does not support the payout
+            corridor`, or `fiat_currency does not match the recipient destination`).
+
+
+            `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` — the rail refuses that beneficiary: a Chinese
+            wallet pays the sender themselves (`self`) or a family member (`family`) only.
+
+
+            `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` — the rail refuses money sent from the country on
+            the customer's verified identity. The message names the country.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: KYC_NOT_CLEARED
-                  message: "Customer is not cleared for this transaction"
-                  details:
-                    kyc_status: "IN_PROGRESS"
+              examples:
+                kyc_not_cleared:
+                  summary: Customer not KYC-cleared
+                  value:
+                    success: false
+                    error:
+                      code: KYC_NOT_CLEARED
+                      message: "Customer is not cleared for this transaction"
+                      details:
+                        kyc_status: "IN_PROGRESS"
+                rail_mismatch:
+                  summary: The rail sent is not the destination's rail
+                  value:
+                    success: false
+                    error:
+                      code: THIRD_PARTY_CONTEXT_INVALID
+                      message: "rail does not match the recipient destination"
+                currency_mismatch:
+                  summary: The destination's currency is not fiat_currency
+                  value:
+                    success: false
+                    error:
+                      code: THIRD_PARTY_CONTEXT_INVALID
+                      message: "recipient destination does not support the payout corridor"
         '500':
           description: Internal server error
           content:
@@ -3613,8 +3740,9 @@ paths:
             example:
               quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
       responses:
-        '201':
-          description: Off-ramp order created successfully
+        '200':
+          description: >-
+            Off-ramp order created. Success answers `200`, not `201`.
           content:
             application/json:
               schema:
@@ -3723,8 +3851,17 @@ paths:
             review (up to 24h); keep the customer waiting and re-check. The message stays generic.
 
             `THIRD_PARTY_CONTEXT_INVALID` — the frozen third-party recipient context is no longer
-            usable (archived recipient, screening no longer `cleared`, or a destination that stopped
-            resolving).
+            usable (archived recipient, screening no longer `cleared`, recipient details changed since
+            the quote, or a destination that stopped resolving). Request a new quote.
+
+
+            `THIRD_PARTY_PAYOUT_UNDER_REVIEW` — compliance put this payout in review. Do not retry the
+            same payout; wait for the outcome.
+
+
+            `THIRD_PARTY_PAYOUT_DECLINED` — compliance refused the payout: a breached sender limit, a
+            hold, or another initiation for the same sender still in flight. An identical retry fails
+            identically.
 
             `SENDER_IDENTITY_REQUIRED` — the corridor settles consumer-to-consumer (Chinese mobile
             wallets: the remitter shown on the receiving wallet has to be the paying customer, not
@@ -4698,7 +4835,8 @@ paths:
         **Security note:** your private key is never sent to the API. Sign the typed data locally and
         submit both `signature` and `signed_data`.
 
-        After a timeout or 502, read the order before retrying. A stored consent must not be signed
+        After a timeout or 502, read the order before retrying: if it still offers
+        `settlement-consent`, retry the same signature. A stored consent must not be signed
         again to retry release. A 409 can mean a changed state, hold, expired window or stored consent;
         it is not by itself proof of success.
 
@@ -4825,9 +4963,11 @@ paths:
         '502':
           description: >-
             The escrow service could not be reached or failed. A signature it refused is a `400`, not
-            this. Read the order before retrying the same signature. Fetch fresh parameters only if a
-            signature is still needed. A 409 can mean stored consent, changed state,
-            a hold or an expired deadline; it does not by itself confirm success.
+            this. Read the order first. If `allowed_actions` no longer contains `settlement-consent`,
+            do not sign again. If it still does, retry the same signature; fetch fresh parameters and
+            sign again only if that retry answers `400` because `signed_data` is no longer this order's
+            release transaction. A 409 can mean stored consent, changed state, a hold or an expired
+            deadline; it does not by itself confirm success.
           content:
             application/json:
               schema:
@@ -5473,13 +5613,60 @@ paths:
             type: string
             format: uuid
           example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      requestBody:
+        required: false
+        description: >-
+          Optional. Send no body, or a JSON object. A body that is present must be valid JSON,
+          otherwise the call answers `400`.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: >-
+                    Free-text reason. On an order a liquidity provider has already accepted, the
+                    reason is kept with the cancellation for Unigox support, and `cancelled by partner`
+                    is recorded when it is omitted or empty. On an order still waiting for a liquidity
+                    provider to accept it, the reason is not recorded. It is never returned on the order.
+            example:
+              reason: "customer changed their mind"
       responses:
         '200':
-          description: Order cancelled successfully
+          description: Order cancelled successfully. Returns the order as it reads after the cancellation.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerOrderResponse'
         '400':
-          description: Bad Request — malformed `order_id`, or a request body that is not JSON
+          description: >-
+            `INVALID_REQUEST` — malformed `order_id`, or a request body that is present but not JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "invalid request body"
         '401':
-          description: Unauthorized
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAUTHORIZED
+                  message: "invalid API key"
         '404':
           description: Order not found
         '409':
@@ -5496,6 +5683,19 @@ paths:
                 error:
                   code: OPERATION_NOT_ALLOWED
                   message: "order cannot be cancelled in current status: crypto_received"
+        '500':
+          description: >-
+            `INTERNAL_ERROR` — the cancellation could not be completed. Read the order before
+            retrying: its `status` and `allowed_actions` say whether it was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "internal error"
 
   /api/v1/partner/orders:
     get:
@@ -6545,7 +6745,8 @@ components:
           type: boolean
           description: >
             Whether a vendor/provider can currently settle this format in the corridor.
-            Omitted when liquidity could not be determined (treat as unknown, not "no").
+            Computed only when the query names both `country` and `currency`; omitted otherwise, and
+            when liquidity could not be determined (treat as unknown, not "no").
             This reflects configured liquidity; live availability is confirmed at quote time.
           example: true
         beneficiary_type:
@@ -6557,6 +6758,8 @@ components:
             a company's details. To use it, submit this format's `fields` AND set
             `"beneficiary_type": "business"` inside the create-payment-details `details` object.
             Omitting `"beneficiary_type"` in the request details defaults to the individual variant.
+            A recipient destination is different: there the recipient's `recipient_kind` selects the
+            format and any `beneficiary_type` you send is replaced by it.
           example: business
         fields:
           type: array
@@ -7519,11 +7722,19 @@ components:
           example: cnaps
         institution_id:
           type: string
-          description: Institution identifier returned by the supported-institutions endpoint.
+          description: >-
+            Institution identifier returned by the supported-institutions endpoint. Required on every
+            rail, including the wallet rails that report `institution_required: false`: send `alipay`
+            on `alipay-wallet` and `wechat-pay` on `wechat-wallet`.
+          example: china-construction-bank
         details:
           type: object
           additionalProperties: true
-          description: Rail-specific fields validated using the selected payment network configuration.
+          description: >-
+            Rail-specific fields validated using the selected payment network configuration: the
+            `fields` of the format `/api/v1/supported/payment-rails` advertises for this institution's
+            type. On a rail with a business format, the recipient's `recipient_kind` selects the
+            individual or business format; `beneficiary_type` sent here is replaced by it.
 
     PartnerCreateRecipientRequest:
       type: object
@@ -8607,6 +8818,11 @@ components:
             Consecutive entries are collapsed by status; on a delayed order they are collapsed by status
             **and** description, so the three intermediate facts that all carry
             `settlement_in_progress` each keep their own line.
+
+            Once a payment has come back and been sent again, every attempt stays on the timeline and
+            the approval, sending, paid and return entries end in `(attempt N)`, for example
+            `Fiat payout authorized (attempt 2)` or `Fiat paid to the customer (attempt 2)`. With a
+            single attempt there is no suffix.
           example: "Order created"
 
     PartnerSourceOfFundsCategory:
@@ -9188,7 +9404,10 @@ components:
               example: "p2p"
             payment_details_id:
               type: string
-              description: Payment details ID used for the order
+              description: >-
+                Payment details ID used for the order, as a string. An empty string (`""`) when the
+                order has none: on a third-party payout, which is routed by `recipient_destination_id`,
+                it is always `""`.
               example: "987"
             delayed_settlement:
               type: boolean
@@ -9198,7 +9417,9 @@ components:
 
                 Every T+1 field here is omitted until it has a value. `delayed_settlement` and
                 `settlement_hours` are on every `order.status.changed` event of a delayed order,
-                including the ones before the release; `payout_deadline_at` from the release onwards;
+                including the ones before the release; `payout_deadline_at` from the release onwards
+                (the release sends two `settlement_in_progress` events: one when it starts, without
+                `payout_deadline_at`, and one when it is confirmed, with it);
                 and each `delayed_settlement_*_at` timestamp while currently set. A bank return clears
                 authorization, submission and paid timestamps, so later events can omit earlier fields.
                 An absent key means not currently set (never recorded or cleared); nulls are omitted.
@@ -9430,7 +9651,7 @@ components:
                 - `NO_OFFERS_AVAILABLE` — no vendor offers for the requested pair
                 - `INVALID_REQUEST` — malformed request or missing fields
                 - `INVALID_PAYMENT_DETAILS` — payment details not found or invalid
-                - `RAIL_ROUTE_MISMATCH` — rail or route does not match payment details
+                - `RAIL_ROUTE_MISMATCH` — rail or route does not match payment details (self-payout only; on a third-party payout a mismatched `rail` is `THIRD_PARTY_CONTEXT_INVALID`)
                 - `UNAUTHORIZED` — authentication failed
                 - `INTERNAL_ERROR` — unexpected server error
                 - `INVALID_STATUS` — order is not in the correct status for the requested action
@@ -9439,6 +9660,15 @@ components:
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
+                - `RECIPIENT_NOT_FOUND` — (404) the recipient endpoints: no recipient with that id belongs to your partner account, or it was archived
+                - `RECIPIENT_SERVICE_UNAVAILABLE` — (503) the recipient endpoints: the recipient directory could not be reached; retry with backoff
+                - `THIRD_PARTY_CONTEXT_INVALID` — (422) the sender, recipient or destination of a third-party payout cannot be used, including a `rail` that is not the destination's and a destination currency that is not `fiat_currency`; the message says which
+                - `THIRD_PARTY_RAIL_NOT_SUPPORTED` — (409) the currency is open to recipient payouts, but not over the rail the destination settles on
+                - `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` — (409) recipient payouts are switched off on our side; no order is created and the quote stays valid
+                - `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` — (422) the rail refuses that beneficiary (a Chinese wallet pays `self` or `family` only)
+                - `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` — (422) the rail refuses money sent from the country on the customer's verified identity
+                - `THIRD_PARTY_PAYOUT_UNDER_REVIEW` — (422, initiate) compliance put the payout in review
+                - `THIRD_PARTY_PAYOUT_DECLINED` — (422, initiate) compliance refused the payout
 
                 Fiat account endpoints (`/partner/fiat-accounts/config` and the `/partner/users/{user_uuid}`
                 `identity`, `identification` and `fiat-accounts` routes) answer with their own codes, each

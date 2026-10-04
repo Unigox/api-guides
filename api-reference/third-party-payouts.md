@@ -78,6 +78,11 @@ Content-Type: application/json
 The recipient belongs to the authenticated partner, not to one sender. Store
 the returned `recipient.id`.
 
+`recipient_kind` is `individual` (the default) or `business`, and it decides
+which of a rail's formats every destination of this recipient is validated
+against (see [Paying a company](#paying-a-company-the-recipients-kind)). Choose
+it for the party you will pay: it cannot be changed later.
+
 ## 2. Add a payout destination
 
 ```http
@@ -103,11 +108,25 @@ Content-Type: application/json
 }
 ```
 
+All five top-level fields are required on every rail: `country_code`,
+`currency`, `rail`, `institution_id` and `details`. A request missing one, or a
+body that is not JSON, answers `400 INVALID_REQUEST` with the message `invalid
+recipient destination request body`, which does not say which field is missing.
+
 `rail` and `institution_id` are partner-facing slugs — take `rail` from
 [`/api/v1/supported/payment-rails`](./README.md) and `institution_id` from
 `/api/v1/supported/institutions`. Unigox resolves them to the platform's
 payment network and payment method IDs and stores those, so the route is a real
 reference rather than a string.
+
+Query the rails with all three parameters:
+
+```http
+GET /api/v1/supported/payment-rails?country=CN&currency=CNY&direction=offramp
+```
+
+`direction` is required (`offramp` for a payout); without it the call answers
+`400`. The country parameter is `country`, not `country_code`.
 
 `/api/v1/supported/institutions` is **paginated**: `limit` defaults to `20` and
 caps at `100` (a larger value is a `400`, not a silent clamp), and `offset`
@@ -135,9 +154,12 @@ the institution you chose:
 2. find the rail format whose `institution_types` contains that type;
 3. send that format's `fields`.
 
-Formats also carry `has_liquidity`. A format with `has_liquidity: false` cannot
-currently be settled in that corridor — do not build against it. Check the
-endpoint rather than any table in this guide.
+Formats also carry `has_liquidity` when the query names both `country` and
+`currency`. A format with `has_liquidity: false` cannot currently be settled in
+that corridor — do not build against it. The flag is omitted when the query
+leaves out the country or the currency, or when liquidity could not be
+determined: an absent flag means unknown, not `false`. Check the endpoint rather
+than any table in this guide.
 
 ### The Chinese wallets are their own rails
 
@@ -146,20 +168,36 @@ bank formats only; each wallet is a rail of its own:
 
 | `rail` | Wallet | `institution_id` |
 | --- | --- | --- |
-| `alipay-wallet` | Alipay | not required |
-| `wechat-wallet` | WeChat Pay | not required |
+| `alipay-wallet` | Alipay | `alipay` |
+| `wechat-wallet` | WeChat Pay | `wechat-pay` |
 
 A wallet rail carries exactly one institution, and its format asks for no bank
 field, so `/api/v1/supported/payment-rails` reports `institution_required:
-false` and you may omit `institution_id` entirely. Sending the rail's own
-institution (`alipay`, `wechat-pay`) is accepted and means the same thing.
+false`. A recipient destination still needs `institution_id`: send the rail's
+own institution from the table. Leaving it out answers `400 INVALID_REQUEST`
+(`invalid recipient destination request body`).
 
-Both wallet rails take the same three fields — the wallet is identified by the
+Both wallet rails take the same four fields — the wallet is identified by the
 rail, so there is no Chinese name and no national ID:
 
 | Required `details` |
 | --- |
-| `full_name`, `account_number` (the wallet id, i.e. the same 11-digit Chinese mobile), `mobile_number` |
+| `first_name`, `last_name`, `account_number` (the wallet id, i.e. the same 11-digit Chinese mobile), `mobile_number` |
+
+`first_name` and `last_name` are the beneficiary's name, up to 50 characters
+each; the rail labels them as the English name. A `full_name` is still
+accepted from integrations written before the pair existed: it is split at the
+first space, the first word becoming `first_name` and the rest `last_name`, so
+`"Li Wei"` is stored as `first_name: "Li"`, `last_name: "Wei"`. A one-word
+`full_name` is refused. Send the two halves yourself so the name is stored the
+way round you mean it.
+
+`mobile_number` on a wallet rail is the bare 11 digits (`13800138000`): a prefix,
+spaces or dashes are refused.
+
+A wallet rail has no business format, so only an `individual` recipient can hold
+a wallet destination. For a `business` recipient the destination is refused with
+`400 INVALID_REQUEST` (`this rail has no business variant for this method`).
 
 ### Who may be paid on a Chinese wallet
 
@@ -237,35 +275,42 @@ message, before any money moves.
 Read that as "not offered", not as a fault to retry. When USD payouts open to partners,
 it will be announced here and in the changelog.
 
-### Paying a company: `beneficiary_type`
+### Paying a company: the recipient's kind
 
 A format may have a business sibling (`cnaps-bank` ↔ `cnaps-bank_business`) that
 applies to the **same** institutions but collects a company's details instead of
-a person's. The sibling is not selected by the institution — it is selected by a
-reserved routing key inside `details`:
+a person's. The sibling is not selected by the institution, and not by anything
+in the destination request: it is selected by the `recipient_kind` the recipient
+was registered with. A `business` recipient's destinations are validated against
+the business format, an `individual` recipient's against the individual format.
 
-```json
-"beneficiary_type": "business"
-```
-
-Omit it, or send `"individual"`, and the individual format is used.
-
-Send it whenever you send company fields. Without it, `company_name` is
-validated against the individual format and rejected with `unknown field
-'company_name' is not allowed for this payment network`.
+`details.beneficiary_type` does not choose the format on a destination. Whatever
+you send, it is replaced by the recipient's kind and returned that way, so the
+`"beneficiary_type": "business"` in the example above is optional. Company
+fields sent for an `individual` recipient are refused as unknown fields
+(`unknown fields for this format: company_name, company_name_native`); register
+the company as a `business` recipient instead.
 
 For `rail: "cnaps"`, institutions of type `traditional-banks`:
 
-| Paying | `beneficiary_type` | Required `details` |
+| Paying | `recipient_kind` | Required `details` |
 | --- | --- | --- |
 | a company | `business` | `bank_name`, `account_number`, `company_name`, `company_name_native`, `mobile_number` |
-| a person | `individual` (or omit) | `bank_name`, `account_number`, `id_number`, `first_name`, `last_name`, `native_first_name`, `native_last_name`, `mobile_number` |
+| a person | `individual` | `bank_name`, `account_number`, `first_name`, `last_name`, `native_first_name`, `native_last_name`, `mobile_number`; `id_number` is optional |
 
-`mobile_number` must be an 11-digit Chinese mobile number (`13800138000`) —
-an international prefix such as `+8613800138000` is rejected.
+`mobile_number` is an 11-digit Chinese mobile number. Send the bare 11 digits
+(`13800138000`). On `cnaps` a `86` or `+86` prefix also passes, spaces and dashes
+are removed, and the number is stored with the prefix you sent; the wallet rails
+accept the bare 11 digits only.
 
-A missing or malformed field returns `400` with `code: "INVALID_REQUEST"`, and
-the message names the offending field. Store the returned `data.id`.
+A field the rail rejects returns `400` with `code: "INVALID_REQUEST"`. The
+message names the rail, the institution and the format the details were measured
+against, then every problem at once: unknown fields, missing required fields, and
+fields that do not match their pattern. `error.details.reason` carries a machine
+slug, such as `invalid_destination_details` or `unknown_institution`. A missing
+top-level field is the exception: see
+[2. Add a payout destination](#2-add-a-payout-destination). Store the returned
+`data.id`.
 
 ### What reads return
 
@@ -343,7 +388,17 @@ can be matched to.
 
 `user_uuid` and `sender_id` must identify the same real, KYC-verified sender.
 The destination currency must exactly equal `fiat_currency`; this flow does not
-support cross-currency recipients. A CNY destination receives CNY.
+support cross-currency recipients. A CNY destination receives CNY. A quote whose
+`fiat_currency` is not the destination's currency is refused with `422
+THIRD_PARTY_CONTEXT_INVALID` (`recipient destination does not support the payout
+corridor`); if `fiat_currency` is not open to recipient payouts at all, the
+`400 INVALID_REQUEST` for that currency comes first.
+
+`rail` is optional on a third-party quote: the route comes from the destination.
+If you send it, it must be the destination's rail; any other value is refused
+with `422 THIRD_PARTY_CONTEXT_INVALID` (`rail does not match the recipient
+destination`). `RAIL_ROUTE_MISMATCH` belongs to self-payouts with
+`payment_details_id` and is never returned here.
 
 At quote time Unigox verifies tenant ownership, lifecycle, screening, route,
 currency, sender eligibility, relationship, and purpose. Trades stores an
@@ -355,7 +410,8 @@ Initiate the returned quote through the standard off-ramp initiate endpoint.
 Unigox revalidates the frozen quote, applies sender-level controls, and sends
 reviewable payouts to the shared Compliance queue before execution.
 
-The response includes:
+A created order answers `200` (not `201`) with the order in `data`, starting at
+`awaiting_liquidity_provider`. The response includes:
 
 - `recipient_context`: partner-visible sender, recipient, destination,
   relationship, purpose, and the screening status the payout was authorized
@@ -420,6 +476,11 @@ any other order. Between the release and that moment the order reads
 `settlement_in_progress`, or `returned` while a payment that came back waits for
 a new attempt.
 
+The webhooks are the ones in
+[the delayed settlement guide](./delayed-settlement.md#webhooks), with one
+difference: a third-party payout has no payment details of your customer's, so
+`data.payment_details_id` is an empty string (`""`) on every event.
+
 If a delayed payout ends without a payment, `settlement_refund_reason` says why,
 with one of the six values in
 [Why an order ended without a payment](./delayed-settlement.md#why-an-order-ended-without-a-payment).
@@ -435,18 +496,17 @@ order — the request is rejected, and you act on the error:
 | --- | --- | ---: | --- |
 | `KYC_NOT_CLEARED` | 422 | The sender's KYC is not cleared for this partner. | Complete the sender's KYC; do not substitute another user. |
 | `SENDER_IDENTITY_REQUIRED` | 422 | The corridor settles consumer-to-consumer and the sender's record cannot name them on the wire. `details.kyc_fields` is what you can supply. | `PATCH /api/v1/partner/users/{user_uuid}/kyc` with those fields, then retry. See below. |
-| `THIRD_PARTY_CONTEXT_INVALID` | 422 | The recipient/destination is not usable: not found for this partner, archived, screening not `cleared`, incomplete route, or `sender_id` ≠ `user_uuid`. | Read the message; re-check the recipient, or wait for screening. |
-| `INVALID_REQUEST` | 400 | The payload is wrong — a `details` field the rail does not accept, a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a destination currency that is not `fiat_currency`, a `purpose_of_payment` the corridor cannot declare, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). The message names what to fix. | Fix the request. |
-| `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
-| `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | The recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
+| `THIRD_PARTY_CONTEXT_INVALID` | 422 | The sender, recipient or destination cannot be used for this quote: not found for this partner, archived, screening not `cleared`, incomplete route, `sender_id` ≠ `user_uuid`, a `rail` that is not the destination's (`rail does not match the recipient destination`), or a destination currency that is not `fiat_currency` (`recipient destination does not support the payout corridor`). On initiate: the recipient changed or stopped being cleared since the quote. | Read the message. Fix the `rail` or `fiat_currency`, re-check the recipient, or wait for screening; after a change since the quote, request a new quote. |
+| `INVALID_REQUEST` | 400 | The payload is wrong — a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a relationship or `purpose_of_payment` the corridor cannot declare, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). On the destination endpoint: a `details` field the rail does not accept. The message names what to fix. | Fix the request. |
+| `RECIPIENT_NOT_FOUND` | 404 | Returned by the recipient endpoints: no recipient with that id belongs to your partner account, or it was archived. A quote naming such a recipient answers `THIRD_PARTY_CONTEXT_INVALID` instead. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
+| `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | Returned by the recipient endpoints: the recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
 | `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on. A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. | Use a destination on a rail that is open, or ask us to open this one. A retry does not change it. |
 | `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
 | `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` | 422 | The rail refuses money sent from the country on your customer's verified identity. Alipay bars a list of sending countries whoever the beneficiary is. The message names the country. | Pay this beneficiary over a bank format (`cnaps`). No change to the sender's record opens the wallet rail, and a retry fails identically. |
 | `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later or use a different amount. |
 | `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
-| `RAIL_ROUTE_MISMATCH` | 400 | The rail you asked for does not match the route the destination resolves to. | Send the `rail` the destination was created with, or omit it. |
 | `THIRD_PARTY_PAYOUT_UNDER_REVIEW` | 422 | Returned on initiate. Compliance put this payout in review — someone looks at it on our side. | Do not retry the same payout; wait for the outcome. |
-| `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it outright, with nothing pending: a breached sender limit, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |
+| `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it outright, with nothing pending: a breached sender limit, a hold, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |
 
 `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` is a deliberate stop, not a fault: the
 relationship and purpose carried per payment on this corridor are only mapped

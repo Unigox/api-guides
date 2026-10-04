@@ -28,6 +28,27 @@ Notable changes to the Unigox partner API, newest first.
 - `GET /api/v1/partner/stats` counts a T+1 order as completed, in `completed_orders`,
   `volume_usd` and `earned_usd`, only once its payment is recorded paid: the rule the `completed`
   filter of `GET /api/v1/partner/orders` already applies.
+- Corrected in the specification: `POST /api/v1/partner/orders/{order_id}/cancel` takes an
+  optional body with a free-text `reason`, kept with the cancellation once a liquidity provider
+  has accepted the order, and returns the order on success. After a timeout or a `502` on
+  `settlement-consent`, read the order: if `allowed_actions` no longer lists `settlement-consent`,
+  do not sign again; otherwise retry the same signature, and fetch fresh parameters only if that
+  retry answers `400`. The guide previously gave both instructions.
+- Corrected in the guides and the specification, to match the API: `POST
+  /api/v1/partner/offramp/initiate` and `POST /api/v1/partner/onramp/initiate` answer `200` on
+  success, not `201`. On a third-party quote, a `rail` that is not the destination's and a
+  `fiat_currency` that is not the destination's currency answer `422 THIRD_PARTY_CONTEXT_INVALID`;
+  `RAIL_ROUTE_MISMATCH` is a self-payout code only. A recipient destination needs
+  `institution_id` on every rail, `alipay` or `wechat-pay` on the wallet rails. The wallet rails
+  take `first_name` and `last_name`, with `full_name` still accepted and split at the first space.
+  The recipient's `recipient_kind`, not `details.beneficiary_type`, selects the individual or
+  business format, so a business recipient cannot hold a wallet destination. On `cnaps`,
+  `mobile_number` accepts a `86` or `+86` prefix and `id_number` is optional.
+  `/api/v1/supported/payment-rails` requires `direction`, and returns `has_liquidity` only when
+  the query names both `country` and `currency`. The release of a T+1 order sends two
+  `settlement_in_progress` events, one when it starts and one, carrying `payout_deadline_at`,
+  when it is confirmed. `payment_details_id` is `""` on third-party payout events. Once a payment
+  has been sent more than once, the paid timeline entry ends in `(attempt N)` too.
 
 ## 2026-09-25
 

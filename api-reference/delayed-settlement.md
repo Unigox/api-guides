@@ -243,13 +243,34 @@ because retrying the same signature cannot succeed. Never send a private key.
 }
 ```
 
+On an order that still needs its source of funds review, the same call answers:
+
+```json
+{
+  "success": true,
+  "data": {
+    "order_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    "status": "crypto_received",
+    "next_action": "submit_source_of_funds",
+    "consent_signed": true,
+    "release_started": false
+  }
+}
+```
+
 A `200` means the signature is stored. It does not mean the crypto has moved or
 that anyone has been paid. `release_started: true` means the release has started
 or is already confirmed; `status` then reads `settlement_in_progress`. `false`
 means the release did not start on this call: the order still needs a source of
-funds review (`next_action: "submit_source_of_funds"`), the release is held, or a
-cancellation or refund went through first. Read the returned `status` and refresh
-the order. `payout_deadline_at` appears only once the release is confirmed.
+funds review, the release is held, or a cancellation or refund went through
+first. Read the returned `status` and refresh the order. `payout_deadline_at`
+appears only once the release is confirmed.
+
+`next_action` says what is still owed: `submit_source_of_funds` while the
+customer's declaration or documents are incomplete, `await_review` while the
+order waits for Unigox's review or release. It is omitted once the release has
+started or the order has moved to another state. It never asks for another
+signature: this response already confirms the consent is stored.
 
 Unigox adds its own signature and releases the crypto automatically as soon as
 your consent and any required approval are both in, whichever comes second. If
@@ -624,15 +645,27 @@ release, a cancelled delayed order shows one `cancelled` entry, like an ordinary
 order.
 
 When a payment came back and was sent again, every attempt stays on the
-timeline, and the approval, sending and return entries end in `(attempt N)`,
-for example `Fiat payout authorized (attempt 2)`. The order's timestamps hold
-only the current attempt; the timeline holds all of them.
+timeline, and the approval, sending, paid and return entries end in
+`(attempt N)`, for example `Fiat payout authorized (attempt 2)` or
+`Fiat paid to the customer (attempt 2)`. The first attempt's entries are
+renumbered `(attempt 1)` once a second one exists; an order paid on its first
+attempt has no suffix. The order's timestamps hold only the current attempt;
+the timeline holds all of them.
 
 ## Webhooks
 
 `order.status.changed` fires at every step after the release, on top of the
-ordinary events a delayed order sends before it (`awaiting_crypto_transfer_authorization`,
-`crypto_received`, and `settlement_in_progress` for the release itself).
+ordinary events a delayed order sends before it (`awaiting_crypto_transfer_authorization`
+and `crypto_received`).
+
+The release itself sends two events, each with its own `event_id`:
+
+| Fires when | `data.status` | `payout_deadline_at` |
+| --- | --- | --- |
+| The release started | `settlement_in_progress` | absent |
+| The release is confirmed | `settlement_in_progress` | present |
+
+Then one event per step:
 
 | Fires when | `data.status` |
 | --- | --- |
@@ -662,7 +695,8 @@ T+1 fields on `data` are omitted until they have a value; none is ever sent as
 
 - `delayed_settlement` and `settlement_hours` are on every event of a delayed
   order, including the ones before the release.
-- `payout_deadline_at` appears from the release onwards.
+- `payout_deadline_at` appears from the event that confirms the release
+  onwards; the event for the release starting does not carry it.
 - Each `delayed_settlement_*_at` timestamp appears while it is set. A return
   clears the approval, submission and paid timestamps, so a later event can omit
   fields an earlier one carried. Do not merge events into a map that only grows;
@@ -696,6 +730,10 @@ T+1 fields on `data` are omitted until they have a value; none is ever sent as
 }
 ```
 
+`payment_details_id` is the order's payment details, as a string. On a
+[third-party payout](./third-party-payouts.md), which has none, it is an empty
+string (`""`).
+
 On an ordinary order these fields are omitted; `delayed_settlement` is `true` or
 absent, never `false`. A return can happen more than once; each is its own event
 with its own `event_id`. No subscription change is needed.
@@ -714,13 +752,16 @@ Every endpoint on this page answers in the standard partner envelope.
 | `INVALID_REQUEST` | 413 | The file is larger than 15 MiB (15,728,640 bytes). |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes do not match its content type, or a `bank_statement` is not a bank-issued PDF. `error.details.allowed` lists what is accepted. |
 | `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes. |
-| `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order, then retry the same signature. |
+| `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order; if it still offers `settlement-consent`, retry the same signature. |
 | `INTERNAL_ERROR` | 500 / 502 / 503 | `502` when document storage failed; `503` when the source of funds service or document storage is unavailable; `500` for any other server failure. Read the case before retrying an upload: an error does not prove nothing was stored. |
 
 413, 415 and 422 share `INVALID_REQUEST`; branch on the HTTP status.
 
-After a timeout or a `502` on the consent call, read the order first. If it still
-asks for a signature, fetch fresh parameters and sign again. A `409` can mean the
+After a timeout or a `502` on the consent call, read the order first. If
+`allowed_actions` no longer contains `settlement-consent`, do not sign again. If
+it still does, retry the same signature. Fetch fresh parameters and sign again
+only if that retry answers `400` because `signed_data` is no longer this order's
+release transaction. A `409` can mean the
 signature was saved, the state changed, the order is on hold, or the deadline
 passed: read the error and the order rather than treating every `409` as
 success. After an uncertain upload, read the document list before sending the
