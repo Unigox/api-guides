@@ -6,6 +6,9 @@ Notable changes to the Unigox partner API, newest first.
 
 **Third-party payouts can settle T+1.** No endpoint or field was removed.
 
+- A quote that names a recipient that is not yours, or was archived, answers `404 RECIPIENT_NOT_FOUND`
+  (it used to answer `422 THIRD_PARTY_CONTEXT_INVALID`). A sender or destination that cannot be used still answers
+  `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which.
 - A third-party payout can now be a delayed settlement (T+1) order. Among the licensed partners
   that can pay a recipient, one that settles instantly takes the payout whenever it can, and one
   that settles T+1 takes it only when none can. The quote and the order say so with

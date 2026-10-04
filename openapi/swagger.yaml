@@ -9660,7 +9660,7 @@ components:
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
-                - `RECIPIENT_NOT_FOUND` — (404) the recipient endpoints: no recipient with that id belongs to your partner account, or it was archived
+                - `RECIPIENT_NOT_FOUND` — (404) the recipient endpoints and a quote naming such a recipient: no recipient with that id belongs to your partner account, or it was archived
                 - `RECIPIENT_SERVICE_UNAVAILABLE` — (503) the recipient endpoints: the recipient directory could not be reached; retry with backoff
                 - `THIRD_PARTY_CONTEXT_INVALID` — (422) the sender, recipient or destination of a third-party payout cannot be used, including a `rail` that is not the destination's and a destination currency that is not `fiat_currency`; the message says which
                 - `THIRD_PARTY_RAIL_NOT_SUPPORTED` — (409) the currency is open to recipient payouts, but not over the rail the destination settles on
