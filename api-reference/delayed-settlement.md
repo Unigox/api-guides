@@ -113,6 +113,10 @@ prices, and neither changes what a quote or an order matches:
 | Request field | Effect |
 | --- | --- |
 | `recipient_payout` | `true` prices only on the licensed partners a [third-party payout](./third-party-payouts.md) can be matched to. Send it when you price a payout to a recipient. |
+
+To price a payout to one of your recipients at the rate its quote will give, send `recipient_id` and
+`recipient_destination_id` with your API key instead: the estimate then prices on that destination's own bank, as
+the quote does. See [third-party payouts](./third-party-payouts.md#3-request-a-quote).
 | `exclude_delayed_settlement` | `true` leaves T+1 offers out of the price. When no instant offer covers the amount, the estimate answers `409 NO_OFFERS_AVAILABLE`. |
 
 The estimate also says whether the order would need a source of funds review

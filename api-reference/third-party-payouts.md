@@ -386,6 +386,29 @@ discovering the ceiling from a failed quote. Send `"recipient_payout": true` to
 the estimate: it then prices only on the licensed partners a recipient payout
 can be matched to.
 
+To see the rate the quote will give, also name the destination: send
+`recipient_id` and `recipient_destination_id` with your API key. The estimate is
+then priced on the destination's own bank or wallet method, rail and country,
+exactly as the quote is, so a fee a licensed partner charges for that bank is
+included. Without the destination the bank is unknown, that fee cannot be
+included, and the estimate can show a better rate than the quote. Do not send
+`payment_method_slug`, `payment_network_slug` or `country_code` with a
+destination; if they differ from the destination's, the estimate answers `400
+INVALID_REQUEST`. The estimate only reads the destination; it binds nothing.
+
+```bash
+curl -X POST https://api.unigox.com/api/v1/partner/offramp/estimate \
+  -H "X-API-Key: $UNIGOX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "crypto_currency": "USDT",
+    "fiat_currency": "CNY",
+    "fiat_amount": "5000",
+    "recipient_id": "3f0c2b9a-6d1e-4f7a-9b2c-0e1d2c3b4a59",
+    "recipient_destination_id": "8a7b6c5d-4e3f-4a1b-8c9d-0e1f2a3b4c5d"
+  }'
+```
+
 `user_uuid` and `sender_id` must identify the same real, KYC-verified sender.
 The destination currency must exactly equal `fiat_currency`; this flow does not
 support cross-currency recipients. A CNY destination receives CNY. A quote whose
@@ -455,7 +478,8 @@ You recognise it on the same fields as any delayed order:
   `initiate` response does not carry them.
 
 To see it before you quote, call `POST /api/v1/partner/offramp/estimate` with
-`"recipient_payout": true` and the destination's rail as `payment_network_slug`.
+the recipient's `recipient_id` and `recipient_destination_id`, as shown in
+[Request a quote](#3-request-a-quote).
 Its `delayed_settlement`, `settlement_hours` and `source_of_funds_required` then
 describe the payout you would be quoted once delayed settlement is enabled for
 you; the estimate does not check whether it is. Like the price, they are

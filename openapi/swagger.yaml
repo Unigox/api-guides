@@ -2936,6 +2936,12 @@ paths:
         Two optional booleans narrow the offers priced: `recipient_payout` prices only what a
         third-party (recipient) payout can be matched to, and `exclude_delayed_settlement` leaves
         delayed settlement (T+1) offers out. Neither changes what a quote or an order matches.
+        To price a payout to one of your recipients at the rate its quote will give, name the
+        destination with `recipient_id` and `recipient_destination_id` (both, with your API key):
+        the estimate is then priced on the destination's own bank or wallet method, rail and country,
+        as the quote is, including any fee a licensed partner charges for that bank. Without the
+        destination the bank is unknown, a per-bank fee cannot be included, and the estimate can show
+        a better rate than the quote.
         This endpoint is indicative and does not apply user/payment-details ownership checks; for executable pricing use quote (which still requires an API key).
 
         It also reports `delayed_settlement` and `settlement_hours`, so you can discover at which
@@ -2947,13 +2953,18 @@ paths:
         its release, and a delayed estimate carries the threshold in force as
         `source_of_funds_threshold_usd`. Both are indicative too: the order's own fields decide.
 
-        **Authentication:** None. This is a public endpoint — no API key required (same as `/partner/liquidity`).
+        **Authentication:** Optional. Without credentials this is a public endpoint (same as
+        `/partner/liquidity`). With an `X-API-Key` the request is authenticated like every partner
+        endpoint, and a wrong key answers `401 UNAUTHORIZED` rather than an anonymous price. A key is
+        required to name a recipient destination.
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
         See `PATCH /partner/users/{user_uuid}/kyc` to update.
       operationId: getOffRampEstimate
-      security: []
+      security:
+        - {}
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -7569,6 +7580,28 @@ components:
             answers `409 NO_OFFERS_AVAILABLE`. It changes this estimate only, not what a quote or
             an order matches.
           example: false
+        recipient_id:
+          type: string
+          format: uuid
+          description: >-
+            Off-ramp estimate only. With `recipient_destination_id`, prices a payout to that
+            destination of your recipient: on its own payment method, rail and country, as the quote
+            prices it, so a fee a licensed partner charges for that bank is included. Give both or
+            neither; naming them implies `recipient_payout`. Needs your API key. Errors: `400
+            INVALID_REQUEST` when only one is given, an id is not a UUID, the destination's currency is
+            not `fiat_currency`, or `payment_method_slug`, `payment_network_slug` or `country_code`
+            differ from the destination's (omit them); `401 UNAUTHORIZED` without a key; `404
+            RECIPIENT_NOT_FOUND` when the recipient or the destination is not yours; `422
+            THIRD_PARTY_CONTEXT_INVALID` when the destination is not active. The estimate reads the
+            destination and binds nothing.
+          example: 3f0c2b9a-6d1e-4f7a-9b2c-0e1d2c3b4a59
+        recipient_destination_id:
+          type: string
+          format: uuid
+          description: >-
+            Off-ramp estimate only. The destination of `recipient_id` the payout would go to; see
+            `recipient_id`.
+          example: 8a7b6c5d-4e3f-4a1b-8c9d-0e1f2a3b4c5d
 
     ExactPaymentMethodMatchingOffer:
       type: object

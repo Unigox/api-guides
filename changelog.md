@@ -2,6 +2,17 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-04
+
+**A recipient payout can be estimated at the rate its quote will give.** No endpoint or field was removed.
+
+- `POST /api/v1/partner/offramp/estimate` takes `recipient_id` and `recipient_destination_id`. With both, and
+  your API key, the estimate prices on that destination's own bank or wallet method, rail and country, as the
+  quote does, so a fee a licensed partner charges for that bank is included. Without them a recipient-payout
+  estimate is priced on the corridor and can show a better rate than the quote.
+- The estimate stays public without credentials. A request that sends an `X-API-Key` is now authenticated, and a
+  wrong key answers `401 UNAUTHORIZED` instead of an anonymous price.
+
 ## 2026-10-02
 
 **Third-party payouts can settle T+1.** No endpoint or field was removed.
