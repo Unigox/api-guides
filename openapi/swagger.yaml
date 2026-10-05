@@ -8731,6 +8731,18 @@ components:
             rail fee to denominate.
           example: CNY
 
+        payout_base_rate:
+          type: string
+          description: >-
+            Optional on payout estimates and quotes. The verified conversion rate before the
+            payout provider's charges and the vendor's margin, in fiat per crypto. To itemise
+            the amount payable, divide fiat_amount by this rate and round half up to the crypto's
+            precision; the remainder of crypto_amount is the combined fee. Do not add that
+            remainder to crypto_amount again. A separate partner markup remains separate.
+            Omitted when this conversion basis is not known;
+            absence does not mean zero margin. This is not the all-in rate in rate.
+          example: "1"
+
     PartnerOrderStatus:
       type: string
       description: |

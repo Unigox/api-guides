@@ -2,6 +2,14 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-05
+
+Payout estimates and quotes may include `fee_breakdown.payout_base_rate`, the verified
+conversion before provider costs and vendor margin. It allows the quoted total to be
+split into the recipient amount and one combined fee without charging the fee again.
+The field is omitted when the conversion basis is unavailable. Existing amounts and
+the meaning of `fiat_rail_fee` are unchanged.
+
 ## 2026-10-04
 
 **A recipient payout can be estimated at the rate its quote will give.** No endpoint or field was removed.
