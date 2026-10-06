@@ -2017,8 +2017,23 @@ paths:
         Amount ranges span the minimum and maximum across all eligible offers in the group.
         Payment methods are deduplicated and sorted alphabetically.
 
+        **Delayed settlement (T+1):** by default the bands include T+1 offers whose vendor is enabled
+        for T+1, so a band's ceiling can be one only a T+1 order reaches. Pass
+        `exclude_delayed_settlement=true` for instant offers only, the bands a partner without
+        delayed settlement can match.
+
         **Authentication:** None. This is a public endpoint — no API key required.
       security: []
+      parameters:
+        - name: exclude_delayed_settlement
+          in: query
+          required: false
+          description: >-
+            `true` leaves delayed settlement (T+1) offers out of every band. Absent or `false` keeps
+            them. Any other value answers `400 INVALID_REQUEST`.
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Liquidity pairs retrieved successfully

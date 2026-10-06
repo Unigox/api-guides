@@ -186,7 +186,7 @@ flag last, and a partner is listed in `DELAYED_SETTLEMENT_PARTNERS` only once
 api#66 is live and the partner has implemented the consent signing.
 
 The T+1 pages and the spec describe trades#538 with its review fixes (T-01 to
-T-31, branch head `a4401d62`). If trades changes after that, check the T+1 docs
+T-31, plus the cross-repo follow-ups; branch head `2c953a61`). If trades changes after that, check the T+1 docs
 against it again before dating the entry. The other unreleased changes the entry
 lists (the estimate fields, `404 RECIPIENT_NOT_FOUND` on a quote, the orders
 filter) carry no notice on their pages and rely on the merge order alone.

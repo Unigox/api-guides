@@ -19,6 +19,9 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   delayed settlement for you, on request. Until then your quotes and orders match instant offers only, and so
   does an estimate sent with your credentials; a quote that no instant offer covers answers
   `409 NO_OFFERS_AVAILABLE`. Instant orders behave as before.
+- **Liquidity.** `GET /api/v1/partner/liquidity` counts a T+1 offer only when its vendor is enabled for T+1,
+  and takes `exclude_delayed_settlement=true` for instant-only bands: the ones a partner without delayed
+  settlement can match. Without it the bands still include T+1 offers.
 - **Quote and estimate.** Both report `delayed_settlement` and `settlement_hours`. The estimate also
   reports `source_of_funds_required`, always, and `source_of_funds_threshold_usd` when it priced a T+1
   offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a

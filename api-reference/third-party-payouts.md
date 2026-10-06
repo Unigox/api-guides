@@ -386,6 +386,11 @@ discovering the ceiling from a failed quote. Send `"recipient_payout": true` to
 the estimate: it then prices only on the licensed partners a recipient payout
 can be matched to.
 
+The liquidity bands include T+1 offers by default, so their ceiling can be one
+only a delayed settlement (T+1) order reaches. If delayed settlement is not
+enabled for you, call `/api/v1/partner/liquidity?exclude_delayed_settlement=true`
+for the bands your orders can actually match.
+
 To see the rate the quote will give, also name the destination: send
 `recipient_id` and `recipient_destination_id` with your API key. The estimate is
 then priced on the destination's own bank or wallet method, rail and country,
