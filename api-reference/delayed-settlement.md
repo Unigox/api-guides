@@ -767,7 +767,7 @@ including the errors of the API gateway in front of them:
 | `INVALID_REQUEST` | 400 | Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the signature does not recover to `signer_address` over it; the uploaded file could not be read; the order is an on-ramp order. |
 | `ORDER_NOT_FOUND` | 404 | No such order, not yours, or not one whose crypto you hold. On source of funds endpoints: the order is not delayed, the case does not exist yet, or the category does not exist. A missing case does not prove the review is unnecessary. |
 | `INVALID_STATUS` | 409 | A consent call on an order that is not delayed, not funded, or no longer waiting for the release. On source of funds endpoints: no liquidity provider has accepted the order yet. On source of funds writes: the order is past the release, the case is decided, the declaration conflicts with its saved requirements or a concurrent edit, or the same file is already held under that `document_type`. |
-| `OPERATION_NOT_ALLOWED` | 409 | The order is on hold and no crypto may move; the signature is already stored; or its deadline is missing or has passed. Read the order. |
+| `OPERATION_NOT_ALLOWED` | 409 | The order is on hold and no crypto may move; the consent is already recorded (normally with the signature stored; see below for a call cut off part-way); or its deadline is missing or has passed. Read the order. |
 | `INVALID_REQUEST` | 413 | The file is larger than 15 MiB (15,728,640 bytes). |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes do not match its content type, or a `bank_statement` is not a bank-issued PDF. `error.details.allowed` lists what is accepted. |
 | `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes. |
@@ -801,10 +801,18 @@ order read asks the escrow whether your signature is stored, while a list row
 can already show `await_review` for a call that was cut off before it stored
 anything. If `allowed_actions` no longer contains `settlement-consent`, do not
 sign again. If it still does, the signature is not stored: retry the same
-signature, which is accepted even when the first call was cut off part-way.
-Fetch fresh parameters and sign again only if that retry answers `400` because
-`signed_data` is no longer this order's release transaction. A `409` can mean
-the signature was saved, the state changed, the order is on hold, or the
-deadline passed: read the error and the order rather than treating every `409`
-as success. After an uncertain upload, read the document list before sending the
-same bytes again.
+signature. Fetch fresh parameters and sign again only if that retry answers
+`400` because `signed_data` is no longer this order's release transaction. A
+`409` can mean the signature was saved, the state changed, the order is on
+hold, or the deadline passed: read the error and the order rather than treating
+every `409` as success.
+
+One `409` needs Unigox: a retry that answers `OPERATION_NOT_ALLOWED` ("this
+order has already been consented to") while the order read still offers
+`settlement-consent`. The call that was cut off recorded your consent but never
+stored the signature. Do not keep retrying and do not sign anything else; send
+the `order_id` to Unigox support. Left as it is, the order moves to a refund at
+`consent_deadline_at`.
+
+After an uncertain upload, read the document list before sending the same bytes
+again.
