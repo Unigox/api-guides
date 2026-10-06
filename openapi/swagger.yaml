@@ -4892,9 +4892,9 @@ paths:
 
         If that retry answers `409 OPERATION_NOT_ALLOWED` ("this order has already been consented to")
         while the order read still offers `settlement-consent`, the call that was cut off recorded the
-        consent but never stored the signature. Do not keep retrying and do not sign anything else; send
-        the `order_id` to Unigox support. Left as it is, the order moves to a refund at
-        `consent_deadline_at`.
+        consent but never stored the signature. Wait two minutes and retry the same signature once more.
+        If it still answers that 409, stop: do not sign anything else, and send the `order_id` to Unigox
+        support. Left as it is, the order moves to a refund at `consent_deadline_at`.
 
         A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while the order
         is still in the funded pre-release state (the release waits for the source-of-funds decision), `INVALID_STATUS` once the
