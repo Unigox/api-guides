@@ -757,7 +757,8 @@ with its own `event_id`. No subscription change is needed.
 
 ## Errors
 
-Every endpoint on this page answers in the standard partner envelope.
+Every endpoint on this page answers its own errors in the standard partner
+envelope, `{"success": false, "error": {"code": ..., "message": ...}}`:
 
 | `error.code` | Status | When |
 | --- | --- | --- |
@@ -774,9 +775,25 @@ Every endpoint on this page answers in the standard partner envelope.
 
 413, 415 and 422 share `INVALID_REQUEST`; branch on the HTTP status.
 
-After a timeout or a `502` on the consent call, read the order first. If
-`allowed_actions` no longer contains `settlement-consent`, do not sign again. If
-it still does, retry the same signature. Fetch fresh parameters and sign again
+One kind of error does not come from these endpoints. When the API gateway in
+front of them gets no answer in time, or cannot reach the service, it answers
+`502` (or `503`) in its own shape, with no `error.code`:
+
+```json
+{
+  "success": false,
+  "data": { "error_key": "backend_service_unavailable" }
+}
+```
+
+Treat that answer, a `504` and a dropped connection as a timeout: the call may
+have gone through. The consent `POST` and a large upload are the calls most
+likely to meet it. Do not branch on `error.code` alone; check that `error` is
+there.
+
+After a timeout, a gateway error or a `502` on the consent call, read the order
+first. If `allowed_actions` no longer contains `settlement-consent`, do not sign
+again. If it still does, retry the same signature. Fetch fresh parameters and sign again
 only if that retry answers `400` because `signed_data` is no longer this order's
 release transaction. A `409` can mean the
 signature was saved, the state changed, the order is on hold, or the deadline

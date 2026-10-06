@@ -5020,6 +5020,10 @@ paths:
             sign again only if that retry answers `400` because `signed_data` is no longer this order's
             release transaction. A 409 can mean stored consent, changed state, a hold or an expired
             deadline; it does not by itself confirm success.
+
+            A `502` or `503` whose body has no `error` but `data.error_key`
+            (`backend_service_unavailable`) comes from the API gateway, which got no answer in time:
+            the signature may have been stored. Handle it like a timeout, as above.
           content:
             application/json:
               schema:
@@ -5591,6 +5595,9 @@ paths:
           description: >-
             The document store refused the file, or could not store it intact. The code is
             `INTERNAL_ERROR`, not `TRANSACTOR_ERROR`. Read the case before retrying an uncertain upload.
+            A `502` or `503` whose body has no `error` but `data.error_key`
+            (`backend_service_unavailable`) comes from the API gateway, which got no answer in time:
+            the file may have been stored. Treat it like a timeout and read the case first.
           content:
             application/json:
               schema:
