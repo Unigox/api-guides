@@ -4024,7 +4024,7 @@ paths:
         | `crypto_received` | `await_review` | **Unigox**: document review, the licensed partner's payment check, or release processing |
         | `crypto_received` | — | Held: flagged, or a failed payout whose escrow refund is in flight |
         | `settlement_in_progress` | — | Payout in flight; the fiat has not arrived |
-        | `returned` | — | The bank sent the payout back; it will be paid again |
+        | `returned` | — | The bank sent the payout back; Unigox pays again or refunds the crypto |
 
         The "Who acts" column describes an order **you** created. On a widget order the rows
         reading **Partner** are your customer's step, not yours — `next_action` is populated the
@@ -8681,7 +8681,8 @@ components:
             The crypto left the licensed partner's wallet for the payout provider. Set at the latest when
             Unigox authorizes the bank payment. A refund to the customer is not possible while it is set.
             Cleared when Unigox withdraws a record made by mistake, which it can do only while no payment
-            has been authorized, sent, paid or returned.
+            has been authorized, sent, paid or returned, and when it refunds the crypto after a returned
+            payment.
         delayed_settlement_fiat_payout_authorized_by_admin_at:
           type: string
           format: date-time
@@ -8689,7 +8690,8 @@ components:
           description: >-
             Unigox authorized the licensed partner to send the bank payment. Never set before
             `delayed_settlement_crypto_sent_to_provider_at`: the authorization sets that one too when it is
-            still `null`.
+            still `null`. Cleared by a bank return, and when the payout provider cancels the payment before
+            sending it; Unigox then authorizes a new attempt.
         delayed_settlement_fiat_payout_submitted_by_provider_at:
           type: string
           format: date-time
@@ -8705,15 +8707,17 @@ components:
           format: date-time
           nullable: true
           description: >-
-            The bank sent the payout back. Set together with clearing the paid, submitted and
-            authorized marks. Mutually exclusive with `delayed_settlement_fiat_paid_to_customer_at`.
+            The payout went out and the bank sent it back. Set together with clearing the paid, submitted
+            and authorized marks. Mutually exclusive with `delayed_settlement_fiat_paid_to_customer_at`. A
+            payment the payout provider cancelled before sending it is not a return and does not set it.
         delayed_settlement_crypto_refunded_to_customer_at:
           type: string
           format: date-time
           nullable: true
           description: >-
-            The crypto went back to the customer instead. Only reachable while
-            `delayed_settlement_crypto_sent_to_provider_at` is `null`.
+            The crypto went back to the customer instead. Reachable while
+            `delayed_settlement_crypto_sent_to_provider_at` is `null`, or after a returned payment when
+            Unigox gives the payout up; that refund clears `delayed_settlement_crypto_sent_to_provider_at`.
         source_of_funds_required:
           type: boolean
           description: >-
@@ -8735,8 +8739,8 @@ components:
             and never stands in for one of them.
 
             - `refunded_after_release` — the crypto had been released to the licensed partner and
-              was sent back before it reached the payout provider. No payment was made; the order
-              reads `cancelled`
+              was sent back: before it reached the payout provider, or after a payment came back and
+              Unigox gave the payout up. No payment reached the customer; the order reads `cancelled`
             - `dossier_rejected` — a reviewer refused the source-of-funds case
             - `consent_window_expired` — the consent was never signed and the window ran out
             - `not_released_in_time` — the consent **was** signed and the window still ran out,
@@ -8887,8 +8891,10 @@ components:
 
         - `settlement_in_progress` — crypto release has started or is confirmed; the order is not
           yet resolved. This alone does not mean a bank payment has been sent
-        - `returned` — bank return recorded, with no new payout authorization. Crypto was not
-          refunded; an operator must arrange another payout attempt
+        - `returned` — the payout went out and the bank sent it back, with no new payout
+          authorization. The crypto is not refunded yet: Unigox arranges another payout attempt, or
+          refunds the crypto and the order reads `cancelled`. A payout the provider cancelled before
+          sending it is not a return
 
         Precedence on a delayed order, in this order — more than one mark can be set at once:
 
@@ -8966,21 +8972,24 @@ components:
             On a **delayed settlement (T+1)** order the release entry reads
             `Crypto released to the liquidity provider, ahead of the payout` under
             `settlement_in_progress`, not `Order completed`: the crypto leaving escrow is the middle of
-            that order's story, not its end. Six more entries follow it —
-            `Crypto transferred to the payout provider`, `Fiat payout authorized` and
-            `Fiat payout submitted by the provider` (all `settlement_in_progress`),
+            that order's story, not its end. Seven more entries follow it —
+            `Crypto transferred to the payout provider`, `Fiat payout authorized`,
+            `Fiat payout submitted by the provider` and
+            `Fiat payout cancelled by the provider before it was sent` (all `settlement_in_progress`),
             `Fiat paid to the customer` (`completed`), `Fiat returned by the bank` (`returned`) and
             `Crypto refunded to the customer` (`cancelled`). An ordinary order's timeline is unchanged,
             entry for entry.
 
             Consecutive entries are collapsed by status; on a delayed order they are collapsed by status
-            **and** description, so the three intermediate facts that all carry
-            `settlement_in_progress` each keep their own line.
+            **and** description, so the intermediate facts that all carry `settlement_in_progress` each
+            keep their own line.
 
-            Once a payment has come back and been sent again, every attempt stays on the timeline and
-            the approval, sending, paid and return entries end in `(attempt N)`, for example
+            Once a payment has come back, or the payout provider cancelled it before sending it, and a
+            new attempt followed, every attempt stays on the timeline and the approval, sending, paid,
+            return and cancellation entries end in `(attempt N)`, for example
             `Fiat payout authorized (attempt 2)` or `Fiat paid to the customer (attempt 2)`. With a
-            single attempt there is no suffix.
+            single attempt there is no suffix. `Crypto transferred to the payout provider` is read from
+            the order's timestamp and leaves the timeline when that timestamp is cleared.
           example: "Order created"
 
     PartnerSourceOfFundsCategory:
@@ -9581,8 +9590,10 @@ components:
                 (the release sends two `settlement_in_progress` events: one when it starts, without
                 `payout_deadline_at`, and one when it is confirmed, with it);
                 and each `delayed_settlement_*_at` timestamp while currently set. A bank return clears
-                authorization, submission and paid timestamps, and a withdrawn record of the crypto at the
-                payout provider clears that one, so later events can omit earlier fields.
+                authorization, submission and paid timestamps, the payout provider's cancellation of a
+                payment it had not sent clears the authorization, and a withdrawn record of the crypto at
+                the payout provider, or a crypto refund after a return, clears that one, so later events
+                can omit earlier fields.
                 An absent key means not currently set (never recorded or cleared); nulls are omitted.
                 Re-read the order to reconcile state. Deduplicate deliveries by event_id, not order_id.
               example: true
@@ -9605,13 +9616,15 @@ components:
               description: >-
                 The crypto left the licensed partner's wallet for the payout provider. A refund to the customer
                 is not possible while it is set. Absent until it happens, and absent again if Unigox withdraws
-                a record made by mistake.
+                a record made by mistake or refunds the crypto after a returned payment.
             delayed_settlement_fiat_payout_authorized_by_admin_at:
               type: string
               format: date-time
               description: >-
                 Unigox authorized the licensed partner to send the bank payment. Absent until it happens. When
                 the authorization also records the crypto reaching the payout provider, one event carries both.
+                Absent again after a bank return, or after the payout provider cancelled the payment before
+                sending it (that event keeps the order's status).
             delayed_settlement_fiat_payout_submitted_by_provider_at:
               type: string
               format: date-time
@@ -9628,12 +9641,15 @@ components:
               type: string
               format: date-time
               description: >-
-                The bank sent the payout back; the paid, submitted and authorized marks are cleared in
-                the same statement and the order will be paid again. Absent until it happens.
+                The payout went out and the bank sent it back; the paid, submitted and authorized marks are
+                cleared in the same statement, and Unigox then pays again or refunds the crypto. Absent until
+                it happens.
             delayed_settlement_crypto_refunded_to_customer_at:
               type: string
               format: date-time
-              description: The crypto went back to the customer instead. Absent until it happens.
+              description: >-
+                The crypto went back to the customer instead, before it reached the payout provider or after
+                a returned payment. Absent until it happens.
 
     PartnerOnRampQuoteRequest:
       type: object

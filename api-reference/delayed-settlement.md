@@ -523,9 +523,10 @@ order and sends a webhook:
 1. **The crypto reaches the payout provider.** The licensed partner moves it
    from its wallet; Unigox records it as `delayed_settlement_crypto_sent_to_provider_at`,
    at the latest when it approves the payment in step 2. From this moment a
-   refund of the crypto is no longer possible. The exception is a record made by
-   mistake: Unigox can withdraw it while no payment has been approved, sent, paid
-   or returned, and the timestamp is cleared again.
+   refund of the crypto is no longer possible, with two exceptions: Unigox can
+   withdraw a record made by mistake while no payment has been approved, sent,
+   paid or returned, and the timestamp is cleared again; and after a payment came
+   back, Unigox can give the payout up and refund the crypto (below).
 2. **Unigox approves the payment:** `delayed_settlement_fiat_payout_authorized_by_admin_at`.
    If the crypto had not been recorded at the payout provider yet, the approval
    records that too: both timestamps are set together, in one webhook.
@@ -538,20 +539,27 @@ order and sends a webhook:
 4. **The money arrives:** `delayed_settlement_fiat_paid_to_customer_at`. The
    order reads `completed`. This is the real end of a delayed order.
 
-Two things can go wrong after the release:
+Three things can change that path after the release:
 
-- **The payment does not go through.** The bank sends it back, or the payout
-  provider cancels the attempt before it went out. The order reads `returned`,
-  `delayed_settlement_fiat_returned_by_bank_at` is set, and the approval and
-  submission timestamps are cleared. The crypto is not refunded. Unigox approves
-  a new attempt: the order goes back to `settlement_in_progress`, keeps
-  `returned_at` until the new payment arrives, and then reads `completed` with
-  `returned_at` cleared. This can happen more than once.
-- **The crypto goes back** instead of being paid out, which is possible only
-  while step 1 has not happened. It goes to the wallet that funded the escrow,
-  which on an order whose crypto you hold is yours. The order reads `cancelled`
-  with `delayed_settlement_crypto_refunded_to_customer_at` set, and
-  `settlement_refund_reason` reads `refunded_after_release`.
+- **The payout provider cancels the payment before sending it.** Nothing was
+  paid and nothing came back. The approval timestamp is cleared, so the order
+  reads as it did before that approval (`settlement_in_progress`, or `returned`
+  when an earlier payment had come back), and Unigox approves a new attempt. The
+  timeline keeps the cancelled attempt.
+- **The payment comes back.** It went out and the bank sent it back. The order
+  reads `returned`, `delayed_settlement_fiat_returned_by_bank_at` is set, and the
+  approval and submission timestamps are cleared. The crypto is not refunded at
+  this point. Unigox either approves a new attempt, and the order goes back to
+  `settlement_in_progress`, keeps `returned_at` until the new payment arrives,
+  and then reads `completed` with `returned_at` cleared (this can happen more
+  than once); or it gives the payout up and refunds the crypto, as below.
+- **The crypto goes back** instead of being paid out: before step 1, or after a
+  payment came back while no new attempt is under way. It goes to the wallet
+  that funded the escrow, which on an order whose crypto you hold is yours. The
+  order reads `cancelled` with `delayed_settlement_crypto_refunded_to_customer_at`
+  set, and `settlement_refund_reason` reads `refunded_after_release`. A refund
+  after a returned payment also clears `delayed_settlement_crypto_sent_to_provider_at`;
+  `returned_at` stays.
 
 Nothing happens on its own when `payout_deadline_at` passes: the status does not
 change and no event is sent. Unigox follows the payment up; contact support if
@@ -575,12 +583,12 @@ the one exception: it is absent, not empty, when it does not apply.
 | `settlement_hours` | integer \| null | The expected payment window in whole hours, counted from the release; never below `1`. It is the licensed partner's target, not a deadline: nothing happens automatically when it passes. `null` on an instant order. |
 | `consent_deadline_at` | string \| null | Funding time plus the signing window. After it the release is blocked and the order moves to a refund. Set while the crypto is in escrow, including after your signature while a source of funds review is open: the review must also finish by then. `null` once the crypto has left the escrow or the order has ended. |
 | `payout_deadline_at` | string \| null | Release time plus the expected window: when the payment is expected by, not a deadline with a consequence. `null` until the crypto has left the escrow. |
-| `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto reached the payout provider. Set at the latest when Unigox approves the payment. **No refund of the crypto is possible while it is set.** Cleared when Unigox withdraws a record made by mistake, which it can do only while no payment has been approved, sent, paid or returned. |
-| `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox approved the bank payment. Never set before the one above: the approval sets that one too when it is still `null`. |
+| `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto reached the payout provider. Set at the latest when Unigox approves the payment. **No refund of the crypto is possible while it is set.** Cleared when Unigox withdraws a record made by mistake, which it can do only while no payment has been approved, sent, paid or returned, and when it refunds the crypto after a returned payment. |
+| `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox approved the bank payment. Never set before the one above: the approval sets that one too when it is still `null`. Cleared by a return, and when the payout provider cancels the payment before sending it. |
 | `delayed_settlement_fiat_payout_submitted_by_provider_at` | string \| null | The payment was sent. Not yet confirmation that it arrived. |
 | `delayed_settlement_fiat_paid_to_customer_at` | string \| null | The money reached your customer. **This is the real completion of the order.** |
-| `delayed_settlement_fiat_returned_by_bank_at` | string \| null | The payment did not go through and came back. Set together with clearing the approval, submission and paid timestamps. |
-| `delayed_settlement_crypto_refunded_to_customer_at` | string \| null | The crypto went back to the wallet that funded the escrow instead: yours, on an order whose crypto you hold. Only possible while `crypto_sent_to_provider_at` is `null`. |
+| `delayed_settlement_fiat_returned_by_bank_at` | string \| null | The payment went out and came back. Set together with clearing the approval, submission and paid timestamps. A payment the payout provider cancelled before sending it is not a return. |
+| `delayed_settlement_crypto_refunded_to_customer_at` | string \| null | The crypto went back to the wallet that funded the escrow instead: yours, on an order whose crypto you hold. Possible while `crypto_sent_to_provider_at` is `null`, or after a returned payment when Unigox gives the payout up; that refund clears `crypto_sent_to_provider_at`. |
 | `source_of_funds_required` | boolean | Whether a source of funds review applies, by threshold or because a case exists. Can stay `true` after approval and completion. Always present. |
 | `source_of_funds_threshold_usd` | number | The threshold in force now, not the one saved with the order. Always present. |
 | `settlement_refund_reason` | string | Why a delayed order ended without a payment. One of the six values below. **Absent** when the order did not end that way. |
@@ -594,7 +602,7 @@ provider. A new payment after a return clears `returned_at` and sets `paid_at`.
 
 | Value | Meaning |
 | --- | --- |
-| `refunded_after_release` | The crypto had been released to the licensed partner and was sent back before it reached the payout provider. No payment was made. |
+| `refunded_after_release` | The crypto had been released to the licensed partner and was sent back: before it reached the payout provider, or after a payment came back and Unigox gave the payout up. No payment reached the customer. |
 | `dossier_rejected` | A reviewer refused the source of funds. |
 | `consent_window_expired` | The release was never signed and the window ran out. |
 | `not_released_in_time` | The release was signed, but Unigox did not release the crypto before the deadline. |
@@ -611,7 +619,7 @@ stands for one of the six.
 | Status | Meaning |
 | --- | --- |
 | `settlement_in_progress` | The release has started or is confirmed, and the order is not finished. On its own it does not mean a payment has been sent. |
-| `returned` | The last payment attempt did not go through, and no new attempt has been approved yet. The crypto is not refunded; Unigox will approve another attempt. |
+| `returned` | The last payment went out and came back, and no new attempt has been approved yet. The crypto is not refunded yet: Unigox approves another attempt, or refunds the crypto and the order reads `cancelled`. |
 
 When several timestamps are set, the status is read in this order:
 
@@ -658,6 +666,7 @@ timeline is unchanged.
 | `settlement_in_progress` | `Crypto transferred to the payout provider` |
 | `settlement_in_progress` | `Fiat payout authorized` |
 | `settlement_in_progress` | `Fiat payout submitted by the provider` |
+| `settlement_in_progress` | `Fiat payout cancelled by the provider before it was sent` |
 | `completed` | `Fiat paid to the customer` |
 | `returned` | `Fiat returned by the bank` |
 | `cancelled` | `Crypto refunded to the customer` |
@@ -667,13 +676,16 @@ description are collapsed. Every later step keeps its own line. Before the
 release, a cancelled delayed order shows one `cancelled` entry, like an ordinary
 order.
 
-When a payment came back and was sent again, every attempt stays on the
-timeline, and the approval, sending, paid and return entries end in
-`(attempt N)`, for example `Fiat payout authorized (attempt 2)` or
+When a payment came back, or the payout provider cancelled it before sending
+it, and a new attempt followed, every attempt stays on the timeline, and the
+approval, sending, paid, return and cancellation entries end in `(attempt N)`,
+for example `Fiat payout authorized (attempt 2)` or
 `Fiat paid to the customer (attempt 2)`. The first attempt's entries are
 renumbered `(attempt 1)` once a second one exists; an order paid on its first
 attempt has no suffix. The order's timestamps hold only the current attempt;
-the timeline holds all of them.
+the timeline holds all of them. `Crypto transferred to the payout provider` is
+read from the order's timestamp, so it leaves the timeline when that timestamp
+is cleared.
 
 ## Webhooks
 
@@ -695,6 +707,7 @@ Then one event per step:
 | The crypto reached the payout provider | `settlement_in_progress` |
 | Unigox approved the payment | `settlement_in_progress` |
 | The payment was sent | `settlement_in_progress` |
+| The payout provider cancelled the payment before sending it | `settlement_in_progress` (`returned` after an earlier return) |
 | The money reached the customer | `completed` |
 | The payment came back | `returned` |
 | The crypto was refunded | `cancelled` |
@@ -725,9 +738,10 @@ T+1 fields on `data` are omitted until they have a value; none is ever sent as
 - `payout_deadline_at` appears from the event that confirms the release
   onwards; the event for the release starting does not carry it.
 - Each `delayed_settlement_*_at` timestamp appears while it is set. A return
-  clears the approval, submission and paid timestamps, and a withdrawn record
-  clears `delayed_settlement_crypto_sent_to_provider_at`, so a later event can
-  omit fields an earlier one carried. Do not merge events into a map that only
+  clears the approval, submission and paid timestamps, the payout provider's
+  cancellation clears the approval, and a withdrawn record or a refund after a
+  return clears `delayed_settlement_crypto_sent_to_provider_at`, so a later event
+  can omit fields an earlier one carried. Do not merge events into a map that only
   grows; read the order to reconcile.
 - `consent_deadline_at`, `source_of_funds_required`,
   `source_of_funds_threshold_usd` and `settlement_refund_reason` are never in a

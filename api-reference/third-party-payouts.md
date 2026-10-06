@@ -500,7 +500,7 @@ recipient.
 `delayed_settlement_fiat_paid_to_customer_at` is set, under the same name as on
 any other order. Between the release and that moment the order reads
 `settlement_in_progress`, or `returned` while a payment that came back waits for
-a new attempt.
+a new attempt or for Unigox to refund the crypto instead.
 
 The webhooks are the ones in
 [the delayed settlement guide](./delayed-settlement.md#webhooks), with one
