@@ -802,9 +802,12 @@ with its own `event_id`. No subscription change is needed.
 
 ## Errors
 
-The consent and source of funds endpoints answer every error in the standard
+The consent and source of funds endpoints answer their errors in the standard
 partner envelope, `{"success": false, "error": {"code": ..., "message": ...}}`,
-including the errors of the API gateway in front of them:
+including the errors of the API gateway in front of them. The one exception is
+a `503` with `data.error_key: "trades_service_unavailable"` and no `error`, which
+comes from a configuration fault of the gateway. Treat it like the gateway
+failure in the gateway's own shape described below the table.
 
 | `error.code` | Status | When |
 | --- | --- | --- |
@@ -813,7 +816,7 @@ including the errors of the API gateway in front of them:
 | `ORDER_NOT_FOUND` | 404 | No such order, not yours, or not one whose crypto you hold. On source of funds endpoints: the order is not delayed, the case does not exist yet, or the category does not exist. A missing case does not prove the review is unnecessary. |
 | `INVALID_STATUS` | 409 | A consent call on an order that is not delayed, not funded, or no longer waiting for the release. On source of funds endpoints: no liquidity provider has accepted the order yet. On source of funds writes: the order is past the release, the case is decided, the declaration conflicts with its saved requirements or a concurrent edit, or the same file is already held under that `document_type`. |
 | `OPERATION_NOT_ALLOWED` | 409 | The order is on hold and no crypto may move; the consent is already recorded (normally with the signature stored; see below for a call cut off part-way); or its deadline is missing or has passed. Read the order. |
-| `INVALID_REQUEST` | 413 | The file is larger than 15 MiB (15,728,640 bytes). |
+| `INVALID_REQUEST` | 413 | The file is larger than 15 MiB (15,728,640 bytes). On the consent and declaration calls: the request body is larger than 1 MiB (the API gateway refuses it before anything is recorded). |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes do not match its content type, or a `bank_statement` is not a bank-issued PDF. `error.details.allowed` lists what is accepted. |
 | `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; `document_type` is not a key of lower-case letters, digits and underscores of at most 64 characters; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes; the case already holds 60 files or 30 standing files, or this file would take it past 250 MiB. |
 | `INTERNAL_ERROR` | 429 | 10 files were stored on this case within the last minute. Nothing was stored; send the file again a minute later. |
@@ -861,11 +864,13 @@ escrow, and the call that was cut off still holds that record: it is still
 finishing on Unigox's side, or it stopped before it could store the signature or
 take the record back. Once the record is two minutes old with no signature
 stored, it no longer blocks the order. Wait two minutes after that `409`, then
-read the order again. If it no longer offers `settlement-consent`, the call that
-was cut off stored your signature after all: do not sign again. If it still
-does, retry the same signature once more. Until those two minutes have passed, a
-`cancel` can answer `409 OPERATION_NOT_ALLOWED` as well; after them it goes
-through. If the retry answers "already consented" again, stop: do not sign
+read the order again. If it no longer offers `settlement-consent`, do not sign
+again: either the call that was cut off stored your signature, or the order
+moved on (it went on hold, was cancelled, or passed `consent_deadline_at`).
+Read its `status` and `next_action` to see where it stands. If it still offers
+`settlement-consent`, retry the same signature once more. Until those two
+minutes have passed, a `cancel` can answer `409 OPERATION_NOT_ALLOWED` as well;
+after them it goes through. If the retry answers "already consented" again, stop: do not sign
 anything else, and send the `order_id` to Unigox support. Left as it is, the
 order moves to a refund at `consent_deadline_at`.
 

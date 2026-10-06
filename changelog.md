@@ -19,9 +19,9 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   delayed settlement for you, on request. Until then your quotes and orders match instant offers only, and so
   does an estimate sent with your credentials; a quote that no instant offer covers answers
   `409 NO_OFFERS_AVAILABLE`. Instant orders behave as before.
-- **Liquidity.** `GET /api/v1/partner/liquidity` counts a T+1 offer only when its vendor is enabled for T+1,
-  and takes `exclude_delayed_settlement=true` for instant-only bands: the ones a partner without delayed
-  settlement can match. Without it the bands still include T+1 offers.
+- **Liquidity.** `GET /api/v1/partner/liquidity` counts a T+1 offer only when its licensed partner is
+  enabled for T+1, and takes `exclude_delayed_settlement=true` for instant-only bands: the ones a partner
+  without delayed settlement can match. Without it the bands still include T+1 offers.
 - **Quote and estimate.** Both report `delayed_settlement` and `settlement_hours`. The estimate also
   reports `source_of_funds_required`, always, and `source_of_funds_threshold_usd` when it priced a T+1
   offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a
@@ -66,10 +66,12 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
 - The estimate stays public without credentials. A request that sends an `X-API-Key` or an `Authorization`
   header is now authenticated and answers an error instead of an anonymous price when the credential fails:
   `401 UNAUTHORIZED` for a wrong key, an expired or unknown token, or a scheme other than `Bearer`, and
-  `403 UNAUTHORIZED` for a valid token of a user who is not a partner. If your HTTP client adds its own
-  `Authorization` header to every request, drop it on this call or send your `X-API-Key`. An authenticated
-  estimate prices only the offers your quote would be matched on, so it leaves T+1 offers out until delayed
-  settlement is enabled for you; without credentials the estimate prices them for anyone.
+  `403 UNAUTHORIZED` for a valid token of a user who is not a partner or whose account is inactive. While
+  the authentication service is unavailable, a request with credentials answers `503` (or `500`) with
+  `INTERNAL_ERROR` rather than an anonymous price. If your HTTP client adds its own `Authorization` header
+  to every request, drop it on this call or send your `X-API-Key`. An authenticated estimate prices only the
+  offers your quote would be matched on, so it leaves T+1 offers out until delayed settlement is enabled for
+  you; without credentials the estimate prices them for anyone.
 - Payout estimates and quotes may include `fee_breakdown.payout_base_rate`, the verified conversion before
   provider costs and vendor margin. It allows the quoted total to be split into the recipient amount and one
   combined fee without charging the fee again. The field is omitted when the conversion basis is

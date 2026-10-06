@@ -2017,8 +2017,8 @@ paths:
         Amount ranges span the minimum and maximum across all eligible offers in the group.
         Payment methods are deduplicated and sorted alphabetically.
 
-        **Delayed settlement (T+1):** by default the bands include T+1 offers whose vendor is enabled
-        for T+1, so a band's ceiling can be one only a T+1 order reaches. Pass
+        **Delayed settlement (T+1):** by default the bands include T+1 offers whose licensed partner is
+        enabled for T+1, so a band's ceiling can be one only a T+1 order reaches. Pass
         `exclude_delayed_settlement=true` for instant offers only, the bands a partner without
         delayed settlement can match.
 
@@ -2029,8 +2029,9 @@ paths:
           in: query
           required: false
           description: >-
-            `true` leaves delayed settlement (T+1) offers out of every band. Absent or `false` keeps
-            them. Any other value answers `400 INVALID_REQUEST`.
+            `true` leaves delayed settlement (T+1) offers out of every band. Absent, empty or `false`
+            keeps them. `1` and `0`, `t` and `f`, and the forms `TRUE`, `True`, `FALSE` and `False` are
+            accepted too; anything else answers `400 INVALID_REQUEST`.
           schema:
             type: boolean
             default: false
@@ -2076,6 +2077,17 @@ paths:
                       payment_methods:
                         - gtbank
                         - zenith-bank
+        '400':
+          description: "`exclude_delayed_settlement` is not one of the accepted values."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "exclude_delayed_settlement must be true or false"
         '500':
           description: Internal server error
 
@@ -2978,10 +2990,14 @@ paths:
         like every partner endpoint, and a credential that fails answers an error rather than an
         anonymous price: a wrong `X-API-Key` answers `401 UNAUTHORIZED`; an `Authorization` header
         that is not a valid partner `Bearer` token answers `401` (an expired or unknown token, or a
-        scheme other than `Bearer`) or `403` (a valid token of a user who is not a partner), both with
-        `UNAUTHORIZED`. If your HTTP client adds its own `Authorization` header to every request, drop
-        it on this call or send your `X-API-Key`, which is checked first. A key is required to name a
-        recipient destination.
+        scheme other than `Bearer`) or `403` (a valid token of a user who is not a partner, or whose
+        account is inactive), both with `UNAUTHORIZED`. If your HTTP client adds its own
+        `Authorization` header to every request, drop it on this call or send your `X-API-Key`, which
+        is checked first. A key is required to name a recipient destination.
+
+        Checking a credential takes a call to Unigox's authentication service. While that service is
+        unavailable, a request with credentials answers `503` (or `500`) with `INTERNAL_ERROR`, not an
+        anonymous price: retry it later, or send it without credentials for the public estimate.
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
@@ -3107,7 +3123,23 @@ paths:
                   code: NO_OFFERS_AVAILABLE
                   message: "no matching offers found for the provided criteria"
         '500':
-          description: Internal Server Error
+          description: >-
+            Internal Server Error. On a request with credentials, also when the authentication service
+            could not be reached.
+        '503':
+          description: >-
+            Credentials were sent and the authentication service is temporarily unavailable, so they
+            could not be checked. Retry later, or send the request without credentials for the public
+            estimate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "authentication service temporarily unavailable"
 
   /api/v1/partner/recipients:
     get:
@@ -4869,6 +4901,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: >-
+            From the API gateway: it could not complete the call. A read changes nothing; retry it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request could not be completed and may have been applied: read the order before retrying"
+        '504':
+          description: >-
+            From the API gateway: it got no answer in time. A read changes nothing; retry it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
 
   /api/v1/partner/orders/{order_id}/settlement-consent:
     post:
@@ -4913,10 +4969,12 @@ paths:
         the consent record Unigox writes before it hands the signature to the escrow: that call is
         still finishing, or it stopped before it could store the signature or take the record back. A
         record two minutes old with no signature stored no longer blocks the order. Wait two minutes
-        after that 409 and read the order again: if it no longer offers `settlement-consent`, the
-        signature was stored after all, so do not sign again; if it still does, retry the same
-        signature once more. Until those two minutes have passed, `cancel` can answer
-        `409 OPERATION_NOT_ALLOWED` too; after them it goes through. If the retry answers "already
+        after that 409 and read the order again. If it no longer offers `settlement-consent`, do not
+        sign again: either the signature was stored, or the order moved on (it went on hold, was
+        cancelled, or passed `consent_deadline_at`); read its `status` and `next_action` to see where
+        it stands. If it still offers `settlement-consent`, retry the same signature once more. Until
+        those two minutes have passed, `cancel` can answer `409 OPERATION_NOT_ALLOWED` too; after
+        them it goes through. If the retry answers "already
         consented" again, stop: do not sign anything else, and send the `order_id` to Unigox support.
         Left as it is, the order moves to a refund at `consent_deadline_at`.
 
@@ -5046,6 +5104,19 @@ paths:
                 error:
                   code: OPERATION_NOT_ALLOWED
                   message: "this order has already been consented to"
+        '413':
+          description: >-
+            From the API gateway: the request body is larger than 1 MiB. It was refused before
+            anything was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "the request body is larger than 1 MiB"
         '502':
           description: >-
             The escrow service could not be reached or failed. A signature it refused is a `400`, not
@@ -5249,6 +5320,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: >-
+            From the API gateway: it could not complete the call. A read changes nothing; retry it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request could not be completed and may have been applied: read the order before retrying"
+        '504':
+          description: >-
+            From the API gateway: it got no answer in time. A read changes nothing; retry it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
 
   /api/v1/partner/orders/{order_id}/source-of-funds/requirements:
     get:
@@ -5367,6 +5462,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: >-
+            From the API gateway: it could not complete the call. A read changes nothing; retry it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request could not be completed and may have been applied: read the order before retrying"
+        '504':
+          description: >-
+            From the API gateway: it got no answer in time. A read changes nothing; retry it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
 
   /api/v1/partner/orders/{order_id}/source-of-funds/declaration:
     post:
@@ -5467,6 +5586,19 @@ paths:
                 error:
                   code: INVALID_REQUEST
                   message: "source_of_funds must be a category from the requirements catalogue"
+        '413':
+          description: >-
+            From the API gateway: the request body is larger than 1 MiB. It was refused before
+            anything was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_REQUEST
+                  message: "the request body is larger than 1 MiB"
         '500':
           description: The declaration could not be saved.
           content:
@@ -5479,6 +5611,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: >-
+            From the API gateway: it could not complete the call. The declaration may still have been
+            saved: read the case (`GET …/source-of-funds`) before sending it again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request could not be completed and may have been applied: read the order before retrying"
+        '504':
+          description: >-
+            From the API gateway: it got no answer in time. The declaration may still have been saved:
+            read the case (`GET …/source-of-funds`) before sending it again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
 
   /api/v1/partner/orders/{order_id}/source-of-funds/documents:
     post:
@@ -8331,7 +8489,8 @@ components:
             Whether initiating this quote would open a **delayed settlement (T+1)** order: the crypto
             leaves escrow before the fiat is paid, instead of both legs completing together. Your
             release signature authorises that move; Unigox then sends the crypto to the licensed partner, and the
-            fiat follows within `settlement_hours` of that release. **Always present.**
+            fiat is expected within `settlement_hours` of that release (a target, not a deadline).
+            **Always present.**
 
             You cannot request it or decline it. A delayed offer is considered only when no instant
             offer covers the amount, and only on orders whose crypto you hold — never on a widget
@@ -8687,7 +8846,8 @@ components:
           description: |
             Whether this order settles **T+1**: the crypto leaves escrow before the fiat is paid.
             Your release signature authorises it to leave and Unigox performs the release; the fiat
-            follows within `settlement_hours` of it. Present on every order, on-ramp included, along
+            is expected within `settlement_hours` of it (a target, not a deadline). Present on every
+            order, on-ramp included, along
             with the other T+1 fields below. T+1 timestamps and the window are null on instant
             orders. The current numeric source-of-funds threshold is still returned.
           example: false
