@@ -779,7 +779,7 @@ envelope, `{"success": false, "error": {"code": ..., "message": ...}}`:
 | `INVALID_REQUEST` | 413 | The file is larger than 15 MiB (15,728,640 bytes). |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes do not match its content type, or a `bank_statement` is not a bank-issued PDF. `error.details.allowed` lists what is accepted. |
 | `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes. |
-| `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order; if it still offers `settlement-consent`, retry the same signature. |
+| `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order (`GET /api/v1/partner/orders/{order_id}`); if it still offers `settlement-consent`, retry the same signature. |
 | `INTERNAL_ERROR` | 500 / 502 / 503 | `502` when document storage failed; `503` when the source of funds service or document storage is unavailable; `500` for any other server failure. Read the case before retrying an upload: an error does not prove nothing was stored. |
 
 413, 415 and 422 share `INVALID_REQUEST`; branch on the HTTP status.
@@ -801,11 +801,15 @@ likely to meet it. Do not branch on `error.code` alone; check that `error` is
 there.
 
 After a timeout, a gateway error or a `502` on the consent call, read the order
-first. If `allowed_actions` no longer contains `settlement-consent`, do not sign
-again. If it still does, retry the same signature. Fetch fresh parameters and sign again
-only if that retry answers `400` because `signed_data` is no longer this order's
-release transaction. A `409` can mean the
-signature was saved, the state changed, the order is on hold, or the deadline
-passed: read the error and the order rather than treating every `409` as
-success. After an uncertain upload, read the document list before sending the
+first, with `GET /api/v1/partner/orders/{order_id}` rather than the list: the
+order read asks the escrow whether your signature is stored, while a list row
+can already show `await_review` for a call that was cut off before it stored
+anything. If `allowed_actions` no longer contains `settlement-consent`, do not
+sign again. If it still does, the signature is not stored: retry the same
+signature, which is accepted even when the first call was cut off part-way.
+Fetch fresh parameters and sign again only if that retry answers `400` because
+`signed_data` is no longer this order's release transaction. A `409` can mean
+the signature was saved, the state changed, the order is on hold, or the
+deadline passed: read the error and the order rather than treating every `409`
+as success. After an uncertain upload, read the document list before sending the
 same bytes again.
