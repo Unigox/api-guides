@@ -4910,11 +4910,14 @@ paths:
                             type: string
                             description: >-
                               Required next action: `submit_source_of_funds` while required information
-                              is incomplete; `await_review` while waiting for Unigox review or release.
-                              Omitted after release starts or the order changes to another state.
-                              This successful POST already knows consent was stored and does not ask
-                              for another signature.
-                            enum: [submit_source_of_funds, await_review]
+                              is incomplete; `await_review` while waiting for Unigox review or release;
+                              `authorize_refund` when the order ended between the signature and this
+                              answer (a reviewer refused the source of funds, or the signing window
+                              ran out) and its crypto now waits for your refund signature. Omitted
+                              after release starts or when nothing is owed. This successful POST
+                              already knows consent was stored and never asks for another release
+                              signature.
+                            enum: [submit_source_of_funds, await_review, authorize_refund]
                           consent_signed:
                             type: boolean
                             description: Always `true` on a 200 — the signature is stored.

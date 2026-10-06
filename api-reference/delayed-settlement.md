@@ -272,9 +272,12 @@ appears only once the release is confirmed.
 
 `next_action` says what is still owed: `submit_source_of_funds` while the
 customer's declaration or documents are incomplete, `await_review` while the
-order waits for Unigox's review or release. It is omitted once the release has
-started or the order has moved to another state. It never asks for another
-signature: this response already confirms the consent is stored.
+order waits for Unigox's review or release. If the order ended between your
+signature and this answer, because a reviewer refused the source of funds or the
+signing window ran out, it reads `authorize_refund`: the order is `cancelled`
+and waits for your refund signature. It is omitted once the release has started
+or when nothing is owed. It never asks for another release signature: this
+response already confirms the consent is stored.
 
 Unigox adds its own signature and releases the crypto automatically as soon as
 your consent and any required approval are both in, whichever comes second. If
