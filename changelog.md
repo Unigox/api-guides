@@ -2,125 +2,102 @@
 
 Notable changes to the Unigox partner API, newest first.
 
-## 2026-10-05
+## Unreleased
 
-Payout estimates and quotes may include `fee_breakdown.payout_base_rate`, the verified
-conversion before provider costs and vendor margin. It allows the quoted total to be
-split into the recipient amount and one combined fee without charging the fee again.
-The field is omitted when the conversion basis is unavailable. Existing amounts and
-the meaning of `fiat_rail_fee` are unchanged.
+**Not available yet.** Everything in this entry goes live with the delayed settlement (T+1) release, and
+the entry will carry that release's date. Until then the API behaves as the entries below describe. No
+endpoint or field is removed.
 
-## 2026-10-04
+### Delayed settlement (T+1)
 
-**A recipient payout can be estimated at the rate its quote will give.** No endpoint or field was removed.
+An off-ramp order can settle T+1: once you sign its release, the crypto goes to the licensed partner before
+the bank payment, and the payment follows, expected within `settlement_hours` of the confirmed release. The
+[delayed settlement guide](./api-reference/delayed-settlement.md) describes the whole flow.
 
-- `POST /api/v1/partner/offramp/estimate` takes `recipient_id` and `recipient_destination_id`. With both, and
-  your API key, the estimate prices on that destination's own bank or wallet method, rail and country, as the
-  quote does, so a fee a licensed partner charges for that bank is included. Without them a recipient-payout
-  estimate is priced on the corridor and can show a better rate than the quote.
+- **When an order is delayed.** An instant offer that covers the amount always wins; a T+1 offer is matched
+  only when none does. Only orders whose crypto you hold can be delayed, and only once Unigox has enabled
+  delayed settlement for you, on request. Until then your orders match instant offers only, and a quote that
+  no instant offer covers answers `409 NO_OFFERS_AVAILABLE`. Instant orders behave as before.
+- **Quote and estimate.** Both report `delayed_settlement` and `settlement_hours`. The estimate also
+  reports `source_of_funds_required`, always, and `source_of_funds_threshold_usd` when it priced a T+1
+  offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a
+  liquidity provider accepts it; before acceptance every order, T+1 included, reads `false`.
+- **Order fields.** Every order carries `delayed_settlement`, `settlement_hours`, `consent_deadline_at`,
+  `payout_deadline_at`, six `delayed_settlement_*_at` timestamps, `source_of_funds_required` and
+  `source_of_funds_threshold_usd`. A delayed order that ended without a payment also carries
+  `settlement_refund_reason`: `refunded_after_release`, `dossier_rejected`, `consent_window_expired`,
+  `not_released_in_time`, `cancelled_by_customer` or `cancelled_by_licensed_partner`. The `initiate` and
+  `authorize-crypto-transfer` responses do not carry the T+1 fields; read them from the order.
+- **Signing the release.** `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters` returns
+  the EIP-712 payload to sign and `POST /api/v1/partner/orders/{order_id}/settlement-consent` takes the
+  signature. The release also waits for any required source of funds approval and for the licensed
+  partner's payment check. A funded delayed order stays `crypto_received`, with `next_action`
+  `sign_settlement_consent`, `submit_source_of_funds` or `await_review`. `confirm-fiat-received` is refused
+  on a delayed order. The licensed partner can decline a funded order until you sign, and not after.
+- **Source of funds.** An order worth USD 50,000 or more needs the customer's explanation and documents
+  approved before the release. Four endpoints under `/api/v1/partner/orders/{order_id}` collect them:
+  `GET source-of-funds`, `GET source-of-funds/requirements`, `POST source-of-funds/declaration` and
+  `POST source-of-funds/documents`.
+- **Statuses.** `settlement_in_progress` after the release, and `returned` when a payment attempt came back
+  and no new attempt is approved yet. On a delayed order `completed` means the bank payment arrived; the
+  `completed` filter of `GET /api/v1/partner/orders` and `GET /api/v1/partner/stats` count it only then.
+  The timeline adds one entry per step, and the entries of repeated payment attempts end in `(attempt N)`.
+- **Webhooks.** `order.status.changed` fires twice for the release (when it starts, and when it is
+  confirmed, carrying `payout_deadline_at`) and once for each later step. T+1 fields are omitted on ordinary
+  orders, and T+1 events carry `provider: "p2p"`.
+- **Third-party payouts** can settle T+1 too. Among the licensed partners that can pay a recipient, one that
+  settles instantly takes the payout whenever it can, and one that settles T+1 takes it only when none can.
+  See [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
+
+### Other changes
+
+- `POST /api/v1/partner/offramp/estimate` takes four new optional fields. `recipient_payout: true` prices
+  only on the licensed partners a recipient payout can be matched to, and `exclude_delayed_settlement: true`
+  leaves T+1 offers out, answering `409 NO_OFFERS_AVAILABLE` when no instant offer covers the amount. Both
+  only narrow the estimate; neither changes what a quote matches. `recipient_id` and
+  `recipient_destination_id`, sent together with your API key, price a recipient payout on that
+  destination's own bank or wallet method, rail and country, as the quote does, so a fee a licensed partner
+  charges for that bank is included. Without them a recipient-payout estimate is priced on the corridor and
+  can show a better rate than the quote.
 - The estimate stays public without credentials. A request that sends an `X-API-Key` or an `Authorization`
   header is now authenticated and answers an error instead of an anonymous price when the credential fails:
   `401 UNAUTHORIZED` for a wrong key, an expired or unknown token, or a scheme other than `Bearer`, and
   `403 UNAUTHORIZED` for a valid token of a user who is not a partner. If your HTTP client adds its own
   `Authorization` header to every request, drop it on this call or send your `X-API-Key`.
+- Payout estimates and quotes may include `fee_breakdown.payout_base_rate`, the verified conversion before
+  provider costs and vendor margin. It allows the quoted total to be split into the recipient amount and one
+  combined fee without charging the fee again. The field is omitted when the conversion basis is
+  unavailable. Existing amounts and the meaning of `fiat_rail_fee` are unchanged.
+- A quote that names a recipient that is not yours, or was archived, answers `404 RECIPIENT_NOT_FOUND` (it
+  used to answer `422 THIRD_PARTY_CONTEXT_INVALID`). A sender or destination that cannot be used still
+  answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which.
+- `order_type` is on every order response, including an order no liquidity provider has accepted yet, where
+  it was missing.
+- `GET /api/v1/partner/orders?status=` lists orders no liquidity provider has accepted yet under the status
+  they report: `awaiting_liquidity_provider` and `price_changed_requote_needed` return them instead of an
+  empty page, and `cancelled` includes orders cancelled before acceptance. An off-ramp order whose payout
+  failed is listed under `failed`, the status it reports, and no longer under `cancelled`.
 
-## 2026-10-02
+### Corrected in the documentation
 
-**Third-party payouts can settle T+1.** No endpoint or field was removed.
+These describe how the API already behaves; the API does not change.
 
-- A quote that names a recipient that is not yours, or was archived, answers `404 RECIPIENT_NOT_FOUND`
-  (it used to answer `422 THIRD_PARTY_CONTEXT_INVALID`). A sender or destination that cannot be used still answers
-  `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which.
-- A third-party payout can now be a delayed settlement (T+1) order. Among the licensed partners
-  that can pay a recipient, one that settles instantly takes the payout whenever it can, and one
-  that settles T+1 takes it only when none can. The quote and the order say so with
-  `delayed_settlement` and `settlement_hours`, and the
-  [delayed settlement guide](./api-reference/delayed-settlement.md) applies unchanged: you sign
-  the release, large orders need the source of funds approved, and `completed` means the
-  recipient was paid. See
-  [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
-- Delayed settlement applies to a partner's orders only once Unigox has enabled it for that
-  partner; until then they match instant offers only. Ask us when your integration signs the
-  release.
-- `POST /api/v1/partner/offramp/estimate` takes two optional booleans: `recipient_payout` prices
-  only on the licensed partners a recipient payout can be matched to, and
-  `exclude_delayed_settlement` leaves T+1 offers out of the price. Both only narrow the estimate;
-  neither changes what a quote matches. The response adds `source_of_funds_required`, always
-  present, and `source_of_funds_threshold_usd`, present when `delayed_settlement` is `true`.
-- A new `settlement_refund_reason` value, `refunded_after_release`: the crypto had been released
-  to the licensed partner and was sent back before it reached the payout provider. It outranks
-  the other five. The order reads `cancelled`.
-- `GET /api/v1/partner/stats` counts a T+1 order as completed, in `completed_orders`,
-  `volume_usd` and `earned_usd`, only once its payment is recorded paid: the rule the `completed`
-  filter of `GET /api/v1/partner/orders` already applies.
-- Corrected in the specification: `POST /api/v1/partner/orders/{order_id}/cancel` takes an
-  optional body with a free-text `reason`, kept with the cancellation once a liquidity provider
-  has accepted the order, and returns the order on success. After a timeout or a `502` on
-  `settlement-consent`, read the order: if `allowed_actions` no longer lists `settlement-consent`,
-  do not sign again; otherwise retry the same signature, and fetch fresh parameters only if that
-  retry answers `400`. The guide previously gave both instructions.
-- Corrected in the guides and the specification, to match the API: `POST
-  /api/v1/partner/offramp/initiate` and `POST /api/v1/partner/onramp/initiate` answer `200` on
-  success, not `201`. On a third-party quote, a `rail` that is not the destination's and a
-  `fiat_currency` that is not the destination's currency answer `422 THIRD_PARTY_CONTEXT_INVALID`;
-  `RAIL_ROUTE_MISMATCH` is a self-payout code only. A recipient destination needs
-  `institution_id` on every rail, `alipay` or `wechat-pay` on the wallet rails. The wallet rails
-  take `first_name` and `last_name`, with `full_name` still accepted and split at the first space.
-  The recipient's `recipient_kind`, not `details.beneficiary_type`, selects the individual or
-  business format, so a business recipient cannot hold a wallet destination. On `cnaps`,
+- `POST /api/v1/partner/orders/{order_id}/cancel` takes an optional body with a free-text `reason`, kept
+  with the cancellation once a liquidity provider has accepted the order, and returns the order on success.
+- `crypto_transfer_authorization_pending` offers no `cancel`: the transfer is in flight.
+- `POST /api/v1/partner/offramp/initiate` and `POST /api/v1/partner/onramp/initiate` answer `200` on
+  success, not `201`.
+- On a third-party quote, a `rail` that is not the destination's and a `fiat_currency` that is not the
+  destination's currency answer `422 THIRD_PARTY_CONTEXT_INVALID`; `RAIL_ROUTE_MISMATCH` is a self-payout
+  code only.
+- A recipient destination needs `institution_id` on every rail, `alipay` or `wechat-pay` on the wallet
+  rails. The wallet rails take `first_name` and `last_name`, with `full_name` still accepted and split at
+  the first space. The recipient's `recipient_kind`, not `details.beneficiary_type`, selects the individual
+  or business format, so a business recipient cannot hold a wallet destination. On `cnaps`,
   `mobile_number` accepts a `86` or `+86` prefix and `id_number` is optional.
-  `/api/v1/supported/payment-rails` requires `direction`, and returns `has_liquidity` only when
-  the query names both `country` and `currency`. The release of a T+1 order sends two
-  `settlement_in_progress` events, one when it starts and one, carrying `payout_deadline_at`,
-  when it is confirmed. `payment_details_id` is `""` on third-party payout events. Once a payment
-  has been sent more than once, the paid timeline entry ends in `(attempt N)` too.
-
-## 2026-09-25
-
-**T+1 corrections from an audit of the delayed-settlement flow.** No endpoint or field was
-removed.
-
-- The licensed partner can decline a funded T+1 order until you sign the release, and no longer
-  after. A declined order reads `cancelled` with a new `settlement_refund_reason` value,
-  `cancelled_by_licensed_partner`.
-- A release signature the escrow refuses, because it does not recover to `signer_address` over
-  the release, now answers `400 INVALID_REQUEST` instead of `502 TRANSACTOR_ERROR`. Sign again;
-  the same signature can never succeed. A `502` now means only that the escrow service failed.
-- `has_fiat_settlement_notification` is `true` on every T+1 quote, and on a T+1 order from the moment
-  a liquidity provider accepts it: the fiat leg ends in the `completed` webhook, and
-  `confirm-fiat-received` refuses a T+1 order. Before acceptance every order, T+1 included, reads
-  `false`.
-- `order_type` is on every order response, including an order no liquidity provider has accepted
-  yet, where it was missing.
-- When a payment came back and was sent again, the timeline keeps every attempt; its entries end
-  in `(attempt N)`. A T+1 order cancelled before the release shows one `cancelled` entry, not two.
-- Corrected in the specification: approval does not send the payment by itself (the 2026-09-23
-  entry said it did); `consent_deadline_at` stays set after your signature while a source of
-  funds review is open; T+1 events carry `provider: "p2p"`; declaration text is limited to 4,000
-  bytes of UTF-8, not characters; source of funds endpoints answer `409 INVALID_STATUS` before a
-  liquidity provider accepts the order; a refund goes to the wallet that funded the escrow.
-
-## 2026-09-23
-
-**The T+1 guide was rewritten for integrators, and the payment after the release is no longer
-described as manual.** Endpoints, fields and error codes are unchanged.
-
-- Where the licensed partner is connected to a payout provider, the bank payment is sent
-  through it once Unigox approves it. (Corrected on 2026-09-25: approval does not send it by
-  itself; Unigox or the licensed partner then sends it.) The order then stamps
-  `delayed_settlement_fiat_payout_submitted_by_provider_at` and sends a
-  `settlement_in_progress` event when the provider accepts the payment, and a separate
-  `completed` event when the money arrives. A payment recorded by hand with a receipt still
-  stamps both at once and sends one `completed` event.
-- `returned` covers every payment attempt that did not go through, including one the payout
-  provider cancelled before it was sent. Unigox approves a new attempt; `returned_at` stays on
-  the order until the new payment arrives.
-- A return reported by the provider after the money was already recorded as paid does not
-  change the order. Only an operator correcting the record clears `paid_at`.
-- `crypto_transfer_authorization_pending` offers no `cancel`: the transfer is in flight. The
-  specification said otherwise.
-- Read `delayed_settlement` and `settlement_hours` from the order; the `initiate` and
-  `authorize-crypto-transfer` responses do not carry them.
+- `/api/v1/supported/payment-rails` requires `direction`, and returns `has_liquidity` only when the query
+  names both `country` and `currency`.
+- `payment_details_id` is `""` on third-party payout events.
 
 ## 2026-09-23
 
@@ -128,73 +105,9 @@ described as manual.** Endpoints, fields and error codes are unchanged.
 
 A reminder, since it came up: the markup you set in the partner dashboard applies to trades made through the embedded widget only. An API order carries a markup only when its quote or estimate request sends `partner_fee_pct`; omitting the field means no markup on that order.
 
-## 2026-09-22
-
-**T+1 release, source-of-funds review and retry behaviour clarified.** The
-[current integration guide](./api-reference/delayed-settlement.md) and OpenAPI
-specification describe the current contract and replace earlier release-timing guidance.
-
-- A successful consent response confirms a stored signature. Release requires
-  consent and, where applicable, source-of-funds approval. Unigox supplies the
-  second escrow signature after those conditions are met.
-- `release_started` does not prove blockchain confirmation. The payout window
-  starts at confirmed crypto release, not at signature submission.
-- Consent is refused after its deadline, even if the order status has not changed.
-  A concurrent refund does not report `release_started: true`.
-- Both supported `signed_data` values — the returned `safe_params.data` and
-  `tx_hash` — are accepted. Sign the complete returned EIP-712 transaction.
-- Source-of-funds review applies at USD 50,000 or above, or when the order already
-  has a case. Read `source_of_funds_required` and the current threshold from the
-  order. A missing case (404) alone does not mean review is unnecessary.
-- The first declaration saves the case's document requirements. Later edits
-  cannot change its source categories. File counts apply even when the customer
-  chooses one of several document types. Receiving files is not approval.
-- A repeated upload returns 409 with `duplicate_document` and `retry_safe`.
-  Read the case after an uncertain upload; only `retry_safe: true` confirms that
-  no new request for those files remains unanswered.
-- `settlement_in_progress` includes crypto release in progress. It does not mean
-  a bank payment has been sent. (Superseded on 2026-09-23: the payment is sent through the
-  payout provider where one is connected, once Unigox or the licensed partner sends it.)
-- A bank return clears payout authorization, submission and paid timestamps.
-  Later webhooks can omit earlier fields; read the order for its current state.
-- Endpoint names and existing response field names are unchanged.
-
-## 2026-09-21
-
-**Source-of-funds uploads preserve multiple files of the same type.** A second
-payslip no longer replaces the first. Files remain active up to the document
-type's `maximum_files`; beyond that limit, a new file replaces the oldest one.
-`superseded_count` reports replacements. Request and response formats are unchanged.
-
 ## 2026-09-21
 
 **USD payouts to China, Hong Kong and Singapore are not on the partner API yet.** The three USD bank rails can appear in `/api/v1/supported/payment-rails`, and a recipient can hold a destination on them, but a quote or an initiate for a USD payout on any of them answers `400 INVALID_REQUEST` with `provider_confirmation_pending`. This is a statement of what is offered, not a change: nothing that worked before stops working. See [Dollars to China, Hong Kong and Singapore](./api-reference/third-party-payouts.md#dollars-to-china-hong-kong-and-singapore-not-yet).
-
-## 2026-09-20
-
-**Three fields added to order responses:** `source_of_funds_required`,
-`source_of_funds_threshold_usd` and optional `settlement_refund_reason`.
-They are not included in `order.status.changed` webhooks. The refund reason
-explains document rejection, expiry without consent, failure to release before
-the deadline, or customer cancellation. See the reference for exact enum values.
-
-## 2026-09-18
-
-**Delayed settlement (T+1) added to eligible off-ramp orders.** Crypto is released
-to the licensed partner before the bank payment; the quoted payout window starts
-when crypto release is confirmed.
-
-- Quotes and estimates report `delayed_settlement` and `settlement_hours`.
-  Order reads include consent and payout deadlines and six payout/refund timestamps.
-- New consent-parameter and consent endpoints support the release signature.
-  New source-of-funds endpoints provide the requirements, declaration, uploads and
-  review status. Follow `next_action` and `allowed_actions` on the order.
-- New order statuses: `settlement_in_progress` and `returned`. On T+1 orders,
-  `completed` means the bank payment reached the recipient.
-- Payout, return and refund updates emit `order.status.changed`. Deduplicate by
-  `event_id`; T+1 fields are omitted on ordinary orders.
-- Instant-order behaviour is unchanged. See the current guide for release conditions,
-  status filters, cancellation and error handling.
 
 ## 2026-09-18
 

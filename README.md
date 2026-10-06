@@ -98,3 +98,43 @@ One-time setup (Settings → Secrets and variables → Actions):
 
 Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
 scripts/publish-changelog.mjs` resolves the page read-only and makes no changes.
+
+## Releasing documentation ahead of the code
+
+Merging to `main` publishes: the two jobs above put the spec and the changelog on
+developers.unigox.com. Docs for an API change must therefore reach `main` only
+once every service behind the change is deployed, or partners read about
+endpoints that answer `404` and behaviour production does not have yet.
+
+- Merge the api-guides pull request **last**, after the services it describes and
+  the API gateway routes are live.
+- While the change is not live, keep its changelog entry under an
+  `## Unreleased` heading. Both publish jobs run `scripts/check-release.mjs` first
+  and refuse to publish while such a heading exists, so an early merge publishes
+  nothing (the job fails and says why). The guard covers the two CI jobs only: a
+  markdown page that GitBook syncs on its own is not held back by it, which is
+  another reason to merge last.
+- Once the release is live, replace `Unreleased` with the release date and push.
+  That push publishes the changelog and the spec together.
+
+Run the guard's tests with `node --test scripts/*.test.mjs`.
+
+### Pending: delayed settlement (T+1) and third-party payouts
+
+The changelog's `Unreleased` entry describes the release on the
+`feat/t1-third-party-payouts-20261002` branch. Deploy and merge it in this order:
+
+1. account: the database migrations
+2. offers
+3. trades (trades#538)
+4. verification
+5. agent-scripts
+6. api: the gateway routes for the partner T+1 endpoints (api#66). Until it is
+   deployed those endpoints answer the gateway's `404`, so no partner is enabled
+   for delayed settlement before it.
+7. unigox.com
+8. api-guides (this repository), last: date the `Unreleased` entry, then merge.
+
+Each service's own release steps still apply (for account and trades, the runbook
+`account/docs/bill-payment-settlement-t1-runbook.md`). Delete this subsection
+when the entry is dated.

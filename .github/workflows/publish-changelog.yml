@@ -15,6 +15,9 @@ name: Publish Changelog to GitBook
 #   Variable  CHANGELOG_PAGE - (optional) the Changelog page slug; defaults to "changelog"
 #
 # The "Changelog" page must already exist in the space (create it once in GitBook).
+#
+# Nothing is published while changelog.md holds an "Unreleased" entry (scripts/check-release.mjs):
+# date the entry once the release is live, and that push publishes it.
 
 on:
   push:
@@ -32,6 +35,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Refuse to publish docs for a release that is not live
+        run: node scripts/check-release.mjs
 
       - name: Publish changelog.md to GitBook
         env:
