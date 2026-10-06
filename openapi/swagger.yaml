@@ -315,8 +315,10 @@ tags:
       - `false` — no automatic confirmation for this order. Confirm delivery yourself by
         calling `confirm-fiat-received` (or rely on your own banking/payment systems).
 
-      A delayed settlement (T+1) order always reads `true`: its fiat leg ends in the
-      `completed` webhook, and `confirm-fiat-received` refuses it.
+      A delayed settlement (T+1) quote, and a T+1 order once a liquidity provider has accepted
+      it, always read `true`: the fiat leg ends in the `completed` webhook, and
+      `confirm-fiat-received` refuses it. Every order a liquidity provider has not accepted yet,
+      T+1 included, reads `false`; read the flag again after acceptance.
 
       To match **only** providers that send settlement notifications, pass
       `has_fiat_settlement_notification: true` in the quote request — providers that can't
@@ -8523,7 +8525,9 @@ components:
             Whether the matched liquidity provider sends fiat settlement notifications.
             When `true`, the order will complete automatically when fiat is delivered.
             When `false`, you must call `confirm-fiat-received`. You can call
-            `confirm-fiat-received` at any time regardless of this value.
+            `confirm-fiat-received` at any time regardless of this value, except on a delayed
+            settlement (T+1) order, which refuses it. `false` on every order no liquidity provider
+            has accepted yet, T+1 included; a T+1 order reads `true` from its acceptance on.
           example: true
         created_at:
           type: string

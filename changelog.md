@@ -86,8 +86,10 @@ removed.
 - A release signature the escrow refuses, because it does not recover to `signer_address` over
   the release, now answers `400 INVALID_REQUEST` instead of `502 TRANSACTOR_ERROR`. Sign again;
   the same signature can never succeed. A `502` now means only that the escrow service failed.
-- `has_fiat_settlement_notification` is `true` on every T+1 quote and order: the fiat leg ends in
-  the `completed` webhook, and `confirm-fiat-received` refuses a T+1 order.
+- `has_fiat_settlement_notification` is `true` on every T+1 quote, and on a T+1 order from the moment
+  a liquidity provider accepts it: the fiat leg ends in the `completed` webhook, and
+  `confirm-fiat-received` refuses a T+1 order. Before acceptance every order, T+1 included, reads
+  `false`.
 - `order_type` is on every order response, including an order no liquidity provider has accepted
   yet, where it was missing.
 - When a payment came back and was sent again, the timeline keeps every attempt; its entries end
