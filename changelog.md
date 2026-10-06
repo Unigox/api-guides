@@ -18,8 +18,11 @@ the meaning of `fiat_rail_fee` are unchanged.
   your API key, the estimate prices on that destination's own bank or wallet method, rail and country, as the
   quote does, so a fee a licensed partner charges for that bank is included. Without them a recipient-payout
   estimate is priced on the corridor and can show a better rate than the quote.
-- The estimate stays public without credentials. A request that sends an `X-API-Key` is now authenticated, and a
-  wrong key answers `401 UNAUTHORIZED` instead of an anonymous price.
+- The estimate stays public without credentials. A request that sends an `X-API-Key` or an `Authorization`
+  header is now authenticated and answers an error instead of an anonymous price when the credential fails:
+  `401 UNAUTHORIZED` for a wrong key, an expired or unknown token, or a scheme other than `Bearer`, and
+  `403 UNAUTHORIZED` for a valid token of a user who is not a partner. If your HTTP client adds its own
+  `Authorization` header to every request, drop it on this call or send your `X-API-Key`.
 
 ## 2026-10-02
 

@@ -2953,10 +2953,15 @@ paths:
         its release, and a delayed estimate carries the threshold in force as
         `source_of_funds_threshold_usd`. Both are indicative too: the order's own fields decide.
 
-        **Authentication:** Optional. Without credentials this is a public endpoint (same as
-        `/partner/liquidity`). With an `X-API-Key` the request is authenticated like every partner
-        endpoint, and a wrong key answers `401 UNAUTHORIZED` rather than an anonymous price. A key is
-        required to name a recipient destination.
+        **Authentication:** Optional. A request with neither an `X-API-Key` nor an `Authorization`
+        header is public (same as `/partner/liquidity`). A request with either header is authenticated
+        like every partner endpoint, and a credential that fails answers an error rather than an
+        anonymous price: a wrong `X-API-Key` answers `401 UNAUTHORIZED`; an `Authorization` header
+        that is not a valid partner `Bearer` token answers `401` (an expired or unknown token, or a
+        scheme other than `Bearer`) or `403` (a valid token of a user who is not a partner), both with
+        `UNAUTHORIZED`. If your HTTP client adds its own `Authorization` header to every request, drop
+        it on this call or send your `X-API-Key`, which is checked first. A key is required to name a
+        recipient destination.
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
@@ -3044,6 +3049,32 @@ paths:
                     error:
                       code: INVALID_REQUEST
                       message: "invalid provider_scope: must be all, licensed_only, or p2p_only"
+        '401':
+          description: >-
+            Credentials were sent and failed: a wrong `X-API-Key`, or an `Authorization` header that is
+            not a valid partner `Bearer` token. Send no credentials for the public estimate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAUTHORIZED
+                  message: "invalid API key"
+        '403':
+          description: >-
+            The `Authorization` header carries a valid token of a user who is not a partner, or whose
+            account is inactive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: UNAUTHORIZED
+                  message: "user is not a partner"
         '409':
           description: No offers available for the requested pair/amount
           content:
