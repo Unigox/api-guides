@@ -4891,10 +4891,16 @@ paths:
         changed state, hold, expired window or stored consent; it is not by itself proof of success.
 
         If that retry answers `409 OPERATION_NOT_ALLOWED` ("this order has already been consented to")
-        while the order read still offers `settlement-consent`, the call that was cut off recorded the
-        consent but never stored the signature. Wait two minutes and retry the same signature once more.
-        If it still answers that 409, stop: do not sign anything else, and send the `order_id` to Unigox
-        support. Left as it is, the order moves to a refund at `consent_deadline_at`.
+        while the order read still offers `settlement-consent`, the call that was cut off still holds
+        the consent record Unigox writes before it hands the signature to the escrow: that call is
+        still finishing, or it stopped before it could store the signature or take the record back. A
+        record two minutes old with no signature stored no longer blocks the order. Wait two minutes
+        after that 409 and read the order again: if it no longer offers `settlement-consent`, the
+        signature was stored after all, so do not sign again; if it still does, retry the same
+        signature once more. Until those two minutes have passed, `cancel` can answer
+        `409 OPERATION_NOT_ALLOWED` too; after them it goes through. If the retry answers "already
+        consented" again, stop: do not sign anything else, and send the `order_id` to Unigox support.
+        Left as it is, the order moves to a refund at `consent_deadline_at`.
 
         A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while the order
         is still in the funded pre-release state (the release waits for the source-of-funds decision), `INVALID_STATUS` once the
@@ -5011,8 +5017,8 @@ paths:
             for one, or has no funded escrow (`INVALID_STATUS`); or it is held for review, or the
             consent has already been given or its deadline is missing/expired (`OPERATION_NOT_ALLOWED`).
             An "already consented" answer while the order read still offers `settlement-consent` means
-            a call cut off part-way recorded the consent without the signature: see the operation
-            description.
+            a call cut off part-way still holds the consent record without a stored signature; it stops
+            blocking the order two minutes after it was written: see the operation description.
           content:
             application/json:
               schema:
@@ -5770,6 +5776,9 @@ paths:
             `OPERATION_NOT_ALLOWED` — cancellation not allowed at the current status, including a
             delayed settlement (T+1) order whose consent is signed or whose crypto transfer is
             already submitted. Read the order: `allowed_actions` says whether `cancel` is still offered.
+            On a delayed order a consent call that is still running, or one cut off before its
+            signature was stored, also refuses the cancel, for up to two minutes after that call while
+            `allowed_actions` still offers `cancel` (see `settlement-consent`).
           content:
             application/json:
               schema:

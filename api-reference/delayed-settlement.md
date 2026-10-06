@@ -808,12 +808,20 @@ signature. Fetch fresh parameters and sign again only if that retry answers
 hold, or the deadline passed: read the error and the order rather than treating
 every `409` as success.
 
-A retry can also answer `OPERATION_NOT_ALLOWED` ("this order has already been
-consented to") while the order read still offers `settlement-consent`. The call
-that was cut off recorded your consent but never stored the signature. Wait two
-minutes and retry the same signature once more. If it still answers that `409`,
-stop: do not sign anything else, and send the `order_id` to Unigox support.
-Left as it is, the order moves to a refund at `consent_deadline_at`.
+A retry can also answer `409 OPERATION_NOT_ALLOWED` ("this order has already
+been consented to") while the order read still offers `settlement-consent`.
+Unigox records your consent on the order before it hands the signature to the
+escrow, and the call that was cut off still holds that record: it is still
+finishing on Unigox's side, or it stopped before it could store the signature or
+take the record back. Once the record is two minutes old with no signature
+stored, it no longer blocks the order. Wait two minutes after that `409`, then
+read the order again. If it no longer offers `settlement-consent`, the call that
+was cut off stored your signature after all: do not sign again. If it still
+does, retry the same signature once more. Until those two minutes have passed, a
+`cancel` can answer `409 OPERATION_NOT_ALLOWED` as well; after them it goes
+through. If the retry answers "already consented" again, stop: do not sign
+anything else, and send the `order_id` to Unigox support. Left as it is, the
+order moves to a refund at `consent_deadline_at`.
 
 After an uncertain upload, read the document list before sending the same bytes
 again.
