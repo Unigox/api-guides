@@ -157,7 +157,7 @@ order has while its buyer has not paid yet. `next_action` tells the two apart:
 | --- | --- | --- |
 | `sign_settlement_consent` | Your release signature is needed. | `["settlement-consent", "cancel"]` |
 | `submit_source_of_funds` | Your signature is in. The order needs the customer's source of funds, and it is not complete. | `[]` |
-| `await_review` | Nothing for you to do: Unigox is reviewing documents, or your signature is in and the release has not gone through yet. Do not sign again. | `[]` |
+| `await_review` | Nothing for you to do: Unigox is reviewing documents, or your signature is in and the release is waiting for the licensed partner's payment check or has not gone through yet. Do not sign again. | `[]` |
 | absent | Read `status` and `allowed_actions`: the order is moving, held, finished, or waiting for a refund signature (`authorize-refund`). | Depends on the state. |
 
 `settlement-consent` and `cancel` appear only on orders whose crypto you hold.
@@ -279,10 +279,18 @@ and waits for your refund signature. It is omitted once the release has started
 or when nothing is owed. It never asks for another release signature: this
 response already confirms the consent is stored.
 
-Unigox adds its own signature and releases the crypto automatically as soon as
-your consent and any required approval are both in, whichever comes second. If
-the release fails on Unigox's side, your signature stays stored; do not sign
-again, Unigox resolves it.
+Unigox adds its own signature and releases the crypto automatically once three
+things are in place: your consent, any required source of funds approval, and
+the licensed partner's payment check. Where the licensed partner is connected to
+a payout provider, it checks that it can make this payment and keeps confirming
+that while the order waits; the crypto leaves the escrow only while the check is
+passed and recent. Any of the three can come last. Once your signature is in,
+the order reads `crypto_received` with `next_action: await_review` while the
+release waits for the review or the check (`submit_source_of_funds` while
+documents are still missing). A signed order that is still not released at
+`consent_deadline_at` ends `cancelled` with `settlement_refund_reason`
+`not_released_in_time`. If the release fails on Unigox's side, your signature
+stays stored; do not sign again, Unigox resolves it.
 
 A signature is stored once. A second `POST` answers `409`:
 `OPERATION_NOT_ALLOWED` while the order is still waiting for the release,
@@ -489,13 +497,13 @@ contents. A long file name is shortened when it is stored.
 | `in_review` | A reviewer has picked the case up. |
 | `additional_information_required` | The reviewer asked for something more; see `requested_documents`. |
 | `resubmitted` | The answer to that request is in. |
-| `approved` | Review passed. With your signature stored, Unigox releases the crypto. |
+| `approved` | Review passed. With your signature stored and the licensed partner's payment check passed, Unigox releases the crypto. |
 | `rejected` | Review failed. The order goes to a refund; read the refund actions on the order. |
 | `escalated` | Further review is needed. Wait, unless more documents are requested. |
 
-Approval triggers the release if your signature is already stored; otherwise
-your signature triggers it after the approval. Neither response is proof that
-the transaction has confirmed on chain.
+Approval triggers the release if your signature is already stored and the
+payment check has passed; otherwise whichever of the three comes last triggers
+it. Neither response is proof that the transaction has confirmed on chain.
 
 A declaration or an upload is accepted only while the order is still waiting for
 the release and the case is undecided; outside that window both answer

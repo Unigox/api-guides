@@ -3949,9 +3949,9 @@ paths:
         **removed** from `allowed_actions` and the endpoint refuses the order; `["settlement-consent",
         "cancel"]` take its place and `next_action` is `sign_settlement_consent`, then
         `submit_source_of_funds` or `await_review` — the latter meaning the order is waiting on us, for
-        any required source-of-funds approval and for crypto release. Branch on
-        `delayed_settlement` — the two orders share a status and differ in everything you may do with
-        it. See the Delayed settlement (T+1) reference.
+        any required source-of-funds approval, for the licensed partner's payment check and for crypto
+        release. Branch on `delayed_settlement` — the two orders share a status and differ in everything
+        you may do with it. See the Delayed settlement (T+1) reference.
 
         `allowed_actions` is `[]` for a **widget order** — one your customer created through the
         embedded widget under your `widgetKey`. Those orders are attributed to you, and readable
@@ -3988,7 +3988,7 @@ paths:
         |---|---|---|
         | `crypto_received` | `sign_settlement_consent` | **Partner** signs the release |
         | `crypto_received` | `submit_source_of_funds` | **Partner** supplies the source-of-funds case |
-        | `crypto_received` | `await_review` | **Unigox**: document review or release processing |
+        | `crypto_received` | `await_review` | **Unigox**: document review, the licensed partner's payment check, or release processing |
         | `crypto_received` | — | Held: flagged, or a failed payout whose escrow refund is in flight |
         | `settlement_in_progress` | — | Payout in flight; the fiat has not arrived |
         | `returned` | — | The bank sent the payout back; it will be paid again |
@@ -4828,8 +4828,12 @@ paths:
         **Delayed settlement (T+1) only.** Submit the signature produced from
         `GET /settlement-consent-parameters`. It authorises the order's crypto to leave escrow ahead
         of the bank payment. After storing the signature, Unigox attempts release if all checks pass.
-        An existing source-of-funds case must be approved. Approval also attempts release when consent
-        is already stored. A 200 confirms the signature was saved, not that crypto has left escrow.
+        An existing source-of-funds case must be approved, and where the licensed partner is connected to
+        a payout provider, its payment check must have passed recently. Approval also attempts release
+        when consent is already stored. A signed order whose release is still held reads
+        `next_action: await_review`, and one still held at `consent_deadline_at` is refunded
+        (`settlement_refund_reason: not_released_in_time`). A 200 confirms the signature was saved, not
+        that crypto has left escrow.
         After the release, Unigox records the crypto reaching the payout provider, approves the
         payment and sends it through the provider where the licensed partner is connected to one;
         each step stamps a timestamp on the order and sends an `order.status.changed` event.
@@ -8336,8 +8340,8 @@ components:
               `POST /api/v1/partner/orders/{order_id}/settlement-consent`
             - `submit_source_of_funds` — consent is stored and a required source-of-funds case is
               incomplete, including an existing case below the current threshold. See the case endpoints
-            - `await_review` — consent is stored and the order is waiting for Unigox document review
-              or release processing. Do not submit another signature
+            - `await_review` — consent is stored and the order is waiting for Unigox document review,
+              the licensed partner's payment check, or release processing. Do not submit another signature
             - absent — no required action (waiting for buyer or system). On a funded delayed order awaiting release
               the key is absent when the order is held for review, or a payout of yours failed and its
               escrow refund is in flight: both consent endpoints then answer
