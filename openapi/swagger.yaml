@@ -8678,15 +8678,18 @@ components:
           format: date-time
           nullable: true
           description: >-
-            The crypto left the licensed partner's wallet for the payout provider. A refund to the customer stops
-            being possible at this mark.
+            The crypto left the licensed partner's wallet for the payout provider. Set at the latest when
+            Unigox authorizes the bank payment. A refund to the customer is not possible while it is set.
+            Cleared when Unigox withdraws a record made by mistake, which it can do only while no payment
+            has been authorized, sent, paid or returned.
         delayed_settlement_fiat_payout_authorized_by_admin_at:
           type: string
           format: date-time
           nullable: true
           description: >-
             Unigox authorized the licensed partner to send the bank payment. Never set before
-            `delayed_settlement_crypto_sent_to_provider_at`.
+            `delayed_settlement_crypto_sent_to_provider_at`: the authorization sets that one too when it is
+            still `null`.
         delayed_settlement_fiat_payout_submitted_by_provider_at:
           type: string
           format: date-time
@@ -9578,7 +9581,8 @@ components:
                 (the release sends two `settlement_in_progress` events: one when it starts, without
                 `payout_deadline_at`, and one when it is confirmed, with it);
                 and each `delayed_settlement_*_at` timestamp while currently set. A bank return clears
-                authorization, submission and paid timestamps, so later events can omit earlier fields.
+                authorization, submission and paid timestamps, and a withdrawn record of the crypto at the
+                payout provider clears that one, so later events can omit earlier fields.
                 An absent key means not currently set (never recorded or cleared); nulls are omitted.
                 Re-read the order to reconcile state. Deduplicate deliveries by event_id, not order_id.
               example: true
@@ -9600,11 +9604,14 @@ components:
               format: date-time
               description: >-
                 The crypto left the licensed partner's wallet for the payout provider. A refund to the customer
-                stops being possible at this mark. Absent until it happens.
+                is not possible while it is set. Absent until it happens, and absent again if Unigox withdraws
+                a record made by mistake.
             delayed_settlement_fiat_payout_authorized_by_admin_at:
               type: string
               format: date-time
-              description: Unigox authorized the licensed partner to send the bank payment. Absent until it happens.
+              description: >-
+                Unigox authorized the licensed partner to send the bank payment. Absent until it happens. When
+                the authorization also records the crypto reaching the payout provider, one event carries both.
             delayed_settlement_fiat_payout_submitted_by_provider_at:
               type: string
               format: date-time

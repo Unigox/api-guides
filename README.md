@@ -168,12 +168,4 @@ In both, the switches come after the deploys and follow the runbook: the offer
 flag last, and a partner is listed in `DELAYED_SETTLEMENT_PARTNERS` only once
 api#66 is live and the partner has implemented the consent signing.
 
-Before dating the entry, confirm that the deployed trades does what these docs
-say where they were written ahead of it:
-
-- The crypto reaching the payout provider is recorded in a separate operator
-  step before the payment approval, and is never cleared. If the release
-  instead has the approval set that mark, with an admin undo, re-apply
-  `2b7170e` (Step 6, the order fields and the webhook fields).
-
 Delete this subsection when the entry is dated.
