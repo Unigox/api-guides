@@ -112,12 +112,22 @@ endpoints that answer `404` and behaviour production does not have yet.
   `## Unreleased` heading. Both publish jobs run `scripts/check-release.mjs` first
   and refuse to publish while such a heading exists (the job fails and says why).
   That stops the two CI jobs and nothing else. The raw URL above serves `main`'s
-  spec the moment it merges, GitBook can pick that spec up without the CI job
-  (the re-fetch described under "Updating the docs after a spec change"), and
-  markdown pages are not covered at all. The guard is a backstop for a mistaken
-  merge, not a way to merge early.
-- Once the release is live, replace `Unreleased` with the release date and push.
-  That push publishes the changelog and the spec together.
+  spec the moment it merges, and GitBook can pick that spec up without the CI job
+  (the re-fetch described under "Updating the docs after a spec change"). The
+  guard is a backstop for a mistaken merge, not a way to merge early.
+- Neither job publishes the markdown pages, and where GitBook Git Sync is on a
+  page on `main` reaches developers.unigox.com without them: treat every page on
+  `main` as published. So a page written ahead of its release, or the section of a
+  page that is, opens with a notice that starts `> **Not available yet.**`, and
+  the `Unreleased` entry links to that page or section. An index entry that points
+  to such a page ends with the same words. `scripts/check-release.mjs` holds both
+  ends: while the entry is `Unreleased` it also fails when a page or section the
+  entry links to does not open with the notice, and once no entry is `Unreleased`
+  it fails while any page or the changelog still carries the words (this README is
+  not checked).
+- Once the release is live, replace `Unreleased` with the release date and remove
+  every notice in the same push. That push publishes the changelog and the spec
+  together.
 
 Run the guard's tests with `node --test scripts/*.test.mjs`.
 
@@ -129,6 +139,10 @@ The changelog's `Unreleased` entry describes the release on the
 live deployment"), owns the order of the services and their preconditions; if it
 and this list ever disagree, the runbook wins. This list places the two
 repositories the runbook leaves out, the API gateway and this one.
+
+Merge the pull requests in the same order as the deploys below. The api-guides
+pull request is merged last, after api#66 is deployed, because merging it is
+what publishes the T+1 docs.
 
 First rollout, where nothing T+1 runs yet:
 
@@ -146,7 +160,10 @@ First rollout, where nothing T+1 runs yet:
    Until it is deployed those endpoints answer the gateway's `404`.
 6. unigox.com.
 7. api-guides (this repository), the last repository: date the `Unreleased`
-   entry, then merge.
+   entry and remove its three notices (the top of
+   `api-reference/delayed-settlement.md`, the "When a payout is delayed" section
+   of `api-reference/third-party-payouts.md`, and the delayed settlement entry of
+   `api-reference/README.md`), then merge.
 
 offers goes out at any point after account's migrations (its build reads the T+1
 offer columns they add) and before agent-scripts (an older offers build clears
@@ -167,5 +184,11 @@ Upgrading a deployment that already runs T+1:
 In both, the switches come after the deploys and follow the runbook: the offer
 flag last, and a partner is listed in `DELAYED_SETTLEMENT_PARTNERS` only once
 api#66 is live and the partner has implemented the consent signing.
+
+The T+1 pages and the spec describe trades#538 with its review fixes (T-01 to
+T-31, branch head `a4401d62`). If trades changes after that, check the T+1 docs
+against it again before dating the entry. The other unreleased changes the entry
+lists (the estimate fields, `404 RECIPIENT_NOT_FOUND` on a quote, the orders
+filter) carry no notice on their pages and rely on the merge order alone.
 
 Delete this subsection when the entry is dated.

@@ -454,6 +454,9 @@ path.
 
 ## When a payout is delayed
 
+> **Not available yet.** Delayed settlement is not live: no payout is delayed
+> yet. The changelog will announce the date it goes live.
+
 A third-party payout can settle T+1: once you have signed its release, the
 crypto goes to the licensed partner before the recipient is paid, and the
 payment follows, expected within a window counted from the release

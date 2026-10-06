@@ -1,5 +1,9 @@
 # Delayed settlement (T+1)
 
+> **Not available yet.** Delayed settlement is not live: no order is delayed,
+> and the endpoints on this page are not available. The changelog will announce
+> the date it goes live.
+
 On an ordinary off-ramp order the crypto stays locked until your customer's bank
 payment has been confirmed. On a **delayed settlement** order the two sides swap
 places: once you sign a release, the crypto leaves the lock first, and the bank
