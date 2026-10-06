@@ -483,8 +483,9 @@ To see it before you quote, call `POST /api/v1/partner/offramp/estimate` with
 the recipient's `recipient_id` and `recipient_destination_id`, as shown in
 [Request a quote](#3-request-a-quote).
 Its `delayed_settlement`, `settlement_hours` and `source_of_funds_required` then
-describe the payout you would be quoted once delayed settlement is enabled for
-you; the estimate does not check whether it is. Like the price, they are
+describe the payout you would be quoted: sent with your API key, as a
+destination requires, the estimate leaves T+1 offers out until delayed
+settlement is enabled for you, as your quote does. Like the price, they are
 indicative.
 
 From there the [delayed settlement guide](./delayed-settlement.md) applies

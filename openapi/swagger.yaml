@@ -2954,6 +2954,9 @@ paths:
         `source_of_funds_required` says whether the order would need a source-of-funds review before
         its release, and a delayed estimate carries the threshold in force as
         `source_of_funds_threshold_usd`. Both are indicative too: the order's own fields decide.
+        An estimate sent with your credentials prices only the offers your quote would be matched on:
+        it leaves T+1 offers out until Unigox has enabled delayed settlement for you. Without
+        credentials it prices T+1 offers for anyone.
 
         **Authentication:** Optional. A request with neither an `X-API-Key` nor an `Authorization`
         header is public (same as `/partner/liquidity`). A request with either header is authenticated

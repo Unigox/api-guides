@@ -62,9 +62,10 @@ An order is delayed when all four hold:
   switched on for your account by Unigox on request: tell us once your
   integration can sign the release ([Step 4](#step-4-sign-the-release)). It is a
   configuration change on our side, not an automatic consequence of a signature.
-  Until then your orders match instant offers only, whatever the estimate
-  reports: a quote for an amount no instant offer covers answers
-  `409 NO_OFFERS_AVAILABLE`.
+  Until then your quotes and orders match instant offers only, and so does an
+  estimate you send with your credentials: a quote for an amount no instant
+  offer covers answers `409 NO_OFFERS_AVAILABLE`. An estimate sent without
+  credentials still prices T+1 offers.
 - **The matched licensed partner offers T+1.**
 
 A [third-party payout](./third-party-payouts.md#when-a-payout-is-delayed) can be
@@ -108,6 +109,10 @@ Content-Type: application/json
 `POST /api/v1/partner/offramp/estimate` reports the same two fields, so you can
 find where a corridor stops settling instantly without spending quotes. Its
 amounts are indicative; the matched offer can change by the time you quote.
+Send it with your `X-API-Key` (or your partner `Authorization` header): it then
+prices only the offers your quote would be matched on, so it leaves T+1 offers
+out until Unigox has enabled delayed settlement for you. Without credentials it
+prices T+1 offers for anyone.
 
 The estimate takes two optional booleans. Each can only narrow the offers it
 prices, and neither changes what a quote or an order matches:
