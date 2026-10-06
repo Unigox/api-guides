@@ -520,9 +520,14 @@ on Unigox's and the licensed partner's side. Each step stamps a timestamp on the
 order and sends a webhook:
 
 1. **The crypto reaches the payout provider.** The licensed partner moves it
-   from its wallet; Unigox records it as `delayed_settlement_crypto_sent_to_provider_at`.
-   From this moment a refund of the crypto is no longer possible.
+   from its wallet; Unigox records it as `delayed_settlement_crypto_sent_to_provider_at`,
+   at the latest when it approves the payment in step 2. From this moment a
+   refund of the crypto is no longer possible. The one exception is a record
+   made by mistake: Unigox can withdraw it while no payment is approved, in
+   flight or paid, and the timestamp is cleared again.
 2. **Unigox approves the payment:** `delayed_settlement_fiat_payout_authorized_by_admin_at`.
+   If the crypto had not been recorded at the payout provider yet, the approval
+   records that too, and both timestamps are set together.
 3. **The payment is sent.** Approval does not send it by itself. Where the
    licensed partner is connected to a payout provider, Unigox or the licensed
    partner then sends it through that provider, and
@@ -569,8 +574,8 @@ the one exception: it is absent, not empty, when it does not apply.
 | `settlement_hours` | integer \| null | The expected payment window in whole hours, counted from the release; never below `1`. It is the licensed partner's target, not a deadline: nothing happens automatically when it passes. `null` on an instant order. |
 | `consent_deadline_at` | string \| null | Funding time plus the signing window. After it the release is blocked and the order moves to a refund. Set while the crypto is in escrow, including after your signature while a source of funds review is open: the review must also finish by then. `null` once the crypto has left the escrow or the order has ended. |
 | `payout_deadline_at` | string \| null | Release time plus the expected window: when the payment is expected by, not a deadline with a consequence. `null` until the crypto has left the escrow. |
-| `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto reached the payout provider. **No refund of the crypto is possible after this.** |
-| `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox approved the bank payment. Never set before the one above. |
+| `delayed_settlement_crypto_sent_to_provider_at` | string \| null | The crypto reached the payout provider. Set at the latest when Unigox approves the payment. **No refund of the crypto is possible while it is set.** Cleared only when Unigox withdraws a record made by mistake, while no payment is approved, in flight or paid. |
+| `delayed_settlement_fiat_payout_authorized_by_admin_at` | string \| null | Unigox approved the bank payment. Never set before the one above: the approval sets that one too when it is still `null`. |
 | `delayed_settlement_fiat_payout_submitted_by_provider_at` | string \| null | The payment was sent. Not yet confirmation that it arrived. |
 | `delayed_settlement_fiat_paid_to_customer_at` | string \| null | The money reached your customer. **This is the real completion of the order.** |
 | `delayed_settlement_fiat_returned_by_bank_at` | string \| null | The payment did not go through and came back. Set together with clearing the approval, submission and paid timestamps. |
@@ -693,6 +698,9 @@ Then one event per step:
 | The payment came back | `returned` |
 | The crypto was refunded | `cancelled` |
 
+When the approval also records the crypto reaching the payout provider, one
+event carries both timestamps.
+
 An order that ends before the release and needs your refund signature also
 sends `order.refund.required`, once, with the same `action_required` block the
 order carries. Follow it with `authorize-refund`.
@@ -715,9 +723,10 @@ T+1 fields on `data` are omitted until they have a value; none is ever sent as
 - `payout_deadline_at` appears from the event that confirms the release
   onwards; the event for the release starting does not carry it.
 - Each `delayed_settlement_*_at` timestamp appears while it is set. A return
-  clears the approval, submission and paid timestamps, so a later event can omit
-  fields an earlier one carried. Do not merge events into a map that only grows;
-  read the order to reconcile.
+  clears the approval, submission and paid timestamps, and a withdrawn record
+  clears `delayed_settlement_crypto_sent_to_provider_at`, so a later event can
+  omit fields an earlier one carried. Do not merge events into a map that only
+  grows; read the order to reconcile.
 - `consent_deadline_at`, `source_of_funds_required`,
   `source_of_funds_threshold_usd` and `settlement_refund_reason` are never in a
   webhook; read them from the order.
