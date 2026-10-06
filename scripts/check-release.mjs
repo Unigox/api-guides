@@ -11,9 +11,12 @@
 //
 // THE MARKDOWN PAGES ARE NOT PUBLISHED BY EITHER JOB, and a page on main can reach the site on its own
 // (GitBook Git Sync). So a page, or a section of one, written ahead of its release opens with a
-// "> **Not available yet.**" notice, and the Unreleased entry links to it. This check holds both ends:
-// while an entry is Unreleased, every page or section it links to must open with the notice; once no
-// entry is, no page may still carry one, so the push that dates the entry also removes them.
+// "> **Not available yet.**" notice, and the Unreleased entry links to it. An index entry that lists
+// such a page (a list item of a folder's README.md or of a SUMMARY.md) carries the same words, so the
+// sidebar does not offer the page as live. This check holds both ends: while an entry is Unreleased,
+// every page or section it links to must open with the notice and every index entry listing one of
+// those pages must carry it; once no entry is, no page may still carry one, so the push that dates the
+// entry also removes them.
 //
 // Usage: node scripts/check-release.mjs [path/to/changelog.md]
 // The pages are the markdown files under the changelog's directory, except its README.md.
@@ -102,6 +105,31 @@ export function leadOf(markdown, anchor = "") {
   return lines.slice(from, next ? next.index : lines.length).join("\n");
 }
 
+// INDEX_PAGE names the pages that list other pages: a folder's README.md (the group page GitBook shows
+// in the sidebar) and a SUMMARY.md table of contents. The root README.md is never one: docsPages leaves
+// it out.
+const INDEX_PAGE = /(^|\/)(readme|summary)\.md$/i;
+const LIST_ITEM = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/;
+
+// indexEntries returns the list items of an index page outside fenced code that link to target, each
+// as { line (1-based), text }. indexFile and target are paths relative to the same root, with "/".
+export function indexEntries(markdown, indexFile, target) {
+  const found = [];
+  let fenced = false;
+  markdown.split(/\r?\n/).forEach((line, index) => {
+    if (FENCE.test(line)) {
+      fenced = !fenced;
+      return;
+    }
+    if (fenced || !LIST_ITEM.test(line)) return;
+    const listsTarget = localLinks(line).some(
+      (link) => posixPath(join(dirname(indexFile), link.path)) === posixPath(join(target)),
+    );
+    if (listsTarget) found.push({ line: index + 1, text: line });
+  });
+  return found;
+}
+
 // noticeLines returns the 1-based lines that carry PAGE_NOTICE.
 export function noticeLines(markdown) {
   const found = [];
@@ -149,6 +177,8 @@ export async function releaseProblems(changelogPath) {
   }
 
   if (entries.length > 0) {
+    // The pages that are not live as a whole: linked without an anchor. A section's page stays listed.
+    const pendingPages = new Set();
     for (const section of unreleasedSections(changelog)) {
       for (const link of localLinks(section)) {
         const file = posixPath(relative(root, join(root, link.path)));
@@ -160,6 +190,7 @@ export async function releaseProblems(changelogPath) {
           problems.push({ file: changelogFile, line: 1, message: `The Unreleased entry links to ${file}, which does not exist.` });
           continue;
         }
+        if (!link.anchor) pendingPages.add(file);
         const lead = leadOf(page, link.anchor);
         if (lead === null) {
           problems.push({ file, line: 1, message: `The Unreleased entry links to ${where}, and no heading there has that anchor.` });
@@ -170,6 +201,22 @@ export async function releaseProblems(changelogPath) {
             message:
               `The Unreleased entry links to ${where}, which does not open with a "> ${PAGE_NOTICE}" notice. ` +
               "A page on main can reach the site without this job, so it must say it is not live yet.",
+          });
+        }
+      }
+    }
+    for (const index of (await docsPages(root)).map(posixPath).filter((page) => INDEX_PAGE.test(page))) {
+      const markdown = await readFile(join(root, index), "utf8");
+      for (const target of pendingPages) {
+        if (target === index) continue;
+        for (const entry of indexEntries(markdown, index, target)) {
+          if (entry.text.includes(PAGE_NOTICE)) continue;
+          problems.push({
+            file: index,
+            line: entry.line,
+            message:
+              `Lists ${target}, which the Unreleased entry says is not live yet, without "${PAGE_NOTICE}". ` +
+              "End the entry with those words, as the page's own notice does.",
           });
         }
       }

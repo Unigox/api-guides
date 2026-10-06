@@ -167,6 +167,51 @@ test("while an entry is Unreleased, every page or section it links to opens with
   });
 });
 
+test("while an entry is Unreleased, an index entry listing a page that is not live carries the notice", async () => {
+  const pages = {
+    "changelog.md": unreleasedChangelog,
+    "api-reference/guide.md": `# Guide\n\n> ${PAGE_NOTICE} Soon.\n`,
+    "api-reference/other.md": `# Other\n\nLive.\n\n## When a payout is delayed\n\n> ${PAGE_NOTICE} Soon.\n`,
+  };
+  const indexProblems = async (index) =>
+    withTree({ ...pages, ...index }, async (dir) =>
+      (await releaseProblems(join(dir, "changelog.md"))).filter((problem) => problem.file !== "changelog.md"),
+    );
+
+  // other.md is linked by a section only, so it stays listed as a live page.
+  const marked = [
+    "# API Reference",
+    "",
+    "- [Other](./other.md)",
+    `- [Guide](./guide.md) — ${PAGE_NOTICE}`,
+    "",
+  ].join("\r\n");
+  assert.deepEqual(await indexProblems({ "api-reference/README.md": marked }), []);
+
+  const unmarked = ["# API Reference", "", "- [Other](./other.md)", "* [Guide](guide.md#body)", ""].join("\n");
+  const problems = await indexProblems({ "api-reference/README.md": unmarked });
+  assert.deepEqual(
+    problems.map((problem) => `${problem.file}:${problem.line}`),
+    ["api-reference/README.md:4"],
+  );
+  assert.match(problems[0].message, /api-reference\/guide\.md/);
+
+  // A table of contents counts as an index; running text and fenced examples do not.
+  const summary = [
+    "# Summary",
+    "",
+    "1. [Guide](api-reference/guide.md)",
+    "See the [guide](api-reference/guide.md).",
+    "```md",
+    "- [Guide](api-reference/guide.md)",
+    "```",
+  ].join("\n");
+  assert.deepEqual(
+    (await indexProblems({ "SUMMARY.md": summary })).map((problem) => `${problem.file}:${problem.line}`),
+    ["SUMMARY.md:3"],
+  );
+});
+
 test("once the entry is dated, the command fails while any page still says it is not live", async () => {
   const dated = "# Changelog\n\n## 2026-10-12\n\n- Shipped.\n";
   const leftover = {
@@ -217,6 +262,15 @@ test("both publish workflows run the check before publishing", () => {
     // lastIndexOf: the publish command also appears in the header comment of publish-openapi.yml.
     assert.ok(check < text.lastIndexOf(publishCommand), `${file} publishes before it checks`);
   }
+});
+
+// The tests guard the docs only if a pull request cannot merge while they fail.
+test("pull requests and pushes to main run every test in scripts", () => {
+  const text = readFileSync(join(root, ".github/workflows/test.yml"), "utf8");
+  const triggers = /^on:[ \t]*\r?\n((?:[ \t]+.*\r?\n)+)/m.exec(text)?.[1] ?? "";
+  assert.match(triggers, /^[ \t]+pull_request:/m, "test.yml does not run on pull requests");
+  assert.match(triggers, /^[ \t]+push:[ \t]*\r?\n[ \t]+branches:[ \t]*\[[ \t]*main[ \t]*\]/m, "test.yml does not run on main");
+  assert.match(text, /run:[ \t]*node --test scripts\/\*\.test\.mjs[ \t]*\r?$/m, "test.yml does not run scripts/*.test.mjs");
 });
 
 // Dating the Unreleased heading is a changelog-only push; it must publish the spec it was holding back.

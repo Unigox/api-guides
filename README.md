@@ -120,16 +120,19 @@ endpoints that answer `404` and behaviour production does not have yet.
   `main` as published. So a page written ahead of its release, or the section of a
   page that is, opens with a notice that starts `> **Not available yet.**`, and
   the `Unreleased` entry links to that page or section. An index entry that points
-  to such a page ends with the same words. `scripts/check-release.mjs` holds both
-  ends: while the entry is `Unreleased` it also fails when a page or section the
-  entry links to does not open with the notice, and once no entry is `Unreleased`
-  it fails while any page or the changelog still carries the words (this README is
-  not checked).
+  to such a page (a list item of a folder's `README.md` or of a `SUMMARY.md`) ends
+  with the same words. `scripts/check-release.mjs` holds both ends: while the
+  entry is `Unreleased` it also fails when a page or section the entry links to
+  does not open with the notice, or an index entry listing such a page does not
+  carry the words; once no entry is `Unreleased` it fails while any page or the
+  changelog still carries them (this README is not checked).
 - Once the release is live, replace `Unreleased` with the release date and remove
   every notice in the same push. That push publishes the changelog and the spec
   together.
 
-Run the guard's tests with `node --test scripts/*.test.mjs`.
+Run the guard's tests with `node --test scripts/*.test.mjs`. CI runs them on
+every pull request and every push to `main` (`.github/workflows/test.yml`); make
+that job a required status check of `main` so a red run blocks the merge.
 
 ### Pending: delayed settlement (T+1) and third-party payouts
 
@@ -160,10 +163,12 @@ First rollout, where nothing T+1 runs yet:
    Until it is deployed those endpoints answer the gateway's `404`.
 6. unigox.com.
 7. api-guides (this repository), the last repository: date the `Unreleased`
-   entry and remove its three notices (the top of
+   entry and remove its four notices (the `**Not available yet.**` paragraph
+   under the changelog's `Unreleased` heading, the top of
    `api-reference/delayed-settlement.md`, the "When a payout is delayed" section
    of `api-reference/third-party-payouts.md`, and the delayed settlement entry of
-   `api-reference/README.md`), then merge.
+   `api-reference/README.md`), then merge. `node scripts/check-release.mjs` must
+   then pass: it names any notice left behind.
 
 offers goes out at any point after account's migrations (its build reads the T+1
 offer columns they add) and before agent-scripts (an older offers build clears
