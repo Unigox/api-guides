@@ -4716,8 +4716,9 @@ paths:
                             type: integer
                             nullable: true
                             description: >-
-                              The payout window your customer is agreeing to, in whole hours, counted
-                              from the release.
+                              The expected payout window your customer is agreeing to, in whole hours,
+                              counted from the release. It is the licensed partner's target for the bank
+                              payment, not a guaranteed deadline.
                           consent_deadline_at:
                             type: string
                             format: date-time
@@ -7731,8 +7732,9 @@ components:
           type: integer
           nullable: true
           description: >-
-            The payout window that would be promised, counted from the release. Rounded to the
-            nearest whole hour and never below `1`. `null` on an instant estimate.
+            The expected payout window the order would get, counted from the release: the licensed
+            partner's target for the bank payment, not a guaranteed deadline. Rounded to the nearest
+            whole hour and never below `1`. `null` on an instant estimate.
           example: 24
         source_of_funds_required:
           type: boolean
@@ -8218,9 +8220,10 @@ components:
           type: integer
           nullable: true
           description: |
-            The promised payout window, counted from the release — not from now. Rounded to the
-            nearest whole hour and never below `1`. `null` on an instant quote, where there is no such
-            promise to make.
+            The expected payout window, counted from the release — not from now. It is the licensed
+            partner's target for the bank payment, not a guaranteed deadline: nothing happens
+            automatically when it passes, so present it to your customer as expected timing. Rounded to
+            the nearest whole hour and never below `1`. `null` on an instant quote.
           example: 24
 
     PartnerInitiateRequest:
@@ -8560,8 +8563,10 @@ components:
           type: integer
           nullable: true
           description: >-
-            The promised payout window, counted from the release — not from the order. Rounded to
-            the nearest whole hour and never below `1`. `null` on an instant order.
+            The expected payout window, counted from the release — not from the order. It is the
+            licensed partner's target for the bank payment, not a guaranteed deadline: nothing happens
+            automatically when it passes. Rounded to the nearest whole hour and never below `1`. `null`
+            on an instant order.
           example: 24
         consent_deadline_at:
           type: string
@@ -8576,8 +8581,9 @@ components:
           format: date-time
           nullable: true
           description: |
-            Release time plus the promised window; `settlement_hours` is that window rounded to whole
-            hours. `null` until the crypto has left escrow.
+            Release time plus the expected window; `settlement_hours` is that window rounded to whole
+            hours. When the payment is expected by, not a deadline: the order does not change and no
+            event is sent when it passes. `null` until the crypto has left escrow.
           example: "2026-09-19T12:07:55Z"
         delayed_settlement_crypto_sent_to_provider_at:
           type: string
@@ -9489,14 +9495,15 @@ components:
             settlement_hours:
               type: integer
               description: >-
-                The promised payout window, counted from the release. Rounded to the nearest whole
-                hour and never below `1`.
+                The expected payout window, counted from the release: the licensed partner's target,
+                not a guaranteed deadline. Rounded to the nearest whole hour and never below `1`.
               example: 24
             payout_deadline_at:
               type: string
               format: date-time
               description: >-
-                Release plus the promised window. Absent until the crypto has left escrow.
+                Release plus the expected window: when the payment is expected by, not a deadline.
+                Absent until the crypto has left escrow.
               example: "2026-09-19T12:07:55Z"
             delayed_settlement_crypto_sent_to_provider_at:
               type: string

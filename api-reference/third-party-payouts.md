@@ -456,8 +456,10 @@ path.
 
 A third-party payout can settle T+1: once you have signed its release, the
 crypto goes to the licensed partner before the recipient is paid, and the
-payment follows within a fixed window counted from the release. The rule is the
-one in [When an order is delayed](./delayed-settlement.md#when-an-order-is-delayed),
+payment follows, expected within a window counted from the release
+(`settlement_hours`): the licensed partner's target, not a guaranteed deadline.
+The rule is the one in
+[When an order is delayed](./delayed-settlement.md#when-an-order-is-delayed),
 among the licensed partners that can pay a recipient: one that settles instantly
 takes the payout whenever it can, and one that settles T+1 takes it only when
 none can. The quote has no parameter to ask for it or refuse it.
