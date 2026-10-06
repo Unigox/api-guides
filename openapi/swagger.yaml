@@ -5475,7 +5475,15 @@ paths:
         declared type. A `bank_statement` must be a bank-issued PDF.
 
         An unrecognised `document_type` is stored; `satisfies_requirement` is then `false` and
-        `expected_document_types` names the types that would satisfy the case.
+        `expected_document_types` names the types that would satisfy the case. It must still be a key:
+        lower-case letters, digits and underscores, at most 64 characters (`422` otherwise, unless a
+        reviewer requested exactly that key).
+
+        **Case bounds.** One case holds at most 60 files in all (replaced files included), 30 standing
+        files at once and 262,144,000 bytes (250 MiB) in all; an upload that would go past one answers
+        `422`. A file that replaces one of its own type (that type already has `maximum_files` standing)
+        still goes through when only the 30 standing files are reached. Once 10 files have been stored on
+        the case within the last minute, the next upload answers `429`. A refused upload stores nothing.
 
         **Write availability.** Accepted only while the order is in the funded pre-release state
         and the source-of-funds case is undecided.
@@ -5509,7 +5517,8 @@ paths:
                   type: string
                   description: >-
                     What this file is — a key from `requirements_snapshot.documents[].documents`, or from
-                    a `requested_documents` entry.
+                    a `requested_documents` entry. Lower-case letters, digits and underscores, at most 64
+                    characters; a key a reviewer requested in another shape is accepted as requested.
                   example: bank_statement
                 period_start:
                   type: string
@@ -5604,8 +5613,10 @@ paths:
                     allowed: ["HEIC", "HEIF", "JPEG", "PDF", "PNG", "WebP"]
         '422':
           description: >-
-            `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts;
-            or the file is empty or under 4096 bytes. An undersized file includes
+            `document_type` or `file` is missing; `document_type` is not a key of lower-case letters,
+            digits and underscores of at most 64 characters; a period is not `YYYY-MM-DD` or ends before
+            it starts; the file is empty or under 4096 bytes; or the case already holds 60 files or 30
+            standing files, or this file would take it past 250 MiB. An undersized file includes
             `error.details.code: document_too_small`; do not apply this explanation to every 422.
           content:
             application/json:
@@ -5616,6 +5627,19 @@ paths:
                 error:
                   code: INVALID_REQUEST
                   message: "document_type is required: it must be a document key from the requirements catalogue"
+        '429':
+          description: >-
+            10 files were stored on this case within the last minute. Nothing was stored; send the file
+            again a minute later. The code is `INTERNAL_ERROR`: branch on the HTTP status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "too many documents were uploaded to this case in the last minute; wait a minute and try again"
         '500':
           description: The document could not be saved.
           content:
@@ -9178,7 +9202,8 @@ components:
               `requested_documents`
             - `resubmitted` — the answer to that request is in
             - `approved` — review passed; Unigox attempts release when consent is recorded
-            - `rejected` — review failed; follow the order's escrow refund actions
+            - `rejected` — review failed; follow the order's escrow refund actions. A reviewer can
+              reject a case that is still waiting for documents
             - `escalated` — further review is needed; wait unless more documents are requested
 
             Approval after consent attempts release; consent after approval does the same.
@@ -9411,7 +9436,11 @@ components:
         request_expires_at:
           type: string
           format: date-time
-          description: Deadline recorded for that request. Can remain after the request is answered; absent if no deadline was recorded.
+          description: >-
+            The deadline for that request: 72 hours after it, or the order's `consent_deadline_at` if that
+            comes first. A request does not extend the signing window; the order moves to a refund at
+            `consent_deadline_at` whatever the case still waits for. Can remain after the request is
+            answered; absent if no request was made.
         decided_at:
           type: string
           format: date-time

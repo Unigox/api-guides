@@ -341,7 +341,10 @@ the IDs as returned. Document metadata does not give access to the file itself.
 `requested_at` and `request_expires_at` are the timestamps of the last request a
 reviewer made. They stay after the request has been answered; use
 `requested_documents` and the case `status` to know whether the customer still
-owes something.
+owes something. `request_expires_at` is 72 hours after that request or the
+order's `consent_deadline_at`, whichever comes first: a request does not extend
+the signing window, and the order moves to a refund at `consent_deadline_at`
+whatever the case still waits for.
 
 `404 ORDER_NOT_FOUND`: no case yet, not your order, or its crypto is not yours.
 An on-ramp order answers `400 INVALID_REQUEST`. A decided case still answers.
@@ -445,7 +448,7 @@ Content-Type: multipart/form-data
 | Part | Required | Notes |
 | --- | --- | --- |
 | `file` | yes | The bytes: 4,096 to 15,728,640 (15 MiB). |
-| `document_type` | yes | A key from `requirements_snapshot` or from a `requested_documents` entry. An unknown key is stored, with `satisfies_requirement` `false`. |
+| `document_type` | yes | A key from `requirements_snapshot` or from a `requested_documents` entry: lower-case letters, digits and underscores, at most 64 characters. Any other value answers `422`, unless a reviewer requested exactly that key. An unknown key of that shape is stored, with `satisfies_requirement` `false`. |
 | `period_start` | no | `YYYY-MM-DD`. The period a statement covers. |
 | `period_end` | no | `YYYY-MM-DD`. Not before `period_start`. |
 
@@ -455,6 +458,14 @@ file part's `Content-Type` may name one of these, or be absent or
 are checked either way. Any other declared type answers `415`. A `bank_statement`
 must be a bank-issued PDF. The API checks format and size; a reviewer checks the
 contents. A long file name is shortened when it is stored.
+
+One case holds at most 60 files in all (replaced files included), 30 standing
+files at once, and 262,144,000 bytes (250 MiB) in all. An upload that would go
+past any of these answers `422`; a file that replaces one of its own type (because that type
+already has `maximum_files` standing) still goes through when only the 30
+standing files are reached. Once 10 files have been stored on the case within
+the last minute, the next upload answers `429`: wait a minute and send it again.
+A refused upload stores nothing.
 
 ```json
 {
@@ -501,7 +512,7 @@ contents. A long file name is shortened when it is stored.
 | `additional_information_required` | The reviewer asked for something more; see `requested_documents`. |
 | `resubmitted` | The answer to that request is in. |
 | `approved` | Review passed. With your signature stored and the licensed partner's payment check passed, Unigox releases the crypto. |
-| `rejected` | Review failed. The order goes to a refund; read the refund actions on the order. |
+| `rejected` | Review failed. The order goes to a refund; read the refund actions on the order. A reviewer can reject a case that is still waiting for documents, for example when the customer stops answering. |
 | `escalated` | Further review is needed. Wait, unless more documents are requested. |
 
 Approval triggers the release if your signature is already stored and the
@@ -795,12 +806,14 @@ including the errors of the API gateway in front of them:
 | `OPERATION_NOT_ALLOWED` | 409 | The order is on hold and no crypto may move; the consent is already recorded (normally with the signature stored; see below for a call cut off part-way); or its deadline is missing or has passed. Read the order. |
 | `INVALID_REQUEST` | 413 | The file is larger than 15 MiB (15,728,640 bytes). |
 | `INVALID_REQUEST` | 415 | The file is not an accepted format, its bytes do not match its content type, or a `bank_statement` is not a bank-issued PDF. `error.details.allowed` lists what is accepted. |
-| `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes. |
+| `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; `document_type` is not a key of lower-case letters, digits and underscores of at most 64 characters; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes; the case already holds 60 files or 30 standing files, or this file would take it past 250 MiB. |
+| `INTERNAL_ERROR` | 429 | 10 files were stored on this case within the last minute. Nothing was stored; send the file again a minute later. |
 | `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order (`GET /api/v1/partner/orders/{order_id}`); if it still offers `settlement-consent`, retry the same signature. |
 | `INTERNAL_ERROR` | 500 / 502 / 503 | `502` when document storage failed; `503` when the source of funds service or document storage is unavailable; `500` for any other server failure. Read the case before retrying an upload: an error does not prove nothing was stored. |
 | `INTERNAL_ERROR` | 502 / 504 | From the API gateway: it could not complete the call (`502`), or got no answer in time (`504`). The call may still have been applied: read the order or the case before retrying. |
 
-413, 415 and 422 share `INVALID_REQUEST`; branch on the HTTP status.
+413, 415 and 422 share `INVALID_REQUEST`, and 429 carries `INTERNAL_ERROR`;
+branch on the HTTP status.
 
 The consent `POST` and a large upload take longer than other calls; give them
 a longer client timeout. Treat your own timeout, a dropped connection and a
