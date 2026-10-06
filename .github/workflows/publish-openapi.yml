@@ -17,9 +17,11 @@ name: Publish OpenAPI to GitBook
 # Find ORG and SPEC by running locally once after `gitbook auth`:
 #   gitbook openapi publish --organization <org> --spec <spec> openapi/swagger.yaml
 #
-# Nothing is published while changelog.md holds an "Unreleased" entry: the spec then describes
-# endpoints that are not live yet (scripts/check-release.mjs). The push that dates the entry touches
-# only changelog.md, which is why that path triggers this job too.
+# This job publishes nothing while changelog.md holds an "Unreleased" entry: the spec then describes
+# endpoints that are not live yet (scripts/check-release.mjs). It holds back this job only: the raw
+# URL serves main's spec as soon as it merges (README, "Releasing documentation ahead of the code").
+# The push that dates the entry touches only changelog.md, which is why that path triggers this job
+# too.
 
 on:
   push:

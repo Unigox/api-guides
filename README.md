@@ -110,10 +110,12 @@ endpoints that answer `404` and behaviour production does not have yet.
   the API gateway routes are live.
 - While the change is not live, keep its changelog entry under an
   `## Unreleased` heading. Both publish jobs run `scripts/check-release.mjs` first
-  and refuse to publish while such a heading exists, so an early merge publishes
-  nothing (the job fails and says why). The guard covers the two CI jobs only: a
-  markdown page that GitBook syncs on its own is not held back by it, which is
-  another reason to merge last.
+  and refuse to publish while such a heading exists (the job fails and says why).
+  That stops the two CI jobs and nothing else. The raw URL above serves `main`'s
+  spec the moment it merges, GitBook can pick that spec up without the CI job
+  (the re-fetch described under "Updating the docs after a spec change"), and
+  markdown pages are not covered at all. The guard is a backstop for a mistaken
+  merge, not a way to merge early.
 - Once the release is live, replace `Unreleased` with the release date and push.
   That push publishes the changelog and the spec together.
 
@@ -122,19 +124,59 @@ Run the guard's tests with `node --test scripts/*.test.mjs`.
 ### Pending: delayed settlement (T+1) and third-party payouts
 
 The changelog's `Unreleased` entry describes the release on the
-`feat/t1-third-party-payouts-20261002` branch. Deploy and merge it in this order:
+`feat/t1-third-party-payouts-20261002` branch. The account repository's runbook,
+`docs/bill-payment-settlement-t1-runbook.md` ("Deploy order" and "Upgrading a
+live deployment"), owns the order of the services and their preconditions; if it
+and this list ever disagree, the runbook wins. This list places the two
+repositories the runbook leaves out, the API gateway and this one.
 
-1. account: the database migrations
-2. offers
-3. trades (trades#538)
-4. verification
-5. agent-scripts
-6. api: the gateway routes for the partner T+1 endpoints (api#66). Until it is
-   deployed those endpoints answer the gateway's `404`, so no partner is enabled
-   for delayed settlement before it.
-7. unigox.com
-8. api-guides (this repository), last: date the `Unreleased` entry, then merge.
+First rollout, where nothing T+1 runs yet:
 
-Each service's own release steps still apply (for account and trades, the runbook
-`account/docs/bill-payment-settlement-t1-runbook.md`). Delete this subsection
-when the entry is dated.
+1. account: the T+1 migrations, checked as the runbook's "Deploy preconditions"
+   says, then the account build.
+2. verification: after account's migrations and before trades. trades stores the
+   source-of-funds documents and payout receipts through this build's routes;
+   against an older build every such upload fails in trades.
+3. agent-scripts: the Lightnet agent's build from this release, before trades.
+   This trades releases a parked T+1 trade only while the agent keeps
+   re-affirming its payment check; against an older agent it holds every T+1
+   trade of that vendor.
+4. trades (trades#538).
+5. api (api#66): the gateway routes for the partner T+1 endpoints, after trades.
+   Until it is deployed those endpoints answer the gateway's `404`.
+6. unigox.com.
+7. api-guides (this repository), the last repository: date the `Unreleased`
+   entry, then merge.
+
+offers goes out at any point after account's migrations (its build reads the T+1
+offer columns they add) and before agent-scripts (an older offers build clears
+an offer's fee rows on a price-only update).
+
+Upgrading a deployment that already runs T+1:
+
+1. account: the T+1 migrations and the runbook's checks, before any new build
+   starts.
+2. offers and verification, in either order.
+3. agent-scripts, unigox.com, trades, in that order.
+4. account's build, stop-start: every replica of the old build stops before the
+   first replica of the new one starts (a mixed fleet mails two receipts for
+   every delayed bill that completes while both run).
+5. api (api#66).
+6. api-guides, last, as above.
+
+In both, the switches come after the deploys and follow the runbook: the offer
+flag last, and a partner is listed in `DELAYED_SETTLEMENT_PARTNERS` only once
+api#66 is live and the partner has implemented the consent signing.
+
+Before dating the entry, confirm that the deployed trades does what these docs
+say where they were written ahead of it:
+
+- The source-of-funds case carries the order's `order_id` and no `trade_id`.
+  trades#538 as reviewed still sends `trade_id`; fix it in trades rather than
+  documenting the internal id.
+- The crypto reaching the payout provider is recorded in a separate operator
+  step before the payment approval, and is never cleared. If the release
+  instead has the approval set that mark, with an admin undo, re-apply
+  `2b7170e` (Step 6, the order fields and the webhook fields).
+
+Delete this subsection when the entry is dated.

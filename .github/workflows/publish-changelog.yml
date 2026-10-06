@@ -16,7 +16,7 @@ name: Publish Changelog to GitBook
 #
 # The "Changelog" page must already exist in the space (create it once in GitBook).
 #
-# Nothing is published while changelog.md holds an "Unreleased" entry (scripts/check-release.mjs):
+# This job publishes nothing while changelog.md holds an "Unreleased" entry (scripts/check-release.mjs):
 # date the entry once the release is live, and that push publishes it.
 
 on:

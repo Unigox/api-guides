@@ -4,8 +4,10 @@
 // publish-changelog.yml run on every push that touches the spec or the changelog, so merging docs for
 // a change whose services are not deployed yet would show partners endpoints that answer 404 and
 // behaviour production does not have. Docs written ahead of their release keep their changelog entry
-// under an "## Unreleased" heading; while one is there, both publish jobs stop here. Once every service
-// in the release is live, replace the heading with the release date: that push publishes both.
+// under an "## Unreleased" heading; while one is there, both publish jobs stop here. It stops these two
+// jobs and nothing else (the raw spec URL serves main as soon as it merges), so it is a backstop for a
+// mistaken merge, not leave to merge early. Once every service in the release is live, replace the
+// heading with the release date: that push publishes both.
 //
 // Usage: node scripts/check-release.mjs [path/to/changelog.md]
 
@@ -35,7 +37,7 @@ async function main() {
   for (const heading of headings) {
     console.error(
       `::error file=changelog.md,line=${heading.line}::"${heading.text}" describes changes that are not live yet. ` +
-        "Nothing is published until it carries the release date (see README, Releasing documentation ahead of the code).",
+        "This job publishes nothing until it carries the release date (see README, Releasing documentation ahead of the code).",
     );
   }
   process.exit(1);
