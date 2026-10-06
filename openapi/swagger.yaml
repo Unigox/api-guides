@@ -8660,18 +8660,15 @@ components:
           format: date-time
           nullable: true
           description: >-
-            The crypto left the licensed partner's wallet for the payout provider. Set at the latest when
-            Unigox authorizes the bank payment. A refund to the customer is not possible while it is set.
-            Cleared only when Unigox withdraws a record made by mistake, while no payment is authorized,
-            in flight or paid.
+            The crypto left the licensed partner's wallet for the payout provider. A refund to the customer stops
+            being possible at this mark.
         delayed_settlement_fiat_payout_authorized_by_admin_at:
           type: string
           format: date-time
           nullable: true
           description: >-
             Unigox authorized the licensed partner to send the bank payment. Never set before
-            `delayed_settlement_crypto_sent_to_provider_at`: the authorization sets that one too when it is
-            still `null`.
+            `delayed_settlement_crypto_sent_to_provider_at`.
         delayed_settlement_fiat_payout_submitted_by_provider_at:
           type: string
           format: date-time
@@ -9583,14 +9580,11 @@ components:
               format: date-time
               description: >-
                 The crypto left the licensed partner's wallet for the payout provider. A refund to the customer
-                is not possible while it is set. Absent until it happens, and absent again if Unigox withdraws
-                a record made by mistake.
+                stops being possible at this mark. Absent until it happens.
             delayed_settlement_fiat_payout_authorized_by_admin_at:
               type: string
               format: date-time
-              description: >-
-                Unigox authorized the licensed partner to send the bank payment. Absent until it happens. When
-                the authorization also records the crypto reaching the payout provider, one event carries both.
+              description: Unigox authorized the licensed partner to send the bank payment. Absent until it happens.
             delayed_settlement_fiat_payout_submitted_by_provider_at:
               type: string
               format: date-time
