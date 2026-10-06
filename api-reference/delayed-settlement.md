@@ -330,7 +330,8 @@ GET /api/v1/partner/orders/{order_id}/source-of-funds
 X-API-Key: <api-key>
 ```
 
-`data` holds `order_id`, `delayed_settlement`, `case_id`, `status`, `consent`
+`data` holds `order_id` (the `{order_id}` you called, exactly as you sent it;
+never the numeric trade ID), `delayed_settlement`, `case_id`, `status`, `consent`
 (`signed` and a nullable `signed_at`), `threshold_usd`, `usd_equivalent`,
 `source_of_funds` (whether it applies, and the case summary), `declaration`,
 `documents`, `requested_documents`, optional `requirements_snapshot`, nullable

@@ -171,9 +171,6 @@ api#66 is live and the partner has implemented the consent signing.
 Before dating the entry, confirm that the deployed trades does what these docs
 say where they were written ahead of it:
 
-- The source-of-funds case carries the order's `order_id` and no `trade_id`.
-  trades#538 as reviewed still sends `trade_id`; fix it in trades rather than
-  documenting the internal id.
 - The crypto reaching the payout provider is recorded in a separate operator
   step before the payment approval, and is never cleared. If the release
   instead has the approval set that mark, with an admin undo, re-apply

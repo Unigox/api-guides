@@ -9131,13 +9131,15 @@ components:
     PartnerSourceOfFundsCase:
       type: object
       description: |
-        Partner/customer view of one T+1 source-of-funds case. Reviewer identity, screening results
-        and internal checklist are not exposed; the admin response has a separate shape.
+        Your view of one T+1 source-of-funds case, keyed by the order. Reviewer identity, screening
+        results and internal checklist are not exposed; the admin response has a separate shape.
       properties:
         order_id:
           type: string
           format: uuid
-          description: The order this case belongs to, the same UUID the order endpoints take.
+          description: >-
+            The `{order_id}` of the request, exactly as it was sent in the path: the order's UUID, the
+            same one the order endpoints take. The numeric trade id is never returned.
         delayed_settlement:
           type: boolean
           description: Always `true` — only a delayed order has a source-of-funds case.
