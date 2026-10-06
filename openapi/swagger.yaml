@@ -5751,10 +5751,16 @@ paths:
             `awaiting_crypto_submit` and `crypto_submit_pending`, which are internal constants this API
             never reports and the enum does not carry.
 
-            Four of the accepted values can never match a row and answer an empty `200`:
-            `awaiting_liquidity_provider` and `price_changed_requote_needed` live on a trade request
-            and never on an order, and `fiat_received_confirmed` and `crypto_release_pending` are
-            shadowed by `completed`, which every internal status behind them reports.
+            Two of the accepted values can never match a row and answer an empty `200`:
+            `fiat_received_confirmed` and `crypto_release_pending` are shadowed by `completed`, which
+            every internal status behind them reports.
+
+            `awaiting_liquidity_provider` and `price_changed_requote_needed` return the orders no
+            liquidity provider has accepted yet that report them: an order that is still waiting
+            for acceptance, and one whose price moved past its slippage at initiation. Poll
+            `awaiting_liquidity_provider` to follow a new order until it is accepted. The other
+            statuses an unaccepted order can report (`created`, `awaiting_crypto_transfer_authorization`,
+            `cancelled`, `failed`) return it under their filters too.
 
             A ramp-specific status implies its trade type, so `status` and `type` need not be paired.
             Passing a `type` that contradicts the status is not an error either — it is simply a
@@ -5777,9 +5783,12 @@ paths:
               whose crypto was refunded to the customer after the release
 
             For these four values a filter returns exactly the orders whose `status` reports that
-            value. That does not hold for the status filter in general: several partner statuses share
-            one internal status, so `?status=crypto_transfer_authorization_pending` returns rows
-            reporting `awaiting_crypto_transfer_authorization`.
+            value. So do `awaiting_crypto_transfer_authorization` and
+            `crypto_transfer_authorization_pending`: the two share one internal status and are told
+            apart by whether the funding transfer was submitted, exactly as the order reports them.
+            `crypto_received` is wider on purpose: it returns every off-ramp order whose crypto is in
+            escrow while the payment is unfinished, including rows that report
+            `fiat_payment_started`, `fiat_payment_review_started` or `dispute_started`.
           schema:
             $ref: '#/components/schemas/PartnerOrderStatus'
           example: "completed"
@@ -8765,8 +8774,8 @@ components:
         - `cancelled` — order cancelled
         - `failed` — terminal error
         - `price_changed_requote_needed` — slippage exceeded at initiation. Like
-          `awaiting_liquidity_provider`, it belongs to a trade request rather than a trade, so
-          `GET /partner/orders?status=` accepts it and returns nothing
+          `awaiting_liquidity_provider`, it is reported before a liquidity provider has accepted
+          the order, and `GET /partner/orders?status=` returns the orders that report it
 
         **Delayed settlement (T+1) statuses:**
 

@@ -619,9 +619,9 @@ the four release-related filters mean:
 | `cancelled` | Orders that stopped before the release, as before, plus delayed orders whose crypto was refunded after it. |
 
 For these four values a filter returns exactly the orders whose `status` reports
-that value. That does not hold for every filter: several partner statuses share
-one internal status, so `?status=crypto_transfer_authorization_pending` returns
-rows that report `awaiting_crypto_transfer_authorization`.
+that value. That does not hold for every filter: `crypto_received` also returns
+orders whose crypto is in escrow while the payment is under way, which report
+`fiat_payment_started`, `fiat_payment_review_started` or `dispute_started`.
 
 `GET /api/v1/partner/stats` counts completed orders by the same rule: a delayed
 order adds to `completed_orders`, `volume_usd` and `earned_usd` only once its
