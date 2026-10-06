@@ -5024,9 +5024,9 @@ paths:
             release transaction. A 409 can mean stored consent, changed state, a hold or an expired
             deadline; it does not by itself confirm success.
 
-            A `502` or `503` whose body has no `error` but `data.error_key`
-            (`backend_service_unavailable`) comes from the API gateway, which got no answer in time:
-            the signature may have been stored. Handle it like a timeout, as above.
+            A `502 INTERNAL_ERROR` comes from the API gateway, which could not complete the call, and a
+            `504 INTERNAL_ERROR` from the gateway means it got no answer in time. Either way the
+            signature may have been stored: handle it like a timeout, as above.
           content:
             application/json:
               schema:
@@ -5036,6 +5036,19 @@ paths:
                 error:
                   code: TRANSACTOR_ERROR
                   message: "the settlement consent signature could not be accepted, please retry"
+        '504':
+          description: >-
+            The API gateway got no answer in time. The call may still have been applied: read the
+            order before retrying, as for a `502`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
         '500':
           description: The release transaction could not be prepared.
           content:
@@ -5596,11 +5609,10 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '502':
           description: >-
-            The document store refused the file, or could not store it intact. The code is
-            `INTERNAL_ERROR`, not `TRANSACTOR_ERROR`. Read the case before retrying an uncertain upload.
-            A `502` or `503` whose body has no `error` but `data.error_key`
-            (`backend_service_unavailable`) comes from the API gateway, which got no answer in time:
-            the file may have been stored. Treat it like a timeout and read the case first.
+            The document store refused the file, or could not store it intact; or the API gateway
+            could not complete the call. The code is `INTERNAL_ERROR`, not `TRANSACTOR_ERROR`. Read the
+            case before retrying an uncertain upload. A `504 INTERNAL_ERROR` from the gateway means it
+            got no answer in time and the file may have been stored: read the case first too.
           content:
             application/json:
               schema:
@@ -5610,6 +5622,19 @@ paths:
                 error:
                   code: INTERNAL_ERROR
                   message: "the document could not be stored"
+        '504':
+          description: >-
+            The API gateway got no answer in time. The call may still have been applied: read the
+            case before sending the same file again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
         '503':
           description: The document store is not available. Nothing was stored; retry.
           content:

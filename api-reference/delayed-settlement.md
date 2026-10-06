@@ -766,8 +766,9 @@ with its own `event_id`. No subscription change is needed.
 
 ## Errors
 
-Every endpoint on this page answers its own errors in the standard partner
-envelope, `{"success": false, "error": {"code": ..., "message": ...}}`:
+The consent and source of funds endpoints answer every error in the standard
+partner envelope, `{"success": false, "error": {"code": ..., "message": ...}}`,
+including the errors of the API gateway in front of them:
 
 | `error.code` | Status | When |
 | --- | --- | --- |
@@ -781,12 +782,17 @@ envelope, `{"success": false, "error": {"code": ..., "message": ...}}`:
 | `INVALID_REQUEST` | 422 | A declaration field is missing, unknown or over 4,000 bytes of UTF-8; `document_type` or `file` is missing; a period is not `YYYY-MM-DD` or ends before it starts; the file is empty or under 4,096 bytes. |
 | `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order (`GET /api/v1/partner/orders/{order_id}`); if it still offers `settlement-consent`, retry the same signature. |
 | `INTERNAL_ERROR` | 500 / 502 / 503 | `502` when document storage failed; `503` when the source of funds service or document storage is unavailable; `500` for any other server failure. Read the case before retrying an upload: an error does not prove nothing was stored. |
+| `INTERNAL_ERROR` | 502 / 504 | From the API gateway: it could not complete the call (`502`), or got no answer in time (`504`). The call may still have been applied: read the order or the case before retrying. |
 
 413, 415 and 422 share `INVALID_REQUEST`; branch on the HTTP status.
 
-One kind of error does not come from these endpoints. When the API gateway in
-front of them gets no answer in time, or cannot reach the service, it answers
-`502` (or `503`) in its own shape, with no `error.code`:
+The consent `POST` and a large upload take longer than other calls; give them
+a longer client timeout. Treat your own timeout, a dropped connection and a
+gateway `502` or `504` the same way: the call may have gone through.
+
+The other endpoints this page uses, such as the quote and the order reads, can
+still meet a gateway failure in the gateway's own shape, `502` (or `503`) with
+no `error.code`:
 
 ```json
 {
@@ -795,10 +801,8 @@ front of them gets no answer in time, or cannot reach the service, it answers
 }
 ```
 
-Treat that answer, a `504` and a dropped connection as a timeout: the call may
-have gone through. The consent `POST` and a large upload are the calls most
-likely to meet it. Do not branch on `error.code` alone; check that `error` is
-there.
+Treat it as a timeout too, and do not branch on `error.code` without checking
+that `error` is there.
 
 After a timeout, a gateway error or a `502` on the consent call, read the order
 first, with `GET /api/v1/partner/orders/{order_id}` rather than the list: the
