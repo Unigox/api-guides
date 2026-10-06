@@ -5059,7 +5059,7 @@ paths:
               example:
                 success: true
                 data:
-                  trade_id: 77
+                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                   delayed_settlement: true
                   case_id: "sof_9f1c4e2b"
                   status: "documents_required"
@@ -9055,10 +9055,10 @@ components:
         Partner/customer view of one T+1 source-of-funds case. Reviewer identity, screening results
         and internal checklist are not exposed; the admin response has a separate shape.
       properties:
-        trade_id:
-          type: integer
-          format: int64
-          description: Numeric reference for this exchange. Informational; partner endpoint paths still use the order UUID.
+        order_id:
+          type: string
+          format: uuid
+          description: The order this case belongs to, the same UUID the order endpoints take.
         delayed_settlement:
           type: boolean
           description: Always `true` — only a delayed order has a source-of-funds case.
