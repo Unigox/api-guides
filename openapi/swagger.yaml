@@ -2977,7 +2977,8 @@ paths:
         amounts a corridor stops settling instantly without burning quotes. Both are **indicative**,
         like the price: the estimate reserves nothing, and the quote runs the match again, so a
         corridor that estimates as T+1 can quote as instant if instant liquidity has appeared (and
-        the other way round). Read the class off the quote, and the order response is final.
+        the other way round). Read the class off the quote; the order response is final once a
+        licensed partner has accepted the order.
         `source_of_funds_required` says whether the order would need a source-of-funds review before
         its release, and a delayed estimate carries the threshold in force as
         `source_of_funds_threshold_usd`. Both are indicative too: the order's own fields decide.
@@ -8087,7 +8088,8 @@ components:
             Whether pricing at this amount would currently open a **delayed settlement (T+1)**
             order. Always present. Indicative, like the numbers: the estimate reserves nothing and
             the quote matches again, so the class can change either way before the quote. Read the
-            class off the quote (`false` there is binding), and the order response is final. Sent
+            class off the quote (`false` there is binding); the order response is final once a licensed
+            partner has accepted the order. Sent
             with your credentials, the estimate checks whether Unigox has enabled delayed settlement
             for you and, until it has, prices instant offers only, as your quotes match. Sent without
             credentials it does not check, and can report `true` for an amount your quote would
@@ -8937,10 +8939,11 @@ components:
             with the other T+1 fields below. T+1 timestamps and the window are null on instant
             orders. The current numeric source-of-funds threshold is still returned.
 
-            Provisional until a licensed partner accepts the order: until then it follows the offer
-            the order is currently offered to, so it can change while the order waits, and it reads
-            `false` while no offer is being offered (after a cancel, for example). Fixed from
-            acceptance.
+            Provisional until a licensed partner accepts the order. While an order quoted T+1 waits for
+            one, it follows the offer the order is currently offered to, so it can change: it reads
+            `false` between offers and on an instant offer. Once such an order stops waiting without
+            being accepted (you cancelled it, or no licensed partner accepted it), it keeps `true`,
+            with `settlement_hours` `null`. Fixed from acceptance.
           example: false
         settlement_hours:
           type: integer

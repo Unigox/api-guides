@@ -511,7 +511,9 @@ You recognise it on the same fields as any delayed order:
   `recipient_context`;
 - `GET /api/v1/partner/orders/{order_id}` carries the same two fields and the
   other T+1 fields, next to `recipient_context` and `compliance`. The
-  `initiate` response does not carry them.
+  `initiate` response does not carry them. Until a licensed partner accepts
+  the payout they are provisional: they follow the offer it is currently
+  offered to, and a payout quoted T+1 can still move to an instant offer.
 
 To see it before you quote, call `POST /api/v1/partner/offramp/estimate` with
 the recipient's `recipient_id` and `recipient_destination_id`, as shown in

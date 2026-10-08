@@ -152,20 +152,19 @@ The estimate also says whether the order would need a source of funds review
 same as on any off-ramp order. Read `delayed_settlement` and `settlement_hours`
 from `GET /api/v1/partner/orders/{order_id}` from the moment the order exists;
 the responses of `initiate` and `authorize-crypto-transfer` do not carry them.
-Until a licensed partner accepts the order they are provisional: they follow the
-offer the order is currently offered to, and an order quoted T+1 can still move
-to an instant offer. They are fixed from acceptance.
+Until a licensed partner accepts the order they are provisional: while it waits
+they follow the offer the order is currently offered to, and an order quoted T+1
+can still move to an instant offer. They are fixed from acceptance.
 
 The licensed partner's capacity is reserved when the order is created, before
 the escrow is funded. Cancelling the order, or letting the funding window expire,
 frees it again.
 
 Until the escrow is funded you can cancel as usual:
-`POST /api/v1/partner/orders/{order_id}/cancel` answers `cancelled` at once. If
-you cancel before a licensed partner accepts the order, it reads `cancelled`
-with no `settlement_refund_reason` (and `delayed_settlement` reads `false`). If
-you cancel after acceptance and before funding, `settlement_refund_reason` reads
-`cancelled_by_customer`.
+`POST /api/v1/partner/orders/{order_id}/cancel` answers `cancelled` at once and
+`settlement_refund_reason` reads `cancelled_by_customer`, whether or not a
+licensed partner has accepted the order yet. An order quoted T+1 that you
+cancel before acceptance keeps `delayed_settlement: true`.
 
 The licensed partner can decline a funded order until you sign the release. The
 order then reads `cancelled`, `settlement_refund_reason` reads
@@ -613,7 +612,7 @@ the one exception: it is absent, not empty, when it does not apply.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `delayed_settlement` | boolean | Whether this order settles T+1. `false`, not `null`, on an ordinary order. Provisional until a licensed partner accepts the order: until then it follows the offer the order is currently offered to, so it can change while the order waits, and it reads `false` while no offer is being offered (after a cancel, for example). Fixed from acceptance. |
+| `delayed_settlement` | boolean | Whether this order settles T+1. `false`, not `null`, on an ordinary order. Provisional until a licensed partner accepts the order. While an order quoted T+1 waits for one, it follows the offer the order is currently offered to, so it can change: it reads `false` between offers and on an instant offer. Once such an order stops waiting without being accepted (you cancelled it, or no licensed partner accepted it), it keeps `true`, with `settlement_hours` `null`. Fixed from acceptance. |
 | `settlement_hours` | integer \| null | The expected payment window in whole hours, counted from the release; never below `1`. It is the licensed partner's target, not a deadline: nothing happens automatically when it passes. `null` on an instant order. |
 | `consent_deadline_at` | string \| null | Funding time plus the signing window. After it the release is blocked and the order moves to a refund. Set while the crypto is in escrow, including after your signature while a source of funds review is open: the review must also finish by then. `null` once the crypto has left the escrow or the order has ended. |
 | `payout_deadline_at` | string \| null | Release time plus the expected window: when the payment is expected by, not a deadline with a consequence. `null` until the crypto has left the escrow. |

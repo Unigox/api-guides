@@ -36,7 +36,9 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   `source_of_funds_threshold_usd`. A delayed order that ended without a payment also carries
   `settlement_refund_reason`: `refunded_after_release`, `dossier_rejected`, `consent_window_expired`,
   `not_released_in_time`, `cancelled_by_customer` or `cancelled_by_licensed_partner`. The `initiate` and
-  `authorize-crypto-transfer` responses do not carry the T+1 fields; read them from the order.
+  `authorize-crypto-transfer` responses do not carry the T+1 fields; read them from the order. Before a
+  liquidity provider accepts an order quoted T+1, its `delayed_settlement` is provisional: it follows the
+  offer the order is currently offered to, and the order can still move to an instant offer.
 - **Signing the release.** `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters` returns
   the EIP-712 payload to sign and `POST /api/v1/partner/orders/{order_id}/settlement-consent` takes the
   signature. The release also waits for any required source of funds approval and for the licensed
