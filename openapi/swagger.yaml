@@ -8524,9 +8524,11 @@ components:
             a signature. Until then your orders match instant offers only.
 
             The class is kept with the quote. `false` here means the order can never be T+1,
-            whatever happens to the offer in the meantime. `true` means it will be T+1 unless instant
-            liquidity has appeared by the time you initiate, in which case the order is instant — the
-            money arrives sooner than quoted. The order response says which.
+            whatever happens to the offer in the meantime. `true` means it will be T+1 unless the
+            order ends up on an instant offer before a licensed partner accepts it (instant liquidity
+            appeared by the time you initiate, or the order moved to an instant offer while it
+            waited), in which case the order is instant — the money arrives sooner than quoted. The
+            order response says which, provisionally until a licensed partner accepts the order.
           example: false
         settlement_hours:
           type: integer
@@ -8878,6 +8880,11 @@ components:
             order, on-ramp included, along
             with the other T+1 fields below. T+1 timestamps and the window are null on instant
             orders. The current numeric source-of-funds threshold is still returned.
+
+            Provisional until a licensed partner accepts the order: until then it follows the offer
+            the order is currently offered to, so it can change while the order waits, and it reads
+            `false` while no offer is being offered (after a cancel, for example). Fixed from
+            acceptance.
           example: false
         settlement_hours:
           type: integer
