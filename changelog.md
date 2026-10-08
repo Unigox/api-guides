@@ -2,6 +2,136 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## Unreleased
+
+**Not available yet.** Everything in this entry goes live with the delayed settlement (T+1) release, and
+the entry will carry that release's date. Until then the API behaves as the entries below describe. No
+endpoint or field is removed.
+
+### Delayed settlement (T+1)
+
+An off-ramp order can settle T+1: once you sign its release, the crypto goes to the licensed partner before
+the bank payment, and the payment follows, expected within `settlement_hours` of the confirmed release. The
+[delayed settlement guide](./api-reference/delayed-settlement.md) describes the whole flow.
+
+- **When an order is delayed.** An instant offer that covers the amount always wins; a T+1 offer is matched
+  only when none does. Only orders whose crypto you hold can be delayed, and only once Unigox has enabled
+  delayed settlement for you, on request. Until then your quotes and orders match instant offers only, and so
+  does an estimate sent with your credentials; a quote that no instant offer covers answers
+  `409 NO_OFFERS_AVAILABLE`. Instant orders behave as before.
+- **Liquidity.** `GET /api/v1/partner/liquidity` counts a T+1 offer only when its licensed partner is
+  enabled for T+1, and takes `exclude_delayed_settlement=true` for instant-only bands: the ones a partner
+  without delayed settlement can match. Without it the bands still include T+1 offers.
+- **Quote and estimate.** Both report `delayed_settlement` and `settlement_hours`. The estimate also
+  reports `source_of_funds_required`, always, and `source_of_funds_threshold_usd` when it priced a T+1
+  offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a
+  liquidity provider accepts it; before acceptance every order, T+1 included, reads `false`.
+- **Payout base rate.** A payout estimate or quote priced on a T+1 offer may include
+  `fee_breakdown.payout_base_rate`, the verified conversion before provider costs and vendor margin. It allows
+  the quoted total to be split into the recipient amount and one combined fee without charging the fee again.
+  An instant price never carries it, and a T+1 one omits it when the conversion basis is unavailable.
+  Existing amounts and the meaning of `fiat_rail_fee` are unchanged.
+- **Order fields.** Every order carries `delayed_settlement`, `settlement_hours`, `consent_deadline_at`,
+  `payout_deadline_at`, six `delayed_settlement_*_at` timestamps, `source_of_funds_required` and
+  `source_of_funds_threshold_usd`. A delayed order that ended without a payment also carries
+  `settlement_refund_reason`: `refunded_after_release`, `dossier_rejected`, `consent_window_expired`,
+  `not_released_in_time`, `cancelled_by_customer` or `cancelled_by_licensed_partner`. The `initiate` and
+  `authorize-crypto-transfer` responses do not carry the T+1 fields; read them from the order. Before a
+  liquidity provider accepts an order quoted T+1, its `delayed_settlement` is provisional: it follows the
+  offer the order is currently offered to, and the order can still move to an instant offer.
+- **Signing the release.** `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters` returns
+  the EIP-712 payload to sign and `POST /api/v1/partner/orders/{order_id}/settlement-consent` takes the
+  signature. The release also waits for any required source of funds approval and for the licensed
+  partner's payment check. A funded delayed order stays `crypto_received`, with `next_action`
+  `sign_settlement_consent`, `submit_source_of_funds` or `await_review`. `confirm-fiat-received` is refused
+  on a delayed order. The licensed partner can decline a funded order until you sign, and not after.
+- **Source of funds.** An order worth USD 50,000 or more needs the customer's explanation and documents
+  approved before the release. Four endpoints under `/api/v1/partner/orders/{order_id}` collect them:
+  `GET source-of-funds`, `GET source-of-funds/requirements`, `POST source-of-funds/declaration` and
+  `POST source-of-funds/documents`.
+- **Statuses.** `settlement_in_progress` after the release, and `returned` when a payment attempt came back
+  and no new attempt is approved yet. On a delayed order `completed` means the bank payment arrived; the
+  `completed` filter of `GET /api/v1/partner/orders` and `GET /api/v1/partner/stats` count it only then.
+  The timeline adds one entry per step, and the entries of repeated payment attempts end in `(attempt N)`.
+- **Webhooks.** `order.status.changed` fires twice for the release (when it starts, and when it is
+  confirmed, carrying `payout_deadline_at`) and once for each later step. T+1 fields are omitted on ordinary
+  orders, and T+1 events carry `provider: "p2p"`.
+- **Third-party payouts** can settle T+1 too. Among the licensed partners that can pay a recipient, one that
+  settles instantly takes the payout whenever it can, and one that settles T+1 takes it only when none can.
+  Until Unigox has enabled delayed settlement for you, a currency or rail that only T+1 offers serve is not
+  open to your third-party payout quotes: the quote answers `400 INVALID_REQUEST`
+  (`third-party recipient payout is not available for {CURRENCY}`) for the currency and
+  `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail, not `409 NO_OFFERS_AVAILABLE`. A retry does not change
+  either. See [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
+
+### Other changes
+
+- `POST /api/v1/partner/offramp/estimate` takes four new optional fields. `recipient_payout: true` prices
+  only on the licensed partners a recipient payout can be matched to, and `exclude_delayed_settlement: true`
+  leaves T+1 offers out, answering `409 NO_OFFERS_AVAILABLE` when no instant offer covers the amount. Both
+  only narrow the estimate; neither changes what a quote matches. `recipient_id` and
+  `recipient_destination_id`, sent together with your API key, price a recipient payout on that
+  destination's own bank or wallet method, rail and country, as the quote does, so a fee a licensed partner
+  charges for that bank is included. Without them a recipient-payout estimate is priced on the corridor and
+  can show a better rate than the quote.
+- The estimate stays public. Sent with your `X-API-Key` (checked first) or a `Bearer` token that
+  authenticates, it is priced as your quote would be matched, so it leaves T+1 offers out until delayed
+  settlement is enabled for you; without credentials it prices them for anyone. A credential that does not
+  authenticate is refused only when the body names `recipient_id` or `recipient_destination_id`: `401
+  UNAUTHORIZED` for a wrong key or an expired or unknown token, `403 UNAUTHORIZED` for a valid token of a
+  user who is not a partner or whose account is inactive, and `503` (or `500`) `INTERNAL_ERROR` while the
+  authentication service is unavailable. Any other request with such a credential is priced as an
+  anonymous caller without T+1 offers, the instant price it got before. `X-Secret-Key` is not a credential
+  on this route: a request that sends it is priced as anonymous. An `Authorization` header with another
+  scheme than `Bearer` is ignored.
+- A third-party quote whose sender, recipient or destination is not found for your partner account, or was
+  archived, still answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which: `sender not
+  found or not eligible`, `recipient not found or not eligible` or `recipient destination not found or not
+  eligible`, where it said `sender, recipient or destination not found or not eligible`.
+- Quote and initiate, on both ramps, also require the customer's identity to be verified by Unigox. Under
+  KYC reliance, a customer whose verification is still pending, whom a quote used to price, now gets `422
+  KYC_NOT_CLEARED` (with `error.details.kyc_status`). The message names the `sender` on an
+  off-ramp and the `customer` on an on-ramp, where it said `beneficiary`.
+- A `quote_id` that is not a UUID answers `400 INVALID_REQUEST` (`invalid quote_id format`) on both
+  initiates, where it answered `500`. A well-formed id that names no quote still answers `404`.
+- On a third-party quote, a `recipient_id` or `recipient_destination_id` that is not a UUID answers `400
+  INVALID_REQUEST` naming the field (`recipient_id must be a UUID`), where it answered `422
+  THIRD_PARTY_CONTEXT_INVALID`.
+- `POST /api/v1/partner/orders/{order_id}/cancel` on an order no liquidity provider has accepted yet
+  cancels it and answers with the whole order, where it answered `409 INVALID_STATUS`. If a liquidity
+  provider accepts the order at the same moment, the cancel answers `409 OPERATION_NOT_ALLOWED`; retry it.
+- A quote's `expires_at` is in UTC and in whole seconds, on both ramps.
+- `order_type` is on every order response, including an order no liquidity provider has accepted yet, where
+  it was missing.
+- `GET /api/v1/partner/orders?status=` lists orders no liquidity provider has accepted yet under the status
+  they report: `awaiting_liquidity_provider` and `price_changed_requote_needed` return them instead of an
+  empty page, and `cancelled` includes orders cancelled before acceptance. An off-ramp order whose payout
+  failed is listed under `failed`, the status it reports, and no longer under `cancelled`.
+
+### Corrected in the documentation
+
+These describe how the API already behaves; the API does not change.
+
+- `POST /api/v1/partner/orders/{order_id}/cancel` takes an optional body with a free-text `reason`, kept
+  with the cancellation once a liquidity provider has accepted the order, and returns the order on success.
+- `crypto_transfer_authorization_pending` offers no `cancel`: the transfer is in flight.
+- `POST /api/v1/partner/orders/{order_id}/confirm-fiat-received` is not idempotent: once the order has
+  moved past the confirmation (already confirmed, or completed), it answers `409 INVALID_STATUS` and
+  changes nothing. Its `409` is now documented.
+- `POST /api/v1/partner/offramp/initiate` and `POST /api/v1/partner/onramp/initiate` answer `200` on
+  success, not `201`.
+- On a third-party quote, a `rail` that is not the destination's and a `fiat_currency` that is not the
+  destination's currency answer `422 THIRD_PARTY_CONTEXT_INVALID`; `RAIL_ROUTE_MISMATCH` is a self-payout
+  code only.
+- A recipient destination needs `institution_id` on every rail, `alipay` or `wechat-pay` on the wallet
+  rails. The wallet rails take `first_name` and `last_name`, with `full_name` still accepted and split at
+  the first space. The recipient's `recipient_kind`, not `details.beneficiary_type`, selects the individual
+  or business format, so a business recipient cannot hold a wallet destination. On `cnaps`,
+  `mobile_number` accepts a `86` or `+86` prefix and `id_number` is optional.
+- `/api/v1/supported/payment-rails` requires `direction`, and returns `has_liquidity` only when the query
+  names both `country` and `currency`.
+- `payment_details_id` is `""` on third-party payout events.
+
 ## 2026-10-08
 
 **On-ramp send-out uses the same networks as the withdraw screen on unigox.com.** `GET /api/v1/partner/send-out/routes?crypto=USDT` is new: it lists the chains a completed on-ramp order of that crypto can be withdrawn to. Pass `destination_chain` to `bridge-authorization-parameters` and `authorize-bridge` exactly as listed (for example `Arbitrum One`, `BNB Smart Chain`), or the `chain_id`. The order's own crypto is sent, so a USDC order now goes out as USDC. Lowercase slugs such as `arbitrum` are no longer accepted. Tron, Solana and TON addresses are accepted in their own formats.
