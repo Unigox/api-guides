@@ -6077,9 +6077,8 @@ paths:
         The guarantee runs one way only. A widget order is always `[]`, and any action listed is
         one the endpoint will accept — but `[]` does NOT mean an order is a widget order. Your own
         orders are also `[]` whenever their status carries no action for you, including the
-        mid-flight `crypto_transfer_authorization_pending`, `fiat_received_confirmed` and
-        `crypto_release_pending`. Reading an empty array as "this is a customer's order" would
-        misclassify your own live orders and stop you tracking them.
+        mid-flight `crypto_transfer_authorization_pending`. Reading an empty array as "this is a
+        customer's order" would misclassify your own live orders and stop you tracking them.
 
         Keep acting only on order ids your own `initiate` call returned. That rule still holds as
         defence in depth, and it is the one that does not depend on reading a field correctly.
