@@ -5893,9 +5893,16 @@ paths:
         to wait for a system prompt. If you have confirmation from your own banking or
         payment systems, confirm immediately.
 
-        This endpoint is idempotent. If the order already completed (via automatic
-        settlement confirmation from the liquidity provider), calling this returns
-        the current order status with no side effects.
+        Call it while the order offers `confirm-fiat-received` in `allowed_actions`. Once the
+        order has moved past that point (it was already confirmed, or it completed through the
+        liquidity provider's own settlement confirmation), the call answers
+        `409 INVALID_STATUS` and changes nothing: read the order instead.
+
+        Not for delayed settlement (T+1) orders. On such an order, whatever its status, this
+        answers `409 INVALID_STATUS` ("this order settles T+1: the payout is confirmed by the
+        provider, not with confirm-fiat-received"). Sign the release with
+        `POST /api/v1/partner/orders/{order_id}/settlement-consent` instead while the order
+        offers it.
       operationId: confirmFiatReceived
       security:
         - ApiKeyAuth: []
@@ -5917,6 +5924,31 @@ paths:
           description: Unauthorized
         '404':
           description: Order not found
+        '409':
+          description: >-
+            `INVALID_STATUS` — nothing was changed. The order's status does not allow the confirmation
+            (it is not funded yet, or it has already moved past it); the order is under review; or it
+            is a delayed settlement (T+1) order, which refuses this call at every status. Read the
+            order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                status:
+                  summary: The order has moved past the confirmation
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATUS
+                      message: "order status \"completed\" does not allow fiat confirmation"
+                t1_order:
+                  summary: A delayed settlement (T+1) order waiting for its release signature
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATUS
+                      message: "this order settles T+1: the payout is confirmed by the provider, not with confirm-fiat-received; to release the crypto, sign the consent with POST /api/v1/partner/orders/{order_id}/settlement-consent"
 
   /api/v1/partner/orders/{order_id}/cancel:
     post:

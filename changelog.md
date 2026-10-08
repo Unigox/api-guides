@@ -98,6 +98,9 @@ These describe how the API already behaves; the API does not change.
 - `POST /api/v1/partner/orders/{order_id}/cancel` takes an optional body with a free-text `reason`, kept
   with the cancellation once a liquidity provider has accepted the order, and returns the order on success.
 - `crypto_transfer_authorization_pending` offers no `cancel`: the transfer is in flight.
+- `POST /api/v1/partner/orders/{order_id}/confirm-fiat-received` is not idempotent: once the order has
+  moved past the confirmation (already confirmed, or completed), it answers `409 INVALID_STATUS` and
+  changes nothing. Its `409` is now documented.
 - `POST /api/v1/partner/offramp/initiate` and `POST /api/v1/partner/onramp/initiate` answer `200` on
   success, not `201`.
 - On a third-party quote, a `rail` that is not the destination's and a `fiat_currency` that is not the
