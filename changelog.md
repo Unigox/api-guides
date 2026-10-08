@@ -2,6 +2,10 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-08
+
+**On-ramp send-out uses the same networks as the withdraw screen on unigox.com.** `GET /api/v1/partner/send-out/routes?crypto=USDT` is new: it lists the chains a completed on-ramp order of that crypto can be withdrawn to. Pass `destination_chain` to `bridge-authorization-parameters` and `authorize-bridge` exactly as listed (for example `Arbitrum One`, `BNB Smart Chain`), or the `chain_id`. The order's own crypto is sent, so a USDC order now goes out as USDC. Lowercase slugs such as `arbitrum` are no longer accepted. Tron, Solana and TON addresses are accepted in their own formats.
+
 ## 2026-09-23
 
 **`GET /api/v1/partner/stats` is new.** It returns `total_orders`, `completed_orders`, and `volume_usd` and `earned_usd` over completed orders, each order converted to USD at the rate snapshotted when it was created. This is what the partner dashboard tiles now show; they previously summed the first page of the orders list, which is served pending-first, so they could show a stale unaccepted request in its own fiat currency instead of your completed volume.
