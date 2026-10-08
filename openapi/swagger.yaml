@@ -290,7 +290,7 @@ tags:
       | `failed` | Escrow error, or fiat-anchored safety bound exceeded (see below) |
       | `dispute_started` | Dispute opened |
       | `settlement_in_progress` | Delayed settlement (T+1): the release of the crypto has started or is confirmed, and the fiat has not arrived |
-      | `returned` | Delayed settlement (T+1): the bank sent the payout back and no fresh authorization stands |
+      | `returned` | Delayed settlement (T+1): the bank sent the payout back and no new attempt has been approved yet |
 
       **Fiat-anchored safety bound failure**
 
@@ -4090,7 +4090,7 @@ paths:
         | `crypto_received` | `sign_settlement_consent` | **Partner** signs the release |
         | `crypto_received` | `submit_source_of_funds` | **Partner** supplies the source-of-funds case |
         | `crypto_received` | `await_review` | **Unigox**: document review, the licensed partner's payment check, or release processing |
-        | `crypto_received` | — | Held: flagged, or a failed payout whose escrow refund is in flight |
+        | `crypto_received` | — | Held: Unigox holds the order for a check, or a payout failed and a refund is under way |
         | `settlement_in_progress` | — | Payout in flight; the fiat has not arrived |
         | `returned` | — | The bank sent the payout back; Unigox pays again or refunds the crypto |
 
@@ -4825,8 +4825,8 @@ paths:
                             format: date-time
                             nullable: true
                             description: >-
-                              Deadline for consent and release to start. After expiry, new consent
-                              and release are blocked and the expiry process starts the refund flow.
+                              Deadline for consent and release to start. After it, no signature is
+                              accepted, the release is blocked and the order moves to a refund.
                               A cancelled status does not prove a refund has reached the wallet.
                           authorization_path:
                             type: string
@@ -4901,8 +4901,8 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: >-
-            The order does not take a settlement consent: it does not settle T+1, it is not in the funded pre-release state
-            waiting for one, or it has no funded escrow to release (`INVALID_STATUS`); or it is held
+            The order does not take a settlement consent: it does not settle T+1, it is not funded and
+            waiting for the release, or it has no funded escrow to release (`INVALID_STATUS`); or it is held
             for review, consent is already stored, or its deadline is missing/expired (`OPERATION_NOT_ALLOWED`).
           content:
             application/json:
@@ -4997,7 +4997,7 @@ paths:
         Left as it is, the order moves to a refund at `consent_deadline_at`.
 
         A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while the order
-        is still in the funded pre-release state (the release waits for the source-of-funds decision), `INVALID_STATUS` once the
+        is still funded and waiting for the release (for the source-of-funds decision, say), `INVALID_STATUS` once the
         release has started.
       operationId: submitSettlementConsent
       security:
@@ -5070,8 +5070,10 @@ paths:
                             type: boolean
                             description: |
                               True when the latest order read shows release started or confirmed.
-                              Not proof of blockchain confirmation or bank payment. False can mean
-                              review is required, release needs recovery, or a concurrent refund won.
+                              Not proof of blockchain confirmation or bank payment. `false`: the release
+                              did not start on this call. A source-of-funds review is still open, the
+                              licensed partner's payment check has not cleared yet, another call is
+                              already starting the release, or the order was cancelled or refunded first.
                               Read `status` and refresh the order; do not infer success from amount alone.
               example:
                 success: true
@@ -5109,8 +5111,8 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: >-
-            The order does not take a settlement consent — it does not settle T+1, is not in the funded pre-release state waiting
-            for one, or has no funded escrow (`INVALID_STATUS`); or it is held for review, or the
+            The order does not take a settlement consent — it does not settle T+1, is not funded and waiting
+            for the release, or has no funded escrow (`INVALID_STATUS`); or it is held for review, or the
             consent has already been given or its deadline is missing/expired (`OPERATION_NOT_ALLOWED`).
             An "already consented" answer while the order read still offers `settlement-consent` means
             a call cut off part-way still holds the consent record without a stored signature; it stops
@@ -5526,7 +5528,7 @@ paths:
         `catalogue_revision` and the requirement contract are computed on the server and are never read
         from the request.
 
-        **Write availability.** Accepted only while the order is still in the funded pre-release state and the case is undecided.
+        **Write availability.** Accepted only while the order is still funded and waiting for the release, and the case is undecided.
       operationId: submitPartnerSourceOfFundsDeclaration
       security:
         - ApiKeyAuth: []
@@ -5684,7 +5686,7 @@ paths:
         still goes through when only the 30 standing files are reached. Once 10 files have been stored on
         the case within the last minute, the next upload answers `429`. A refused upload stores nothing.
 
-        **Write availability.** Accepted only while the order is in the funded pre-release state
+        **Write availability.** Accepted only while the order is funded and waiting for the release,
         and the source-of-funds case is undecided.
       operationId: uploadPartnerSourceOfFundsDocument
       security:
@@ -6126,7 +6128,7 @@ paths:
             - `completed` — ordinary released orders, and delayed orders whose fiat actually reached
               the customer. A released but unpaid delayed order is not here
             - `settlement_in_progress` — delayed, released, and not yet resolved either way. A
-              standing bank return with no fresh authorization belongs under `returned`
+              standing bank return with no new attempt approved yet belongs under `returned`
             - `returned` — the bank sent the payout back and nobody has authorized another attempt
             - `cancelled` — orders that stopped before settlement, as before, **plus** delayed orders
               whose crypto was refunded after the release
@@ -8692,8 +8694,8 @@ components:
             - `await_review` — consent is stored and the order is waiting for Unigox document review,
               the licensed partner's payment check, or release processing. Do not submit another signature
             - absent — no required action (waiting for buyer or system). On a funded delayed order awaiting release
-              the key is absent when the order is held for review, or a payout of yours failed and its
-              escrow refund is in flight: both consent endpoints then answer
+              the key is absent when the order is held for review, or a payout of yours failed and a
+              refund is under way: both consent endpoints then answer
               `409 OPERATION_NOT_ALLOWED`
 
             Once consent_deadline_at has passed, these reads no longer request a consent signature,
@@ -8788,8 +8790,8 @@ components:
             stored. After a timeout, read the single order (`GET /api/v1/partner/orders/{order_id}`)
             before you decide whether to send the signature again.
 
-            On a funded delayed order awaiting release that is **held** — flagged for review, or with a failed payout
-            whose escrow refund is in flight — `next_action` is omitted and no consent is accepted.
+            On a funded delayed order awaiting release that is **held** — Unigox holds it for a check, or a
+            payout failed and a refund is under way — `next_action` is omitted and no consent is accepted.
             `confirm-fiat-received` is absent there too, because that endpoint refuses every delayed
             order. An `authorize-refund` that is genuinely owed still appears.
             Custody outranks the mapping above: on a **widget order** — one your customer created
@@ -9424,8 +9426,8 @@ components:
     PartnerSourceOfFundsCase:
       type: object
       description: |
-        Your view of one T+1 source-of-funds case, keyed by the order. Reviewer identity, screening
-        results and internal checklist are not exposed; the admin response has a separate shape.
+        Your view of one T+1 source-of-funds case, keyed by the order. Who reviewed the case, the
+        screening results and the reviewer's checklist are not shown.
       properties:
         order_id:
           type: string
