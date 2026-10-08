@@ -153,7 +153,9 @@ tags:
       `fiat_account.closing` says the account will be closed for inactivity on `closes_at` unless money
       moves in or out first. `last_activity_at` is its last movement, or when it opened. If money moves
       before the date, the account stays open, `closes_at` on it goes back to `null` within a few hours,
-      and no event is sent.
+      and no event is sent. If Unigox pauses closing, `closes_at` goes back to `null`; when closing
+      resumes, an account whose date was hidden first gets a new `closes_at`, at least
+      `idle_close_notice_days` ahead, and a new `fiat_account.closing`.
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
       and the same signature scheme. The structure of the `data` object differs per event type.
@@ -4946,9 +4948,11 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: |
-            The same account is already being opened (`PROVISIONING_IN_PROGRESS`), or the account this
-            request would replace is still being closed (`ACCOUNT_CLOSING`; nothing was opened — retry
-            after `error.details.retry_after_seconds` seconds).
+            Another request for the same account is still running — an opening, or a close holding the
+            account for a moment (`PROVISIONING_IN_PROGRESS`; read the account, or retry after
+            `error.details.retry_after_seconds` seconds) — or the account this request would replace is
+            still being closed (`ACCOUNT_CLOSING`; nothing was opened — retry after
+            `error.details.retry_after_seconds` seconds).
           content:
             application/json:
               schema:
@@ -7598,10 +7602,10 @@ components:
             `failed` — the bank refused; this account will not become usable.
             `closed` — retired; its history stays readable. Do not let the customer pay into it again;
             a new account for the same customer comes with new pay-in details. A `closed` account with
-            `closed_at: null` may be a close the bank has not confirmed yet. It can still read `active`
-            again, with the same pay-in details and no event. Read the account again about 15 minutes
-            later to see where it stands; do not send the opening request to find out, because on a
-            final close it opens a new account. While the close is unsettled, that request answers
+            `closing: true` is a close the bank has not confirmed yet. It can still read `active` again,
+            with the same pay-in details and no event. Read the account again about 15 minutes later to
+            see where it stands; do not send the opening request to find out, because on a final close
+            it opens a new account. While the close is unsettled, that request answers
             `409 ACCOUNT_CLOSING` and opens nothing.
           example: active
         created:
@@ -7662,7 +7666,9 @@ components:
             Active accounts only, always present: the date the account will be closed for inactivity
             unless money moves in or out before then, or `null` when no such close stands. A date in
             the past still stands: nothing closes before that day (UTC) has ended and two more business
-            days have passed, and the date stays until the account closes or money moves.
+            days have passed, and the date stays until the account closes or money moves. While Unigox
+            pauses closing it is `null`; when closing resumes, a new date at least
+            `idle_close_notice_days` ahead (and a new `fiat_account.closing`) comes before any close.
           example: "2026-10-15T06:00:00Z"
         closed_at:
           type: string
@@ -7670,7 +7676,8 @@ components:
           nullable: true
           description: |
             Closed accounts only, always present. When it closed; `null` if not recorded, or while the
-            bank has not confirmed the close (the account may then still read `active` again).
+            bank has not confirmed the close (`closing: true`; the account may then still read `active`
+            again).
           example: "2026-10-15T06:02:11Z"
         close_reason:
           type: string
@@ -7690,6 +7697,14 @@ components:
             `inactivity` close; `null` otherwise. The rule in force now is `idle_close_days` on the
             config.
           example: 30
+        closing:
+          type: boolean
+          description: |
+            Closed accounts only, always present. `true` while the bank has not confirmed the close: the
+            account may still read `active` again, with the same pay-in details. `false` once the close
+            is final, also when `closed_at` is `null` (an account closed before close dates were
+            recorded).
+          example: false
         created_at:
           type: string
           format: date-time
