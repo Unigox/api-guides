@@ -412,6 +412,13 @@ included, and the estimate can show a better rate than the quote. Do not send
 destination; if they differ from the destination's, the estimate answers `400
 INVALID_REQUEST`. The estimate only reads the destination; it binds nothing.
 
+Its checks on the destination are not the quote's. An unknown recipient or
+destination answers `404 RECIPIENT_NOT_FOUND`, where the quote answers an
+unknown destination with `422 THIRD_PARTY_CONTEXT_INVALID`. A destination in
+another currency than `fiat_currency` answers `400 INVALID_REQUEST`, where the
+quote answers `422`. Screening, the relationship and the purpose are not
+checked, so an estimate that prices does not mean the quote will.
+
 ```bash
 curl -X POST https://api.unigox.com/api/v1/partner/offramp/estimate \
   -H "X-API-Key: $UNIGOX_API_KEY" \
@@ -552,7 +559,7 @@ order — the request is rejected, and you act on the error:
 | `SENDER_IDENTITY_REQUIRED` | 422 | The corridor settles consumer-to-consumer and the sender's record cannot name them on the wire. `details.kyc_fields` is what you can supply. | `PATCH /api/v1/partner/users/{user_uuid}/kyc` with those fields, then retry. See below. |
 | `THIRD_PARTY_CONTEXT_INVALID` | 422 | The sender or destination cannot be used for this quote, or the recipient cannot: the sender or destination not found for this partner (`sender not found or not eligible`, `recipient destination not found or not eligible`), archived, screening not `cleared`, incomplete route, `sender_id` ≠ `user_uuid`, a `rail` that is not the destination's (`rail does not match the recipient destination`), or a destination currency that is not `fiat_currency` (`recipient destination does not support the payout corridor`). On initiate: the recipient changed or stopped being cleared since the quote. | Read the message. Fix the `rail` or `fiat_currency`, re-check the recipient, or wait for screening; after a change since the quote, request a new quote. |
 | `INVALID_REQUEST` | 400 | The payload is wrong — a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a relationship or `purpose_of_payment` the corridor cannot declare, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). A currency served only by delayed (T+1) offers reads as not available, with that message, until delayed settlement is enabled for you. On the destination endpoint: a `details` field the rail does not accept. The message names what to fix. | Fix the request. If the message says the currency is not available and delayed settlement is not enabled for you, ask us to enable it. |
-| `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. Returned by the recipient endpoints and by a quote that names such a recipient. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
+| `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. Returned by the recipient endpoints, by a quote that names such a recipient, and by the estimate when its `recipient_id` or `recipient_destination_id` names no recipient or destination of yours. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
 | `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | Returned by the recipient endpoints: the recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
 | `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on (`third-party recipient payout is not available for {CURRENCY} over {rail}`). A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. A rail served only by delayed (T+1) offers reads as not open until delayed settlement is enabled for you. | Use a destination on a rail that is open, or ask us to open this one; if delayed settlement is not enabled for you, ask us to enable it. A retry does not change it. |
 | `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
