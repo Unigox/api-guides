@@ -26,6 +26,11 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   reports `source_of_funds_required`, always, and `source_of_funds_threshold_usd` when it priced a T+1
   offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a
   liquidity provider accepts it; before acceptance every order, T+1 included, reads `false`.
+- **Payout base rate.** A payout estimate or quote priced on a T+1 offer may include
+  `fee_breakdown.payout_base_rate`, the verified conversion before provider costs and vendor margin. It allows
+  the quoted total to be split into the recipient amount and one combined fee without charging the fee again.
+  An instant price never carries it, and a T+1 one omits it when the conversion basis is unavailable.
+  Existing amounts and the meaning of `fiat_rail_fee` are unchanged.
 - **Order fields.** Every order carries `delayed_settlement`, `settlement_hours`, `consent_deadline_at`,
   `payout_deadline_at`, six `delayed_settlement_*_at` timestamps, `source_of_funds_required` and
   `source_of_funds_threshold_usd`. A delayed order that ended without a payment also carries
@@ -76,10 +81,6 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   to every request, drop it on this call or send your `X-API-Key`. An authenticated estimate prices only the
   offers your quote would be matched on, so it leaves T+1 offers out until delayed settlement is enabled for
   you; without credentials the estimate prices them for anyone.
-- Payout estimates and quotes may include `fee_breakdown.payout_base_rate`, the verified conversion before
-  provider costs and vendor margin. It allows the quoted total to be split into the recipient amount and one
-  combined fee without charging the fee again. The field is omitted when the conversion basis is
-  unavailable. Existing amounts and the meaning of `fiat_rail_fee` are unchanged.
 - A quote that names a recipient that is not yours, or was archived, answers `404 RECIPIENT_NOT_FOUND` (it
   used to answer `422 THIRD_PARTY_CONTEXT_INVALID`). A sender or destination that cannot be used still
   answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which.
