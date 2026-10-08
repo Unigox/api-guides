@@ -116,10 +116,9 @@ Content-Type: application/json
 `POST /api/v1/partner/offramp/estimate` reports the same two fields, so you can
 find where a corridor stops settling instantly without spending quotes. Its
 amounts are indicative; the matched offer can change by the time you quote.
-Send it with your `X-API-Key` (or your partner `Authorization` header): it then
-prices only the offers your quote would be matched on, so it leaves T+1 offers
-out until Unigox has enabled delayed settlement for you. Without credentials it
-prices T+1 offers for anyone.
+Send it with your `X-API-Key`: it then prices only the offers your quote would
+be matched on, so it leaves T+1 offers out until Unigox has enabled delayed
+settlement for you. Without credentials it prices T+1 offers for anyone.
 
 The estimate takes two optional booleans. Each can only narrow the offers it
 prices, and neither changes what a quote or an order matches:
