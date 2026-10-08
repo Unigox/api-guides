@@ -206,8 +206,8 @@ T-31; the CONS-4 follow-up `0d5a99c4`, whose recipient-payout gates leave T+1
 offers out for a partner without delayed settlement; and the other cross-repo
 follow-ups), rechecked against its branch head `9a5ceb30`. If trades changes
 after that, check the T+1 docs against it again before dating the entry. The
-other unreleased changes the entry lists (the estimate fields,
-`404 RECIPIENT_NOT_FOUND` on a quote, the orders filter) carry no notice on
+other unreleased changes the entry lists (the estimate fields, the quote's
+`THIRD_PARTY_CONTEXT_INVALID` messages, the orders filter) carry no notice on
 their pages and rely on the merge order alone. So does the T+1 text in the live
 sections of `api-reference/third-party-payouts.md`: step 8 of "End-to-end
 flow", "3. Request a quote" and the error table under "Compliance in v1".

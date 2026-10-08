@@ -81,9 +81,10 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   to every request, drop it on this call or send your `X-API-Key`. An authenticated estimate prices only the
   offers your quote would be matched on, so it leaves T+1 offers out until delayed settlement is enabled for
   you; without credentials the estimate prices them for anyone.
-- A quote that names a recipient that is not yours, or was archived, answers `404 RECIPIENT_NOT_FOUND` (it
-  used to answer `422 THIRD_PARTY_CONTEXT_INVALID`). A sender or destination that cannot be used still
-  answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which.
+- A third-party quote whose sender, recipient or destination is not found for your partner account, or was
+  archived, still answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which: `sender not
+  found or not eligible`, `recipient not found or not eligible` or `recipient destination not found or not
+  eligible`, where it said `sender, recipient or destination not found or not eligible`.
 - `order_type` is on every order response, including an order no liquidity provider has accepted yet, where
   it was missing.
 - `GET /api/v1/partner/orders?status=` lists orders no liquidity provider has accepted yet under the status

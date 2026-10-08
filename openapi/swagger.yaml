@@ -3692,28 +3692,16 @@ paths:
                   code: UNAUTHORIZED
                   message: "Invalid or missing API key"
         '404':
-          description: >-
-            User or payment details not found. On a third-party payout also: `RECIPIENT_NOT_FOUND` — no
-            recipient with that `recipient_id` belongs to your partner account, or it was archived.
+          description: User or payment details not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              examples:
-                payment_details_not_found:
-                  summary: The payment details are not found
-                  value:
-                    success: false
-                    error:
-                      code: INVALID_PAYMENT_DETAILS
-                      message: "Payment details not found or do not belong to user"
-                recipient_not_found:
-                  summary: The recipient is not yours, or was archived
-                  value:
-                    success: false
-                    error:
-                      code: RECIPIENT_NOT_FOUND
-                      message: "recipient not found"
+              example:
+                success: false
+                error:
+                  code: INVALID_PAYMENT_DETAILS
+                  message: "Payment details not found or do not belong to user"
         '409':
           description: >-
             `NO_OFFERS_AVAILABLE` — no offer your orders can match serves the requested pair and amount.
@@ -3759,11 +3747,12 @@ paths:
 
 
             `THIRD_PARTY_CONTEXT_INVALID` — the sender, recipient or destination cannot be used for this
-            quote. The message says which: `sender_id` is not `user_uuid`; the sender or destination is
-            not found for your partner account or is archived (an unknown or archived recipient answers
-            `404 RECIPIENT_NOT_FOUND`); the recipient is not cleared by screening; the destination route
-            is incomplete; the `rail` you sent is not the destination's rail (`rail does not match the
-            recipient destination`); or the destination's
+            quote. The message says which: `sender_id` is not `user_uuid`; the sender, recipient or
+            destination is not found for your partner account or is archived (`sender not found or not
+            eligible`, `recipient not found or not eligible`, `recipient destination not found or not
+            eligible`); the recipient is not cleared by screening; the destination route is incomplete;
+            the `rail` you sent is not the destination's rail (`rail does not match the recipient
+            destination`); or the destination's
             currency is not `fiat_currency` (`recipient destination does not support the payout
             corridor`, or `fiat_currency does not match the recipient destination`).
 
@@ -10122,7 +10111,7 @@ components:
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
-                - `RECIPIENT_NOT_FOUND` — (404) the recipient endpoints and a quote naming such a recipient: no recipient with that id belongs to your partner account, or it was archived
+                - `RECIPIENT_NOT_FOUND` — (404) the recipient endpoints, and an estimate naming such a recipient or destination: no recipient (or destination) with that id belongs to your partner account, or it was archived. A quote answers the same case `422 THIRD_PARTY_CONTEXT_INVALID`
                 - `RECIPIENT_SERVICE_UNAVAILABLE` — (503) the recipient endpoints: the recipient directory could not be reached; retry with backoff
                 - `THIRD_PARTY_CONTEXT_INVALID` — (422) the sender, recipient or destination of a third-party payout cannot be used, including a `rail` that is not the destination's and a destination currency that is not `fiat_currency`; the message says which
                 - `THIRD_PARTY_RAIL_NOT_SUPPORTED` — (409) the currency is open to recipient payouts, but not over the rail the destination settles on
