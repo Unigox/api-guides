@@ -240,11 +240,14 @@ Keys that do not apply are absent rather than empty. This view also carries
 balance we could not read is reported as unavailable rather than as zero.
 
 An `active` account always carries `closes_at`: `null`, or the date it will be
-closed for inactivity unless money moves before then. A `closed` account always
-carries `closed_at`, `close_reason` (`inactivity` or `operator`) and
-`close_idle_days` (the inactivity window that closed it); each is `null` when it
-was not recorded, and all three are `null` while the bank has not confirmed the
-close (see [Before the bank confirms a close](#before-the-bank-confirms-a-close)).
+closed for inactivity unless money moves before then. A `closes_at` in the past
+still stands: the close is due, and the account can close at any moment until
+the account closes or money moves. A `closed` account always carries
+`closed_at`, `close_reason` (`inactivity` or `operator`, or `null` when the bank
+closed the account itself) and `close_idle_days` (the inactivity window that
+closed it); each is `null` when it was not recorded, and all three are `null`
+while the bank has not confirmed the close (see
+[Before the bank confirms a close](#before-the-bank-confirms-a-close)).
 
 `GET /api/v1/partner/fiat-accounts?user_uuid={user_uuid}` lists one customer's
 accounts, with the last four digits of the identifier rather than the whole one.
@@ -290,14 +293,18 @@ full. An account opened less than `idle_close_days` ago is never closed.
 
 You are told first. After `idle_close_days` minus `idle_close_notice_days` days
 without movement (23 by default), the account gets `closes_at` and you receive
-`fiat_account.closing` with that date. Nothing closes before it. If money moves
-in or out first, the account stays open and `closes_at` goes back to `null`
-within a few hours;
-no event is sent for that, so read the account when you need to know. The same
-happens if Unigox pauses closing.
+`fiat_account.closing` with that date. Nothing closes before that day (UTC) has
+ended and two more business days have passed, so a transfer sent on the date
+itself still arrives; the close comes at some point after that, and `closes_at`
+stays on the account, in the past, until it does. If money moves in or out
+first, the account stays open and `closes_at` goes back to `null` within a few
+hours; no event is sent for that, so read the account when you need to know. If
+Unigox pauses closing, `closes_at` goes back to `null` at once.
 
 When the account closes you receive `fiat_account.updated` with
-`status: closed` and `reason: inactivity`. Its IBAN is gone for good. To keep
+`status: closed` and `reason: inactivity`. An account the bank closed itself
+sends the same event with `reason: null`, and reads `closed` with
+`close_reason: null`. Its IBAN is gone for good. To keep
 serving the customer, open a new account with the same request as the first
 one; it comes with new pay-in details, and the customer must not use the old
 ones again.
@@ -307,8 +314,10 @@ ones again.
 The bank does not always confirm a close at once, whether the close was for
 inactivity or made from the portal. Until it does, the account reads `closed`
 with `closed_at`, `close_reason` and `close_idle_days` all `null`, it carries no
-pay-in details, and no `fiat_account.updated` has been sent. This normally
-settles within hours, one of two ways:
+pay-in details, and no `fiat_account.updated` has been sent. The bank's record is
+read every five minutes once the close is ten minutes old, so this normally
+settles within 15 minutes (longer only while that record cannot be read), one of
+two ways:
 
 - The bank closed the IBAN. `closed_at` and the reason are filled in, and
   `fiat_account.updated` with `status: closed` arrives then.
@@ -331,7 +340,7 @@ Three events, in the same envelope and with the same signature as
 
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
-| `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency`; `reason` when `status` is `closed` (`inactivity` or `operator`) |
+| `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency`; `reason` when `status` is `closed` (`inactivity`, `operator`, or `null` when the bank closed it itself) |
 | `fiat_account.closing` | The account will be closed for inactivity on `closes_at` unless money moves first. | `fiat_account_id`, `user_uuid`, `currency`, `closes_at`, `last_activity_at` |
 | `fiat_account.deposit.received` | Money arrived on the account. | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
 

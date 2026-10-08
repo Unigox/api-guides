@@ -132,7 +132,8 @@ tags:
 
       `order_id` is the on-ramp this deposit funded, or `null` when it matched no order.
       `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`, and
-      `reason` (`inactivity` or `operator`) when `status` is `closed`.
+      `reason` (`inactivity`, `operator`, or `null` when the bank closed the account itself) when
+      `status` is `closed`.
 
       ```json
       {
@@ -7655,7 +7656,9 @@ components:
           nullable: true
           description: |
             Active accounts only, always present: the date the account will be closed for inactivity
-            unless money moves in or out before then, or `null` when no such close stands.
+            unless money moves in or out before then, or `null` when no such close stands. A date in
+            the past still stands: nothing closes before that day (UTC) has ended and two more business
+            days have passed, and the date stays until the account closes or money moves.
           example: "2026-10-15T06:00:00Z"
         closed_at:
           type: string
@@ -7672,7 +7675,8 @@ components:
           description: |
             Closed accounts only, always present. `inactivity` — closed automatically after
             `close_idle_days` without money in or out; `operator` — closed by you from the portal, or by
-            Unigox on your behalf. `null` if not recorded, or while the bank has not confirmed the close.
+            Unigox on your behalf. `null` when the bank closed the account itself, if not recorded, or
+            while the bank has not confirmed the close.
           example: inactivity
         close_idle_days:
           type: integer
