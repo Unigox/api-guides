@@ -182,9 +182,10 @@ onto that record.
 ```
 
 **Idempotent per (customer, currency, jurisdiction)** while the account is
-`pending` or `active`. A repeat answers `201` with the same account and
-`created: false`; it does not open a second one. One customer may hold accounts
-in several currencies, and in several jurisdictions of the same currency.
+`pending` or `active`. A repeat answers `201` with the same account and no
+`created` field; it does not open a second one. `created: true` is sent only
+when the request opened the account. One customer may hold accounts in several
+currencies, and in several jurisdictions of the same currency.
 
 Once that account is `closed`, the same request opens a **new** account: a new
 `fiat_account_id` and a new IBAN or account number. Send `issuer_country` when
@@ -325,13 +326,25 @@ two ways:
   event is sent for that.
 
 So a `closed` read with `closed_at: null` is not yet a reason to tell the
-customer their IBAN is gone. To tell where it stands, send the request that
-opens the account (same customer, currency and jurisdiction): while the close is
-unsettled it answers `409 ACCOUNT_CLOSING` and opens nothing. Otherwise it
-answers as usual: a new account if the old one is closed for good, or the same
-account with `created: false` if its IBAN stayed open. A close that was never
-recorded also leaves `closed_at` at `null`; that close is final, and the request
-opens its replacement.
+customer their IBAN is gone. Read the account again with
+`GET /fiat-accounts/{fiat_account_id}` about 15 minutes later (an event arrives
+only if the close goes through):
+
+- `closed_at` is filled in: the close is final.
+- The account reads `active`: the IBAN stayed open, with the same pay-in
+  details.
+- It still reads `closed` with `closed_at: null`: either the bank's record still
+  cannot be read, or the close is final and its date was never recorded (an
+  account closed before close dates were recorded reads this way). The account
+  alone does not tell these apart. Do not send the customer to the IBAN unless
+  it reads `active` again.
+
+Do not send the request that opens an account to find out where a close
+stands. When the close is final, that request opens a new account with a new
+IBAN, for a customer you may only have meant to look up. Send it when the
+customer needs an account again. If the old close is still unsettled then, it
+answers `409 ACCOUNT_CLOSING` with `error.details.retry_after_seconds` and opens
+nothing; send it again after that long.
 
 ## Webhooks
 

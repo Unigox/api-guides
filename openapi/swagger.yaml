@@ -4900,7 +4900,7 @@ paths:
         `active`, and only then tell the customer where to transfer.
 
         **Idempotent per (user_uuid, currency, issuer_country)** while the account is `pending` or
-        `active`. A repeat answers `201` with the same account and `created: false`. Once that account
+        `active`. A repeat answers `201` with the same account and no `created` field. Once that account
         is `closed`, the same request opens a new account with a new `fiat_account_id` and new pay-in
         details; send `issuer_country` when you reopen, or the currency's default is used.
 
@@ -4918,8 +4918,9 @@ paths:
       responses:
         '201':
           description: |
-            Opened, or the existing account for this (customer, currency, jurisdiction). `created`
-            distinguishes the two.
+            Opened, or the existing account for this (customer, currency, jurisdiction). An account
+            this request opened carries `created: true`; the existing one comes back with no `created`
+            field.
           content:
             application/json:
               schema:
@@ -7598,14 +7599,17 @@ components:
             `closed` — retired; its history stays readable. Do not let the customer pay into it again;
             a new account for the same customer comes with new pay-in details. A `closed` account with
             `closed_at: null` may be a close the bank has not confirmed yet. It can still read `active`
-            again, with the same pay-in details and no event; while it is unsettled, a request to open
-            the same account answers `409 ACCOUNT_CLOSING` and opens nothing.
+            again, with the same pay-in details and no event. Read the account again about 15 minutes
+            later to see where it stands; do not send the opening request to find out, because on a
+            final close it opens a new account. While the close is unsettled, that request answers
+            `409 ACCOUNT_CLOSING` and opens nothing.
           example: active
         created:
           type: boolean
           description: |
-            On the issue response only: whether THIS request opened the account. `false` means it
-            already existed and is being handed back.
+            `true`, on the issue response only, and only when THIS request opened the account. A
+            repeat that hands back an existing account carries no `created` field, and neither do the
+            reads.
           example: true
         iban:
           type: string
