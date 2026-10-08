@@ -3846,7 +3846,10 @@ paths:
       responses:
         '200':
           description: >-
-            Off-ramp order created. Success answers `200`, not `201`.
+            Off-ramp order created. Success answers `200`, not `201`. On an ordinary order `timeline`
+            is empty until a liquidity provider accepts the order, and `created_at` is the time of this
+            answer. Only an order whose quote read `delayed_settlement: true` (delayed settlement, T+1)
+            carries one entry, its creation, with `created_at` the order's creation.
           content:
             application/json:
               schema:
@@ -3856,29 +3859,54 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/PartnerInitiateResponse'
-              example:
-                success: true
-                data:
-                  order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
-                  status: awaiting_liquidity_provider
-                  quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-                  amounts:
-                    crypto_amount: "99.024390"
-                    fiat_amount: "151519.20"
-                    crypto_currency: USDT
-                    fiat_currency: NGN
-                    rate: "1530.12"
-                  fee_breakdown:
-                    platform_fee: "1.463415"
-                    platform_fee_pct: 1.5
-                    partner_fee: "0.975610"
-                    partner_fee_pct: 1
-                    total_fee: "2.439025"
-                  timeline:
-                    - status: awaiting_liquidity_provider
-                      timestamp: "2026-02-01T12:00:05Z"
-                      description: "Order created and awaiting liquidity provider"
-                  created_at: "2026-02-01T12:00:05Z"
+              examples:
+                ordinary:
+                  summary: An ordinary order
+                  value:
+                    success: true
+                    data:
+                      order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                      status: awaiting_liquidity_provider
+                      quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                      amounts:
+                        crypto_amount: "99.024390"
+                        fiat_amount: "151519.20"
+                        crypto_currency: USDT
+                        fiat_currency: NGN
+                        rate: "1530.12"
+                      fee_breakdown:
+                        platform_fee: "1.463415"
+                        platform_fee_pct: 1.5
+                        partner_fee: "0.975610"
+                        partner_fee_pct: 1
+                        total_fee: "2.439025"
+                      timeline: []
+                      created_at: "2026-02-01T12:00:05Z"
+                t1_order:
+                  summary: An order quoted delayed settlement (T+1)
+                  value:
+                    success: true
+                    data:
+                      order_id: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+                      status: awaiting_liquidity_provider
+                      quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                      amounts:
+                        crypto_amount: "3000.000000"
+                        fiat_amount: "21540.00"
+                        crypto_currency: USDT
+                        fiat_currency: CNY
+                        rate: "7.18"
+                      fee_breakdown:
+                        platform_fee: "45.000000"
+                        platform_fee_pct: 1.5
+                        partner_fee: "30.000000"
+                        partner_fee_pct: 1
+                        total_fee: "75.000000"
+                      timeline:
+                        - status: awaiting_liquidity_provider
+                          timestamp: "2026-09-18T12:00:04Z"
+                          description: "Order created and awaiting liquidity provider"
+                      created_at: "2026-09-18T12:00:04Z"
         '400':
           description: Bad request — missing required fields
           content:
