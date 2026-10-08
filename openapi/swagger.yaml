@@ -109,7 +109,6 @@ tags:
       | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
-      | `fiat_account.closing` | An issued fiat account may be closed for inactivity once the day of `closes_at` (UTC) has ended and two more business days have passed, unless money moves first |
       | `fiat_account.deposit.received` | Money arrived on an issued fiat account |
 
       **Payload shape — the fiat account events**
@@ -134,33 +133,6 @@ tags:
       `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`, and
       `reason` (`inactivity`, `operator`, or `null` when the bank closed the account itself) when
       `status` is `closed`.
-
-      ```json
-      {
-        "event_id": "evt_fiat_account_closing_7c9e6679-7425-40de-944b-e07fc1f90ae7_1791439200",
-        "event_type": "fiat_account.closing",
-        "created_at": "2026-10-08T06:00:00Z",
-        "data": {
-          "fiat_account_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
-          "currency": "EUR",
-          "closes_at": "2026-10-15T06:00:00Z",
-          "last_activity_at": "2026-09-15T10:04:22Z"
-        }
-      }
-      ```
-
-      `fiat_account.closing` says the account may be closed for inactivity once the day of `closes_at`
-      (UTC) has ended and two more business days have passed, unless money moves in or out first.
-      `last_activity_at` is its last movement, or when it opened. If money moves before the date, the
-      account stays open, `closes_at` on it goes back to `null` within a few hours, and no event is
-      sent. If Unigox pauses closing, `closes_at` goes back to `null`; when closing
-      resumes, an account whose date was hidden first gets a new `closes_at`, at least
-      `idle_close_notice_days` ahead, and a new `fiat_account.closing`. A newer notice replaces an
-      earlier one: a `fiat_account.closing` not yet delivered when a new notice is given, when its
-      notice is withdrawn because money moved, or when the account closes is not sent at all. One
-      already being delivered at that moment still arrives, so two can arrive out of order; the
-      account's own `closes_at` is the date that stands.
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
       and the same signature scheme. The structure of the `data` object differs per event type.
@@ -304,10 +276,10 @@ tags:
       Failed deliveries (non-2xx or timeout) are retried with exponential backoff:
       1 min → 5 min → 15 min → 1 h → 6 h → 12 h → 24 h (max 10 attempts over ~3.5 days).
 
-      Two fiat account events are not retried yet: `fiat_account.deposit.received`, and
-      `fiat_account.updated` for any status other than `closed`. They are delivered once; the account
-      and its transactions answer the same thing when one is missed. `fiat_account.closing` and the
-      `closed` update are retried as above.
+      Two fiat account events are not retried: `fiat_account.deposit.received`, and
+      `fiat_account.updated` for any status other than `closed`. They are delivered once. If you miss
+      one, read the account or its transactions for the same information. The `closed` update is
+      retried as above.
 
       **Partner-facing statuses** (`order.status.changed`)
 
@@ -4953,8 +4925,8 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: |
-            Another request for the same account is still running — an opening, or a close holding the
-            account for a moment (`PROVISIONING_IN_PROGRESS`; read the account, or retry after
+            Another request for the same account is still running — an opening or a close in progress
+            (`PROVISIONING_IN_PROGRESS`; read the account, or retry after
             `error.details.retry_after_seconds` seconds) — or the account this request would replace is
             still being closed (`ACCOUNT_CLOSING`; nothing was opened — retry after
             `error.details.retry_after_seconds` seconds). If the bank already holds this person under
@@ -7205,7 +7177,7 @@ components:
           description: |
             Event type. `order.status.changed` for a status transition, `order.refund.required` for an
             order whose crypto is stuck in escrow awaiting your signature (see the Webhooks section).
-          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.closing, fiat_account.deposit.received]
+          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.deposit.received]
           example: "order.status.changed"
         created_at:
           type: string
@@ -7533,16 +7505,10 @@ components:
                   type: integer
                   nullable: true
                   description: |
-                    An account with no money in or out for this many days is closed. `null` while no
-                    account is being closed for inactivity.
+                    An empty account with no money in or out for this many days is closed automatically.
+                    No notice is sent before the close. `null` while no account is being closed for
+                    inactivity.
                   example: 30
-                idle_close_notice_days:
-                  type: integer
-                  nullable: true
-                  description: |
-                    How long before such a close the account carries `closes_at` and
-                    `fiat_account.closing` is sent. `null` whenever `idle_close_days` is.
-                  example: 7
 
     FiatAccountCreateRequest:
       type: object
@@ -7665,18 +7631,6 @@ components:
             Single-account view only. True when the balance read failed — the balances are reported
             as unavailable rather than as zero.
           example: false
-        closes_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: |
-            Active accounts only, always present: the date from which the account may be closed for
-            inactivity unless money moves in or out before then, or `null` when no such close stands.
-            Nothing closes before that day (UTC) has ended and two more business days have passed. A
-            date in the past still stands, and stays until the account closes or money moves. While Unigox
-            pauses closing it is `null`; when closing resumes, a new date at least
-            `idle_close_notice_days` ahead (and a new `fiat_account.closing`) comes before any close.
-          example: "2026-10-15T06:00:00Z"
         closed_at:
           type: string
           format: date-time
