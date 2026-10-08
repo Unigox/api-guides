@@ -178,7 +178,8 @@ order has while its buyer has not paid yet. `next_action` tells the two apart:
 | `sign_settlement_consent` | Your release signature is needed. | `["settlement-consent", "cancel"]` |
 | `submit_source_of_funds` | Your signature is in. The order needs the customer's source of funds, and it is not complete. | `[]` |
 | `await_review` | Nothing for you to do: Unigox is reviewing documents, or your signature is in and the release is waiting for the licensed partner's payment check or has not gone through yet. Do not sign again. | `[]` |
-| absent | Read `status` and `allowed_actions`: the order is moving, held, finished, or waiting for a refund signature (`authorize-refund`). | Depends on the state. |
+| `authorize_refund` | The order ended before the release and its crypto is still in escrow: sign the refund (`refund-authorization-parameters`, then `authorize-refund`). | Includes `authorize-refund`. |
+| absent | Read `status` and `allowed_actions`: the order is moving, held or finished. | Depends on the state. |
 
 `settlement-consent` and `cancel` appear only on orders whose crypto you hold.
 `confirm-fiat-received` never appears on a delayed order and the endpoint refuses
