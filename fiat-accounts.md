@@ -97,7 +97,9 @@ X-API-Key: <api-key>
     "enabled": true,
     "issues_accounts": true,
     "currencies": ["EUR", "GBP"],
-    "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] }
+    "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] },
+    "idle_close_days": 30,
+    "idle_close_notice_days": 7
   }
 }
 ```
@@ -105,7 +107,9 @@ X-API-Key: <api-key>
 `enabled` and `issues_accounts` say whether you may use the product and whether
 you may open accounts with it. `currencies` and `issuers` (currency →
 jurisdictions, default first) say what an account may be denominated in, and
-where it can be issued.
+where it can be issued. `idle_close_days` and `idle_close_notice_days` are the
+rule for [accounts nobody uses](#accounts-nobody-uses-are-closed), and are
+`null` while no account is being closed for inactivity.
 
 Entitlement is never an error here: when the product is off this still answers
 `200`, with `enabled: false` and a `disabled_reason`.
@@ -175,10 +179,16 @@ onto that record.
 }
 ```
 
-**Idempotent per (customer, currency, jurisdiction).** A repeat answers `201`
-with the same account and no `created` flag; it does not open a second one. One
-customer may hold accounts in several currencies, and in several jurisdictions
-of the same currency.
+**Idempotent per (customer, currency, jurisdiction)** while the account is
+`pending` or `active`. A repeat answers `201` with the same account and
+`created: false`; it does not open a second one. One customer may hold accounts
+in several currencies, and in several jurisdictions of the same currency.
+
+Once that account is `closed`, the same request opens a **new** account: a new
+`fiat_account_id` and a new IBAN or account number. Send `issuer_country` when
+you reopen, or the currency's default jurisdiction is used, which may not be the
+one the closed account had. If you call this endpoint as "get or create" before
+every order, you will reopen automatically after an inactivity close.
 
 Registering the person with the bank happens behind this call, from the identity
 Unigox verified. There is nothing to submit and no second record to keep in
@@ -189,6 +199,9 @@ step.
   ISSUANCE_NOT_READY`, with `error.details.missing_fields`. Patch the KYC record
   and post again.
 - The same account is already being opened: `409 PROVISIONING_IN_PROGRESS`.
+- The account this request would replace is still being closed: `409
+  ACCOUNT_CLOSING`, with a `Retry-After` header in seconds. Nothing was opened;
+  send the request again after that long.
 
 ### 4. Wait for `active`
 
@@ -201,7 +214,7 @@ and a customer sent to it loses the transfer to a bounce.
 | `pending` | Being opened. Do not tell the customer to transfer yet. |
 | `active` | Open. The pay-in details are on the account and money may be sent. |
 | `failed` | The bank refused. This account will not become usable. |
-| `closed` | Retired. Its history stays readable; new deposits will not credit it. |
+| `closed` | Retired. Its history stays readable. Do not let the customer pay into it again. |
 
 `fiat_account.updated` fires when this changes, and
 `GET /fiat-accounts/{fiat_account_id}` answers the same thing when you poll.
@@ -223,6 +236,12 @@ The pay-in details are shaped by the rail the account is on:
 Keys that do not apply are absent rather than empty. This view also carries
 `balances`, and `balances_unavailable: true` when the balance read failed: a
 balance we could not read is reported as unavailable rather than as zero.
+
+An `active` account always carries `closes_at`: `null`, or the date it will be
+closed for inactivity unless money moves before then. A `closed` account always
+carries `closed_at`, `close_reason` (`inactivity` or `operator`) and
+`close_idle_days` (the inactivity window that closed it); each is `null` when it
+was not recorded.
 
 `GET /api/v1/partner/fiat-accounts?user_uuid={user_uuid}` lists one customer's
 accounts, with the last four digits of the identifier rather than the whole one.
@@ -258,15 +277,44 @@ v1 is receive-only, so every row is a `credit`. `order_id` names the on-ramp
 this deposit funded, and is `null` when it funded none: that money simply stays
 on the customer's account.
 
+## Accounts nobody uses are closed
+
+An account with no money in or out for `idle_close_days` days (30 by default)
+is closed, while the config publishes `idle_close_days`. An account is never
+closed while it holds money in any currency, while an on-ramp order funded from
+it is unfinished, or when its payment history with the bank cannot be read in
+full. An account opened less than `idle_close_days` ago is never closed.
+
+You are told first. After `idle_close_days` minus `idle_close_notice_days` days
+without movement (23 by default), the account gets `closes_at` and you receive
+`fiat_account.closing` with that date. Nothing closes before it. If money moves
+in or out first, `closes_at` goes back to `null` and the account stays open;
+no event is sent for that, so read the account when you need to know. The same
+happens if Unigox pauses closing.
+
+When the account closes you receive `fiat_account.updated` with
+`status: closed` and `reason: inactivity`. Its IBAN is gone for good. To keep
+serving the customer, open a new account with the same request as the first
+one; it comes with new pay-in details, and the customer must not use the old
+ones again.
+
 ## Webhooks
 
-Two events, in the same envelope and with the same signature as
+Three events, in the same envelope and with the same signature as
 `order.status.changed`.
 
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
-| `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency` |
+| `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency`; `reason` when `status` is `closed` (`inactivity` or `operator`) |
+| `fiat_account.closing` | The account will be closed for inactivity on `closes_at` unless money moves first. | `fiat_account_id`, `user_uuid`, `currency`, `closes_at`, `last_activity_at` |
 | `fiat_account.deposit.received` | Money arrived on the account. | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
+
+`fiat_account.closing` and the `closed` update are retried like
+`order.status.changed` (up to 10 attempts). Each has a fixed `event_id`, so
+de-duplicating by `event_id` is enough; a closing notice given again with a new
+date has a new `event_id`. The other `fiat_account.updated` events and
+`fiat_account.deposit.received` are delivered once and not retried: when one is
+missed, the account and its transactions answer the same thing.
 
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
 no per-event subscription.
@@ -303,6 +351,7 @@ stays `payment_details`, and a third party stays a Recipient.
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
 | `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
 | `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. Read it rather than retrying. |
+| `ACCOUNT_CLOSING` | 409 | The account this request would replace is still being closed. Retry after the `Retry-After` header's seconds. |
 | `KYC_NOT_CLEARED` | 422 | The customer is not KYC-verified. |
 | `ISSUANCE_NOT_READY` | 422 | Verified, but the bank needs the fields in `error.details.missing_fields`. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |
