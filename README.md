@@ -176,9 +176,9 @@ First rollout, where nothing T+1 runs yet:
    then pass: it names any notice left behind.
 
 offers goes out at any point after account's migrations (its build reads
-`users.delayed_settlement` on every authenticated call, and the T+1 offer
-columns, all added by them) and before agent-scripts, as the runbook's "Deploy
-order" says and explains.
+`users.delayed_settlement` on every user read, its sign-in check included, and
+the T+1 offer columns, all added by them) and before agent-scripts, as the
+runbook's "Deploy order" says and explains.
 
 Upgrading a deployment that already runs T+1:
 
@@ -204,7 +204,7 @@ api#66 is live and the partner has implemented the consent signing.
 The T+1 pages and the spec describe trades#538 with its review fixes (T-01 to
 T-31; the CONS-4 follow-up `0d5a99c4`, whose recipient-payout gates leave T+1
 offers out for a partner without delayed settlement; and the other cross-repo
-follow-ups), rechecked against its branch head `92cb751e`. If trades changes
+follow-ups), rechecked against its branch head `1e096787`. If trades changes
 after that, check the T+1 docs against it again before dating the entry. The
 other unreleased changes the entry lists (the estimate fields,
 `404 RECIPIENT_NOT_FOUND` on a quote, the orders filter) carry no notice on
