@@ -94,12 +94,14 @@ X-API-Key: <api-key>
 {
   "success": true,
   "data": {
-    "enabled": true,
-    "issues_accounts": true,
-    "currencies": ["EUR", "GBP"],
-    "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] },
-    "idle_close_days": 30,
-    "idle_close_notice_days": 7
+    "config": {
+      "enabled": true,
+      "issues_accounts": true,
+      "currencies": ["EUR", "GBP"],
+      "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] },
+      "idle_close_days": 30,
+      "idle_close_notice_days": 7
+    }
   }
 }
 ```
@@ -200,7 +202,7 @@ step.
   and post again.
 - The same account is already being opened: `409 PROVISIONING_IN_PROGRESS`.
 - The account this request would replace is still being closed: `409
-  ACCOUNT_CLOSING`, with a `Retry-After` header in seconds. Nothing was opened;
+  ACCOUNT_CLOSING`, with `error.details.retry_after_seconds`. Nothing was opened;
   send the request again after that long.
 
 ### 4. Wait for `active`
@@ -352,7 +354,7 @@ stays `payment_details`, and a third party stays a Recipient.
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
 | `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
 | `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. Read it rather than retrying. |
-| `ACCOUNT_CLOSING` | 409 | The account this request would replace is still being closed. Retry after the `Retry-After` header's seconds. |
+| `ACCOUNT_CLOSING` | 409 | The account this request would replace is still being closed. Retry after `error.details.retry_after_seconds` seconds. |
 | `KYC_NOT_CLEARED` | 422 | The customer is not KYC-verified. |
 | `ISSUANCE_NOT_READY` | 422 | Verified, but the bank needs the fields in `error.details.missing_fields`. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |

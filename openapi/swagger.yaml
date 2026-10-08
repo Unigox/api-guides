@@ -4946,13 +4946,7 @@ paths:
           description: |
             The same account is already being opened (`PROVISIONING_IN_PROGRESS`), or the account this
             request would replace is still being closed (`ACCOUNT_CLOSING`; nothing was opened — retry
-            after `Retry-After` seconds).
-          headers:
-            Retry-After:
-              description: On `ACCOUNT_CLOSING`, how many seconds to wait before sending the request again.
-              schema:
-                type: integer
-                example: 600
+            after `error.details.retry_after_seconds` seconds).
           content:
             application/json:
               schema:
@@ -7463,7 +7457,8 @@ components:
                 `CUSTOMER_NOT_VERIFIED`, `CLIENT_NOT_APPROVED`, `HOLDER_REGISTRATION_IN_PROGRESS`,
                 `IDENTIFICATION_MISSING`, `IDENTIFICATION_ALREADY_LINKED`, `INVALID_DOCUMENT_TYPE`,
                 `POSTAL_CODE_REQUIRED`, `INVALID_POSTAL_CODE`, `MISSING_FIELDS`, `PRODUCT_NOT_ACTIVATED`,
-                `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`,
+                `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`, `ACCOUNT_CLOSING`
+                (`error.details.retry_after_seconds` says how long to wait),
                 `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY`, `CURRENCY_NOT_PERMITTED`,
                 `CURRENCY_NOT_PRICED`, `RECORD_FAILED`, `BANKING_ERROR`, `BANKING_UNAVAILABLE`.
 
@@ -7492,45 +7487,49 @@ components:
         data:
           type: object
           properties:
-            enabled:
-              type: boolean
-              description: Whether you may use fiat accounts at all.
-              example: true
-            issues_accounts:
-              type: boolean
-              description: |
-                Whether you may OPEN accounts, as opposed to only reading the ones you have.
-              example: true
-            disabled_reason:
-              type: string
-              description: Why the product is unavailable. Present only when `enabled` is false.
-              example: PRODUCT_NOT_ACTIVATED
-            currencies:
-              type: array
-              items: { type: string }
-              description: ISO 4217 currencies an account may be denominated in.
-              example: ["EUR", "GBP"]
-            issuers:
+            config:
               type: object
-              additionalProperties:
-                type: array
-                items: { type: string }
-              description: Currency to issuing jurisdictions (ISO 3166-1 alpha-2), default first.
-              example: { "EUR": ["NL", "MT"], "GBP": ["GB"] }
-            idle_close_days:
-              type: integer
-              nullable: true
-              description: |
-                An account with no money in or out for this many days is closed. `null` while no
-                account is being closed for inactivity.
-              example: 30
-            idle_close_notice_days:
-              type: integer
-              nullable: true
-              description: |
-                How long before such a close the account carries `closes_at` and
-                `fiat_account.closing` is sent. `null` whenever `idle_close_days` is.
-              example: 7
+              description: The fiat account product as it stands for you.
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether you may use fiat accounts at all.
+                  example: true
+                issues_accounts:
+                  type: boolean
+                  description: |
+                    Whether you may OPEN accounts, as opposed to only reading the ones you have.
+                  example: true
+                disabled_reason:
+                  type: string
+                  description: Why the product is unavailable. Present only when `enabled` is false.
+                  example: PRODUCT_NOT_ACTIVATED
+                currencies:
+                  type: array
+                  items: { type: string }
+                  description: ISO 4217 currencies an account may be denominated in.
+                  example: ["EUR", "GBP"]
+                issuers:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: { type: string }
+                  description: Currency to issuing jurisdictions (ISO 3166-1 alpha-2), default first.
+                  example: { "EUR": ["NL", "MT"], "GBP": ["GB"] }
+                idle_close_days:
+                  type: integer
+                  nullable: true
+                  description: |
+                    An account with no money in or out for this many days is closed. `null` while no
+                    account is being closed for inactivity.
+                  example: 30
+                idle_close_notice_days:
+                  type: integer
+                  nullable: true
+                  description: |
+                    How long before such a close the account carries `closes_at` and
+                    `fiat_account.closing` is sent. `null` whenever `idle_close_days` is.
+                  example: 7
 
     FiatAccountCreateRequest:
       type: object
@@ -7663,7 +7662,7 @@ components:
           example: "2026-10-15T06:02:11Z"
         close_reason:
           type: string
-          enum: [inactivity, operator]
+          enum: [inactivity, operator, null]
           nullable: true
           description: |
             Closed accounts only, always present. `inactivity` — closed automatically after
