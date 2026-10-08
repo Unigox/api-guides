@@ -51,7 +51,11 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   orders, and T+1 events carry `provider: "p2p"`.
 - **Third-party payouts** can settle T+1 too. Among the licensed partners that can pay a recipient, one that
   settles instantly takes the payout whenever it can, and one that settles T+1 takes it only when none can.
-  See [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
+  Until Unigox has enabled delayed settlement for you, a currency or rail that only T+1 offers serve is not
+  open to your third-party payout quotes: the quote answers `400 INVALID_REQUEST`
+  (`third-party recipient payout is not available for {CURRENCY}`) for the currency and
+  `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail, not `409 NO_OFFERS_AVAILABLE`. A retry does not change
+  either. See [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
 
 ### Other changes
 

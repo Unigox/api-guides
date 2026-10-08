@@ -68,8 +68,11 @@ An order is delayed when all four hold:
   configuration change on our side, not an automatic consequence of a signature.
   Until then your quotes and orders match instant offers only, and so does an
   estimate you send with your credentials: a quote for an amount no instant
-  offer covers answers `409 NO_OFFERS_AVAILABLE`. An estimate sent without
-  credentials still prices T+1 offers.
+  offer covers answers `409 NO_OFFERS_AVAILABLE`. For a third-party payout, a
+  currency or rail that only delayed offers serve does not get that answer: the
+  quote refuses the currency with `400 INVALID_REQUEST` and the rail with
+  `409 THIRD_PARTY_RAIL_NOT_SUPPORTED`. Neither changes on retry. An estimate
+  sent without credentials still prices T+1 offers.
 - **The matched licensed partner offers T+1.**
 
 A [third-party payout](./third-party-payouts.md#when-a-payout-is-delayed) can be

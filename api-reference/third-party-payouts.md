@@ -389,7 +389,12 @@ can be matched to.
 The liquidity bands include T+1 offers by default, so their ceiling can be one
 only a delayed settlement (T+1) order reaches. If delayed settlement is not
 enabled for you, call `/api/v1/partner/liquidity?exclude_delayed_settlement=true`
-for the bands your orders can actually match.
+for the instant bands. Either way the bands also count offers of licensed
+partners that cannot pay a recipient, so a band can reach above what a recipient
+payout can match. For the exact answer, send the estimate with your API key
+and the payout's `recipient_id` and `recipient_destination_id`, as shown below:
+it is matched as your quote is, and answers `409 NO_OFFERS_AVAILABLE` for an
+amount the quote cannot match.
 
 To see the rate the quote will give, also name the destination: send
 `recipient_id` and `recipient_destination_id` with your API key. The estimate is
@@ -420,7 +425,10 @@ support cross-currency recipients. A CNY destination receives CNY. A quote whose
 `fiat_currency` is not the destination's currency is refused with `422
 THIRD_PARTY_CONTEXT_INVALID` (`recipient destination does not support the payout
 corridor`); if `fiat_currency` is not open to recipient payouts at all, the
-`400 INVALID_REQUEST` for that currency comes first.
+`400 INVALID_REQUEST` for that currency comes first. Until delayed settlement is
+enabled for you, a currency that only delayed (T+1) offers serve counts as not
+open, with the same `400`, and a rail that only they serve is refused with
+`409 THIRD_PARTY_RAIL_NOT_SUPPORTED`.
 
 `rail` is optional on a third-party quote: the route comes from the destination.
 If you send it, it must be the destination's rail; any other value is refused
@@ -477,7 +485,10 @@ you. Delayed settlement is switched on for your account by Unigox on request:
 tell us once your integration can sign the release
 ([Step 4](./delayed-settlement.md#step-4-sign-the-release)). It is a
 configuration change on our side, not an automatic consequence of a signature.
-Until then they match instant offers only.
+Until then they match instant offers only, and a currency or rail that only
+delayed offers serve is refused at the quote, with `400 INVALID_REQUEST` for the
+currency and `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail
+([Compliance in v1](#compliance-in-v1)). A retry does not change either.
 
 You recognise it on the same fields as any delayed order:
 
@@ -532,13 +543,13 @@ order — the request is rejected, and you act on the error:
 | `KYC_NOT_CLEARED` | 422 | The sender's KYC is not cleared for this partner. | Complete the sender's KYC; do not substitute another user. |
 | `SENDER_IDENTITY_REQUIRED` | 422 | The corridor settles consumer-to-consumer and the sender's record cannot name them on the wire. `details.kyc_fields` is what you can supply. | `PATCH /api/v1/partner/users/{user_uuid}/kyc` with those fields, then retry. See below. |
 | `THIRD_PARTY_CONTEXT_INVALID` | 422 | The sender or destination cannot be used for this quote, or the recipient cannot: the sender or destination not found for this partner (`sender not found or not eligible`, `recipient destination not found or not eligible`), archived, screening not `cleared`, incomplete route, `sender_id` ≠ `user_uuid`, a `rail` that is not the destination's (`rail does not match the recipient destination`), or a destination currency that is not `fiat_currency` (`recipient destination does not support the payout corridor`). On initiate: the recipient changed or stopped being cleared since the quote. | Read the message. Fix the `rail` or `fiat_currency`, re-check the recipient, or wait for screening; after a change since the quote, request a new quote. |
-| `INVALID_REQUEST` | 400 | The payload is wrong — a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a relationship or `purpose_of_payment` the corridor cannot declare, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). On the destination endpoint: a `details` field the rail does not accept. The message names what to fix. | Fix the request. |
+| `INVALID_REQUEST` | 400 | The payload is wrong — a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a relationship or `purpose_of_payment` the corridor cannot declare, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). A currency served only by delayed (T+1) offers reads as not available, with that message, until delayed settlement is enabled for you. On the destination endpoint: a `details` field the rail does not accept. The message names what to fix. | Fix the request. If the message says the currency is not available and delayed settlement is not enabled for you, ask us to enable it. |
 | `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. Returned by the recipient endpoints and by a quote that names such a recipient. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
 | `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | Returned by the recipient endpoints: the recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
-| `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on. A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. | Use a destination on a rail that is open, or ask us to open this one. A retry does not change it. |
+| `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on (`third-party recipient payout is not available for {CURRENCY} over {rail}`). A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. A rail served only by delayed (T+1) offers reads as not open until delayed settlement is enabled for you. | Use a destination on a rail that is open, or ask us to open this one; if delayed settlement is not enabled for you, ask us to enable it. A retry does not change it. |
 | `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
 | `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` | 422 | The rail refuses money sent from the country on your customer's verified identity. Alipay bars a list of sending countries whoever the beneficiary is. The message names the country. | Pay this beneficiary over a bank format (`cnaps`). No change to the sender's record opens the wallet rail, and a retry fails identically. |
-| `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later or use a different amount. |
+| `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later, or use a different amount. If delayed settlement is not enabled for you, an amount that only a delayed (T+1) offer covers gets this answer on every retry. Price the amount first with `POST /api/v1/partner/offramp/estimate`, sent with your API key, `recipient_id` and `recipient_destination_id`: it is matched as your quote is and answers the same 409 for an amount the quote cannot match. Or ask us to enable delayed settlement. |
 | `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
 | `THIRD_PARTY_PAYOUT_UNDER_REVIEW` | 422 | Returned on initiate. Compliance put this payout in review — someone looks at it on our side. | Do not retry the same payout; wait for the outcome. |
 | `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it outright, with nothing pending: a breached sender limit, a hold, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |

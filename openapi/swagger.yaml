@@ -3641,10 +3641,12 @@ paths:
 
 
             On a third-party payout, `INVALID_REQUEST` also covers: a missing third-party field,
-            `payment_details_id` sent with `recipient_destination_id`, a `fiat_currency` no recipient
-            payout route serves (`third-party recipient payout is not available for {CURRENCY}`, checked
-            before the destination is read), a relationship or purpose the corridor cannot declare, and a
-            USD payout to China, Hong Kong or Singapore (`provider_confirmation_pending`).
+            `payment_details_id` sent with `recipient_destination_id`, a `fiat_currency` served by no
+            recipient payout route your orders can match
+            (`third-party recipient payout is not available for {CURRENCY}`, checked before the
+            destination is read; a currency only T+1 offers serve reads so until delayed settlement is
+            enabled for you), a relationship or purpose the corridor cannot declare, and a USD payout to
+            China, Hong Kong or Singapore (`provider_confirmation_pending`).
           content:
             application/json:
               schema:
@@ -3702,11 +3704,14 @@ paths:
                   message: "Payment details not found or do not belong to user"
         '409':
           description: >-
-            `NO_OFFERS_AVAILABLE` — no offer serves the requested pair and amount.
+            `NO_OFFERS_AVAILABLE` — no offer your orders can match serves the requested pair and amount.
+            Until delayed settlement is enabled for you, T+1 offers do not count, so an amount only a T+1
+            offer covers gets this answer on every retry.
 
 
             On a third-party payout also: `THIRD_PARTY_RAIL_NOT_SUPPORTED` — the currency is open to
-            recipient payouts, but not over the rail the destination settles on; and
+            recipient payouts, but not over the rail the destination settles on (a rail only T+1 offers
+            serve reads as not open until delayed settlement is enabled for you); and
             `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` — recipient payouts are switched off on our side, or
             their availability could not be determined. Both are opened on our side; do not retry in a
             loop.
