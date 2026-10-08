@@ -8549,7 +8549,9 @@ components:
             fiat is expected within `settlement_hours` of that release (a target, not a deadline).
             **Always present.**
 
-            You cannot request it or decline it. A delayed offer is considered only when no instant
+            No parameter requests it. `provider_scope=licensed_only` leaves T+1 offers out, but it
+            also leaves out every other P2P offer, so use it only if that is what you want. A
+            delayed offer is considered only when no instant
             offer covers the amount, and only on orders whose crypto you hold — never on a widget
             order. It is also considered only once Unigox has enabled delayed settlement for you.
             Delayed settlement is switched on for your account by Unigox on request: tell us once

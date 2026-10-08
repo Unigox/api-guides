@@ -80,9 +80,11 @@ delayed too. It is matched only to licensed partners that can pay a recipient,
 so for it the first condition reads: no instant offer from such a licensed
 partner covers the amount.
 
-There is no parameter to ask for or refuse a delayed order. Show the window and
-let the customer decide: they can create the order, or ask for a new quote for a
-different amount.
+No parameter asks for a delayed order. The quote's `provider_scope=licensed_only`
+leaves T+1 offers out, but it also leaves out every other P2P offer, so use it
+only if that is what you want. Otherwise show the window and let the customer
+decide: they can create the order, or ask for a new quote for a different
+amount.
 
 ## Step 1: the quote
 

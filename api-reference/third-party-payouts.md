@@ -484,7 +484,9 @@ The rule is the one in
 [When an order is delayed](./delayed-settlement.md#when-an-order-is-delayed),
 among the licensed partners that can pay a recipient: one that settles instantly
 takes the payout whenever it can, and one that settles T+1 takes it only when
-none can. The quote has no parameter to ask for it or refuse it.
+none can. No quote parameter asks for it. `provider_scope=licensed_only` leaves
+T+1 offers out, but it also leaves out every other P2P offer, so use it only if
+that is what you want.
 
 Your payouts can be delayed only once Unigox has enabled delayed settlement for
 you. Delayed settlement is switched on for your account by Unigox on request:
