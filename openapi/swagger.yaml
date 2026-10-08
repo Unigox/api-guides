@@ -3692,16 +3692,28 @@ paths:
                   code: UNAUTHORIZED
                   message: "Invalid or missing API key"
         '404':
-          description: User or payment details not found
+          description: >-
+            User or payment details not found. On a third-party payout also: `RECIPIENT_NOT_FOUND` — no
+            recipient with that `recipient_id` belongs to your partner account, or it was archived.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: INVALID_PAYMENT_DETAILS
-                  message: "Payment details not found or do not belong to user"
+              examples:
+                payment_details_not_found:
+                  summary: The payment details are not found
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_PAYMENT_DETAILS
+                      message: "Payment details not found or do not belong to user"
+                recipient_not_found:
+                  summary: The recipient is not yours, or was archived
+                  value:
+                    success: false
+                    error:
+                      code: RECIPIENT_NOT_FOUND
+                      message: "recipient not found"
         '409':
           description: >-
             `NO_OFFERS_AVAILABLE` — no offer your orders can match serves the requested pair and amount.
@@ -3747,10 +3759,11 @@ paths:
 
 
             `THIRD_PARTY_CONTEXT_INVALID` — the sender, recipient or destination cannot be used for this
-            quote. The message says which: `sender_id` is not `user_uuid`; the sender, recipient or
-            destination is not found for your partner account or is archived; the recipient is not
-            cleared by screening; the destination route is incomplete; the `rail` you sent is not the
-            destination's rail (`rail does not match the recipient destination`); or the destination's
+            quote. The message says which: `sender_id` is not `user_uuid`; the sender or destination is
+            not found for your partner account or is archived (an unknown or archived recipient answers
+            `404 RECIPIENT_NOT_FOUND`); the recipient is not cleared by screening; the destination route
+            is incomplete; the `rail` you sent is not the destination's rail (`rail does not match the
+            recipient destination`); or the destination's
             currency is not `fiat_currency` (`recipient destination does not support the payout
             corridor`, or `fiat_currency does not match the recipient destination`).
 
