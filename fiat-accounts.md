@@ -243,10 +243,12 @@ Keys that do not apply are absent rather than empty. This view also carries
 `balances`, and `balances_unavailable: true` when the balance read failed: a
 balance we could not read is reported as unavailable rather than as zero.
 
-An `active` account always carries `closes_at`: `null`, or the date it will be
-closed for inactivity unless money moves before then. A `closes_at` in the past
-still stands: the close is due, and the account can close at any moment until
-the account closes or money moves. A `closed` account always carries
+An `active` account always carries `closes_at`: `null`, or the date from which
+it may be closed for inactivity unless money moves before then. Nothing closes
+before that day (UTC) has ended and two more business days have passed. A
+`closes_at` in the past still stands: once those two business days have passed,
+the account can close at any time until it closes or money moves.
+A `closed` account always carries
 `closed_at`, `close_reason` (`inactivity` or `operator`, or `null` when the bank
 closed the account itself) and `close_idle_days` (the inactivity window that
 closed it); each is `null` when it was not recorded, and all three are `null`
@@ -360,7 +362,7 @@ Three events, in the same envelope and with the same signature as
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
 | `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency`; `reason` when `status` is `closed` (`inactivity`, `operator`, or `null` when the bank closed it itself) |
-| `fiat_account.closing` | The account will be closed for inactivity on `closes_at` unless money moves first. | `fiat_account_id`, `user_uuid`, `currency`, `closes_at`, `last_activity_at` |
+| `fiat_account.closing` | The account may be closed for inactivity once the day of `closes_at` (UTC) has ended and two more business days have passed, unless money moves in or out first. | `fiat_account_id`, `user_uuid`, `currency`, `closes_at`, `last_activity_at` |
 | `fiat_account.deposit.received` | Money arrived on the account. | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
 
 `fiat_account.closing` and the `closed` update are retried like

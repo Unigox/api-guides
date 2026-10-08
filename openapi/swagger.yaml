@@ -109,7 +109,7 @@ tags:
       | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
-      | `fiat_account.closing` | An issued fiat account will be closed for inactivity on `closes_at` unless money moves first |
+      | `fiat_account.closing` | An issued fiat account may be closed for inactivity once the day of `closes_at` (UTC) has ended and two more business days have passed, unless money moves first |
       | `fiat_account.deposit.received` | Money arrived on an issued fiat account |
 
       **Payload shape — the fiat account events**
@@ -150,10 +150,11 @@ tags:
       }
       ```
 
-      `fiat_account.closing` says the account will be closed for inactivity on `closes_at` unless money
-      moves in or out first. `last_activity_at` is its last movement, or when it opened. If money moves
-      before the date, the account stays open, `closes_at` on it goes back to `null` within a few hours,
-      and no event is sent. If Unigox pauses closing, `closes_at` goes back to `null`; when closing
+      `fiat_account.closing` says the account may be closed for inactivity once the day of `closes_at`
+      (UTC) has ended and two more business days have passed, unless money moves in or out first.
+      `last_activity_at` is its last movement, or when it opened. If money moves before the date, the
+      account stays open, `closes_at` on it goes back to `null` within a few hours, and no event is
+      sent. If Unigox pauses closing, `closes_at` goes back to `null`; when closing
       resumes, an account whose date was hidden first gets a new `closes_at`, at least
       `idle_close_notice_days` ahead, and a new `fiat_account.closing`.
 
@@ -7663,10 +7664,10 @@ components:
           format: date-time
           nullable: true
           description: |
-            Active accounts only, always present: the date the account will be closed for inactivity
-            unless money moves in or out before then, or `null` when no such close stands. A date in
-            the past still stands: nothing closes before that day (UTC) has ended and two more business
-            days have passed, and the date stays until the account closes or money moves. While Unigox
+            Active accounts only, always present: the date from which the account may be closed for
+            inactivity unless money moves in or out before then, or `null` when no such close stands.
+            Nothing closes before that day (UTC) has ended and two more business days have passed. A
+            date in the past still stands, and stays until the account closes or money moves. While Unigox
             pauses closing it is `null`; when closing resumes, a new date at least
             `idle_close_notice_days` ahead (and a new `fiat_account.closing`) comes before any close.
           example: "2026-10-15T06:00:00Z"
