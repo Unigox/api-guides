@@ -86,6 +86,19 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   archived, still answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which: `sender not
   found or not eligible`, `recipient not found or not eligible` or `recipient destination not found or not
   eligible`, where it said `sender, recipient or destination not found or not eligible`.
+- Quote and initiate, on both ramps, also require the customer's identity to be verified by Unigox. Under
+  KYC reliance, a customer whose verification is still pending, whom a quote used to price, now gets `422
+  KYC_NOT_CLEARED` (with `error.details.kyc_status`). The message names the `sender` on an
+  off-ramp and the `customer` on an on-ramp, where it said `beneficiary`.
+- A `quote_id` that is not a UUID answers `400 INVALID_REQUEST` (`invalid quote_id format`) on both
+  initiates, where it answered `500`. A well-formed id that names no quote still answers `404`.
+- On a third-party quote, a `recipient_id` or `recipient_destination_id` that is not a UUID answers `400
+  INVALID_REQUEST` naming the field (`recipient_id must be a UUID`), where it answered `422
+  THIRD_PARTY_CONTEXT_INVALID`.
+- `POST /api/v1/partner/orders/{order_id}/cancel` on an order no liquidity provider has accepted yet
+  cancels it and answers with the whole order, where it answered `409 INVALID_STATUS`. If a liquidity
+  provider accepts the order at the same moment, the cancel answers `409 OPERATION_NOT_ALLOWED`; retry it.
+- A quote's `expires_at` is in UTC and in whole seconds, on both ramps.
 - `order_type` is on every order response, including an order no liquidity provider has accepted yet, where
   it was missing.
 - `GET /api/v1/partner/orders?status=` lists orders no liquidity provider has accepted yet under the status
