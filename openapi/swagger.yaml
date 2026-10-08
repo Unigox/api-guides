@@ -8725,7 +8725,8 @@ components:
             Once consent_deadline_at has passed, these reads no longer request a consent signature,
             even if the order status has not changed yet.
             The list (`GET /api/v1/partner/orders`) reads the consent from the order record and can show
-            `await_review` for a consent call that was cut off before your signature was stored. After a
+            `await_review`, for up to two minutes, for a consent call that was cut off before your signature
+            was stored. After a
             timeout, read the single order (`GET /api/v1/partner/orders/{order_id}`) before you decide
             whether to send the signature again. If a lookup behind the T+1 hint fails, both reads fall
             back to `sign_settlement_consent`.
@@ -8810,7 +8811,8 @@ components:
 
             Both are withdrawn once the consent is signed, and then answer
             `409 OPERATION_NOT_ALLOWED`. The list reads the consent from the order record, so a list row
-            can already show them withdrawn for a consent call that was cut off before your signature was
+            can already show them withdrawn, for up to two minutes, for a consent call that was cut off
+            before your signature was
             stored. After a timeout, read the single order (`GET /api/v1/partner/orders/{order_id}`)
             before you decide whether to send the signature again.
 
