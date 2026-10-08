@@ -140,8 +140,8 @@ The changelog's `Unreleased` entry describes the release on the
 `feat/t1-third-party-payouts-20261002` branch. The account repository's runbook,
 `docs/bill-payment-settlement-t1-runbook.md` ("Deploy order" and "Upgrading a
 live deployment"), owns the order of the services and their preconditions; if it
-and this list ever disagree, the runbook wins. This list places the two
-repositories the runbook leaves out, the API gateway and this one.
+and this list ever disagree, the runbook wins. The lists below restate it in
+short, the API gateway (api#66) and this repository included.
 
 Merge the pull requests in the same order as the deploys below. The api-guides
 pull request is merged last, after api#66 is deployed, because merging it is
@@ -150,7 +150,10 @@ what publishes the T+1 docs.
 First rollout, where nothing T+1 runs yet:
 
 1. account: the T+1 migrations, checked as the runbook's "Deploy preconditions"
-   says, then the account build.
+   says, then the account build. Over main's builds from before its migration
+   20261007160000, which drops `users.partner`, finish main's own release first:
+   its account, trades and verification, then `up` to 20261007200000 with
+   main's build. This release's account cannot start before that `up`.
 2. verification: after account's migrations and before trades. trades stores the
    source-of-funds documents and payout receipts through this build's routes;
    against an older build every such upload fails in trades.
@@ -177,7 +180,10 @@ an offer's fee rows on a price-only update).
 Upgrading a deployment that already runs T+1:
 
 1. account: the T+1 migrations and the runbook's checks, before any new build
-   starts.
+   starts. A database migrated under an earlier T+1 branch's numbers needs the
+   runbook's `migrate force` first. Where `users.partner` still exists, as on a
+   stage at the 20261006090… numbers, the force and the `up` go after step 4
+   instead, once account, trades and verification run this release.
 2. offers and verification, in either order.
 3. agent-scripts, unigox.com, trades, in that order.
 4. account's build, stop-start: every replica of the old build stops before the
@@ -191,9 +197,14 @@ flag last, and a partner is listed in `DELAYED_SETTLEMENT_PARTNERS` only once
 api#66 is live and the partner has implemented the consent signing.
 
 The T+1 pages and the spec describe trades#538 with its review fixes (T-01 to
-T-31, plus the cross-repo follow-ups; branch head `2c953a61`). If trades changes after that, check the T+1 docs
-against it again before dating the entry. The other unreleased changes the entry
-lists (the estimate fields, `404 RECIPIENT_NOT_FOUND` on a quote, the orders
-filter) carry no notice on their pages and rely on the merge order alone.
+T-31; the CONS-4 follow-up `0d5a99c4`, whose recipient-payout gates leave T+1
+offers out for a partner without delayed settlement; and the other cross-repo
+follow-ups), rechecked against its branch head `64f5d2f0`. If trades changes
+after that, check the T+1 docs against it again before dating the entry. The
+other unreleased changes the entry lists (the estimate fields,
+`404 RECIPIENT_NOT_FOUND` on a quote, the orders filter) carry no notice on
+their pages and rely on the merge order alone. So does the T+1 text in the live
+sections of `api-reference/third-party-payouts.md`: step 8 of "End-to-end
+flow", "3. Request a quote" and the error table under "Compliance in v1".
 
 Delete this subsection when the entry is dated.
