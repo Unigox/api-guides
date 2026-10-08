@@ -9133,8 +9133,8 @@ components:
             precision; the remainder of crypto_amount is the combined fee. Do not add that
             remainder to crypto_amount again. A separate partner markup remains separate.
             Omitted when this conversion basis is not known;
-            absence does not mean zero margin. This is not the all-in rate in rate.
-          example: "1"
+            absence does not mean zero margin. This is not the all-in rate; that is `rate`.
+          example: "7.25"
 
     PartnerOrderStatus:
       type: string
