@@ -205,6 +205,9 @@ step.
   holding the account for a moment): `409 PROVISIONING_IN_PROGRESS`, with
   `error.details.retry_after_seconds`. Read the account, or send the request
   again after that long.
+- The bank already holds this person under another customer record: `409
+  IDENTIFICATION_ALREADY_LINKED`. Nothing was opened, and sending the request
+  again does not change it, so there is no `retry_after_seconds`.
 - The account this request would replace is still being closed: `409
   ACCOUNT_CLOSING`, with `error.details.retry_after_seconds`. Nothing was opened;
   send the request again after that long.
@@ -368,7 +371,13 @@ Three events, in the same envelope and with the same signature as
 `fiat_account.closing` and the `closed` update are retried like
 `order.status.changed` (up to 10 attempts). Each has a fixed `event_id`, so
 de-duplicating by `event_id` is enough; a closing notice given again with a new
-date has a new `event_id`. The other `fiat_account.updated` events and
+date has a new `event_id`. A newer notice replaces an earlier one: a
+`fiat_account.closing` not yet delivered when a new notice is given, when its
+notice is withdrawn because money moved (within a few hours of the movement), or
+when the account closes is not sent at all. One already being delivered at that
+moment still arrives, so two closing events can arrive out of order; the
+account's own `closes_at` (`GET /fiat-accounts/{fiat_account_id}`) is the date
+that stands. The other `fiat_account.updated` events and
 `fiat_account.deposit.received` are delivered once and not retried: when one is
 missed, the account and its transactions answer the same thing.
 
@@ -407,6 +416,7 @@ stays `payment_details`, and a third party stays a Recipient.
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
 | `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
 | `PROVISIONING_IN_PROGRESS` | 409 | Another request for the same account is still running: an opening, or a close holding the account for a moment. Read the account, or retry after `error.details.retry_after_seconds` seconds. |
+| `IDENTIFICATION_ALREADY_LINKED` | 409 | The bank already holds this person under another customer record. A retry gets the same answer, so there is no `retry_after_seconds`. |
 | `ACCOUNT_CLOSING` | 409 | The account this request would replace is still being closed. Retry after `error.details.retry_after_seconds` seconds. |
 | `KYC_NOT_CLEARED` | 422 | The customer is not KYC-verified. |
 | `ISSUANCE_NOT_READY` | 422 | Verified, but the bank needs the fields in `error.details.missing_fields`. |

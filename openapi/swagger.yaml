@@ -156,7 +156,11 @@ tags:
       account stays open, `closes_at` on it goes back to `null` within a few hours, and no event is
       sent. If Unigox pauses closing, `closes_at` goes back to `null`; when closing
       resumes, an account whose date was hidden first gets a new `closes_at`, at least
-      `idle_close_notice_days` ahead, and a new `fiat_account.closing`.
+      `idle_close_notice_days` ahead, and a new `fiat_account.closing`. A newer notice replaces an
+      earlier one: a `fiat_account.closing` not yet delivered when a new notice is given, when its
+      notice is withdrawn because money moved, or when the account closes is not sent at all. One
+      already being delivered at that moment still arrives, so two can arrive out of order; the
+      account's own `closes_at` is the date that stands.
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
       and the same signature scheme. The structure of the `data` object differs per event type.
@@ -4953,7 +4957,9 @@ paths:
             account for a moment (`PROVISIONING_IN_PROGRESS`; read the account, or retry after
             `error.details.retry_after_seconds` seconds) — or the account this request would replace is
             still being closed (`ACCOUNT_CLOSING`; nothing was opened — retry after
-            `error.details.retry_after_seconds` seconds).
+            `error.details.retry_after_seconds` seconds). If the bank already holds this person under
+            another customer record, the answer is `IDENTIFICATION_ALREADY_LINKED`: nothing was opened,
+            and a retry gets the same answer, so it carries no `retry_after_seconds`.
           content:
             application/json:
               schema:
