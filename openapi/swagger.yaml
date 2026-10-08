@@ -6129,7 +6129,7 @@ paths:
               standing bank return with no fresh authorization belongs under `returned`
             - `returned` — the bank sent the payout back and nobody has authorized another attempt
             - `cancelled` — orders that stopped before settlement, as before, **plus** delayed orders
-              whose crypto was refunded to the customer after the release
+              whose crypto was refunded after the release
 
             For these four values a filter returns exactly the orders whose `status` reports that
             value. So do `awaiting_crypto_transfer_authorization` and
@@ -8950,7 +8950,7 @@ components:
           nullable: true
           description: >-
             The crypto left the licensed partner's wallet for the payout provider. Set at the latest when
-            Unigox authorizes the bank payment. A refund to the customer is not possible while it is set.
+            Unigox authorizes the bank payment. No refund of the crypto is possible while it is set.
             Cleared when Unigox withdraws a record made by mistake, which it can do only while no payment
             has been authorized, sent, paid or returned, and when it refunds the crypto after a returned
             payment.
@@ -8986,7 +8986,8 @@ components:
           format: date-time
           nullable: true
           description: >-
-            The crypto went back to the customer instead. Reachable while
+            The crypto went back to the wallet that funded the escrow (yours, on an order whose crypto you
+            hold) instead of being paid out. Reachable while
             `delayed_settlement_crypto_sent_to_provider_at` is `null`, or after a returned payment when
             Unigox gives the payout up; that refund clears `delayed_settlement_crypto_sent_to_provider_at`.
         source_of_funds_required:
@@ -9890,8 +9891,8 @@ components:
               type: string
               format: date-time
               description: >-
-                The crypto left the licensed partner's wallet for the payout provider. A refund to the customer
-                is not possible while it is set. Absent until it happens, and absent again if Unigox withdraws
+                The crypto left the licensed partner's wallet for the payout provider. No refund of the crypto
+                is possible while it is set. Absent until it happens, and absent again if Unigox withdraws
                 a record made by mistake or refunds the crypto after a returned payment.
             delayed_settlement_fiat_payout_authorized_by_admin_at:
               type: string
@@ -9924,7 +9925,8 @@ components:
               type: string
               format: date-time
               description: >-
-                The crypto went back to the customer instead, before it reached the payout provider or after
+                The crypto went back to the wallet that funded the escrow (yours, on an order whose crypto you
+                hold) instead of being paid out, before it reached the payout provider or after
                 a returned payment. Absent until it happens.
 
     PartnerOnRampQuoteRequest:
