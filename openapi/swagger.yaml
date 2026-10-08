@@ -5608,9 +5608,6 @@ components:
               token_address:
                 type: string
                 example: "0x3333333333333333333333333333333333333333"
-              amount_atomic:
-                type: string
-                example: "25000000"
               amount_human:
                 type: string
                 example: "25"
@@ -5633,10 +5630,6 @@ components:
         address:
           type: string
           example: "0x7d2b1a59c06f3a2f2e0c5f0e2d1b8a3c4e5f6a7b"
-        created_at:
-          type: string
-          format: date-time
-          example: "2026-10-12T10:02:00Z"
 
     WithdrawalQuote:
       type: object
