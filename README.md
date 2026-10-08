@@ -204,7 +204,7 @@ api#66 is live and the partner has implemented the consent signing.
 The T+1 pages and the spec describe trades#538 with its review fixes (T-01 to
 T-31; the CONS-4 follow-up `0d5a99c4`, whose recipient-payout gates leave T+1
 offers out for a partner without delayed settlement; and the other cross-repo
-follow-ups), rechecked against its branch head `1e096787`. If trades changes
+follow-ups), rechecked against its branch head `9a5ceb30`. If trades changes
 after that, check the T+1 docs against it again before dating the entry. The
 other unreleased changes the entry lists (the estimate fields,
 `404 RECIPIENT_NOT_FOUND` on a quote, the orders filter) carry no notice on
