@@ -2030,8 +2030,8 @@ paths:
           required: false
           description: >-
             `true` leaves delayed settlement (T+1) offers out of every band. Absent, empty or `false`
-            keeps them. `1` and `0`, `t` and `f`, and the forms `TRUE`, `True`, `FALSE` and `False` are
-            accepted too; anything else answers `400 INVALID_REQUEST`.
+            keeps them. Also accepted, with surrounding spaces ignored: `1`/`0`, `t`/`f`, `T`/`F`,
+            `TRUE`/`FALSE` and `True`/`False`; anything else answers `400 INVALID_REQUEST`.
           schema:
             type: boolean
             default: false
