@@ -72,15 +72,16 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   destination's own bank or wallet method, rail and country, as the quote does, so a fee a licensed partner
   charges for that bank is included. Without them a recipient-payout estimate is priced on the corridor and
   can show a better rate than the quote.
-- The estimate stays public without credentials. A request that sends an `X-API-Key` or an `Authorization`
-  header is now authenticated and answers an error instead of an anonymous price when the credential fails:
-  `401 UNAUTHORIZED` for a wrong key, an expired or unknown token, or a scheme other than `Bearer`, and
-  `403 UNAUTHORIZED` for a valid token of a user who is not a partner or whose account is inactive. While
-  the authentication service is unavailable, a request with credentials answers `503` (or `500`) with
-  `INTERNAL_ERROR` rather than an anonymous price. If your HTTP client adds its own `Authorization` header
-  to every request, drop it on this call or send your `X-API-Key`. An authenticated estimate prices only the
-  offers your quote would be matched on, so it leaves T+1 offers out until delayed settlement is enabled for
-  you; without credentials the estimate prices them for anyone.
+- The estimate stays public. Sent with your `X-API-Key` (checked first) or a `Bearer` token that
+  authenticates, it is priced as your quote would be matched, so it leaves T+1 offers out until delayed
+  settlement is enabled for you; without credentials it prices them for anyone. A credential that does not
+  authenticate is refused only when the body names `recipient_id` or `recipient_destination_id`: `401
+  UNAUTHORIZED` for a wrong key or an expired or unknown token, `403 UNAUTHORIZED` for a valid token of a
+  user who is not a partner or whose account is inactive, and `503` (or `500`) `INTERNAL_ERROR` while the
+  authentication service is unavailable. Any other request with such a credential is priced as an
+  anonymous caller without T+1 offers, the instant price it got before. `X-Secret-Key` is not a credential
+  on this route: a request that sends it is priced as anonymous. An `Authorization` header with another
+  scheme than `Bearer` is ignored.
 - A third-party quote whose sender, recipient or destination is not found for your partner account, or was
   archived, still answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which: `sender not
   found or not eligible`, `recipient not found or not eligible` or `recipient destination not found or not

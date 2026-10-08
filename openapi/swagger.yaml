@@ -2985,19 +2985,20 @@ paths:
         it leaves T+1 offers out until Unigox has enabled delayed settlement for you. Without
         credentials it prices T+1 offers for anyone.
 
-        **Authentication:** Optional. A request with neither an `X-API-Key` nor an `Authorization`
-        header is public (same as `/partner/liquidity`). A request with either header is authenticated
-        like every partner endpoint, and a credential that fails answers an error rather than an
-        anonymous price: a wrong `X-API-Key` answers `401 UNAUTHORIZED`; an `Authorization` header
-        that is not a valid partner `Bearer` token answers `401` (an expired or unknown token, or a
-        scheme other than `Bearer`) or `403` (a valid token of a user who is not a partner, or whose
-        account is inactive), both with `UNAUTHORIZED`. If your HTTP client adds its own
-        `Authorization` header to every request, drop it on this call or send your `X-API-Key`, which
-        is checked first. A key is required to name a recipient destination.
+        **Authentication:** Optional. A request with neither an `X-API-Key` nor an `Authorization:
+        Bearer` token is public (same as `/partner/liquidity`) and prices T+1 offers for anyone. A
+        request with your `X-API-Key` (checked first) or a `Bearer` token that authenticates is priced
+        as your quote would be matched. `X-Secret-Key` is not a credential here: a request that sends
+        it is priced as anonymous. An `Authorization` header with another scheme is ignored.
 
-        Checking a credential takes a call to Unigox's authentication service. While that service is
-        unavailable, a request with credentials answers `503` (or `500`) with `INTERNAL_ERROR`, not an
-        anonymous price: retry it later, or send it without credentials for the public estimate.
+        A credential that does not authenticate is refused only when the body names `recipient_id` or
+        `recipient_destination_id`, whose destination only your key may read: a wrong key or an
+        expired or unknown token answers `401 UNAUTHORIZED`; a valid token of a user who is not a
+        partner, or whose account is inactive, `403 UNAUTHORIZED`; and while Unigox's authentication
+        service is unavailable, `503` (or `500`) `INTERNAL_ERROR`. Any other request with such a
+        credential is priced as an anonymous caller without T+1 offers, the instant price it got
+        before: it answers `409 NO_OFFERS_AVAILABLE` when no instant offer covers the amount. A key
+        is required to name a recipient destination.
 
         **Note:** EUR, AUD, and GBP off-ramp payouts require the user's physical
         address. Ensure the user's KYC includes `address`, `city`, and `postal_code` before initiating.
@@ -3087,8 +3088,9 @@ paths:
                       message: "invalid provider_scope: must be all, licensed_only, or p2p_only"
         '401':
           description: >-
-            Credentials were sent and failed: a wrong `X-API-Key`, or an `Authorization` header that is
-            not a valid partner `Bearer` token. Send no credentials for the public estimate.
+            The body names `recipient_id` or `recipient_destination_id`, and no `X-API-Key` or `Bearer`
+            token was sent, or the one sent does not authenticate (a wrong key, an expired or unknown
+            token). Without a recipient, such a request is priced as anonymous instead.
           content:
             application/json:
               schema:
@@ -3100,8 +3102,9 @@ paths:
                   message: "invalid API key"
         '403':
           description: >-
-            The `Authorization` header carries a valid token of a user who is not a partner, or whose
-            account is inactive.
+            The body names `recipient_id` or `recipient_destination_id`, and the `Bearer` token is a
+            valid token of a user who is not a partner, or whose account is inactive. Without a
+            recipient, such a request is priced as anonymous instead.
           content:
             application/json:
               schema:
@@ -3124,13 +3127,13 @@ paths:
                   message: "no matching offers found for the provided criteria"
         '500':
           description: >-
-            Internal Server Error. On a request with credentials, also when the authentication service
-            could not be reached.
+            Internal Server Error. On a request with credentials whose body names a recipient, also when
+            the authentication service could not be reached.
         '503':
           description: >-
-            Credentials were sent and the authentication service is temporarily unavailable, so they
-            could not be checked. Retry later, or send the request without credentials for the public
-            estimate.
+            The body names a recipient, credentials were sent, and the authentication service is
+            temporarily unavailable, so they could not be checked. Retry later. Without a recipient,
+            such a request is priced as anonymous instead.
           content:
             application/json:
               schema:
@@ -7938,7 +7941,8 @@ components:
             neither; naming them implies `recipient_payout`. Needs your API key. Errors: `400
             INVALID_REQUEST` when only one is given, an id is not a UUID, the destination's currency is
             not `fiat_currency`, or `payment_method_slug`, `payment_network_slug` or `country_code`
-            differ from the destination's (omit them); `401 UNAUTHORIZED` without a key; `404
+            differ from the destination's (omit them); `401 UNAUTHORIZED` without a key, or with one
+            that does not authenticate (see the operation's authentication); `404
             RECIPIENT_NOT_FOUND` when the recipient or the destination is not yours; `422
             THIRD_PARTY_CONTEXT_INVALID` when the destination is not active. The estimate reads the
             destination and binds nothing.
