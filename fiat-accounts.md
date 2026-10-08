@@ -216,7 +216,7 @@ and a customer sent to it loses the transfer to a bounce.
 | `pending` | Being opened. Do not tell the customer to transfer yet. |
 | `active` | Open. The pay-in details are on the account and money may be sent. |
 | `failed` | The bank refused. This account will not become usable. |
-| `closed` | Retired. Its history stays readable. Do not let the customer pay into it again. |
+| `closed` | Retired. Its history stays readable. Do not let the customer pay into it again. With `closed_at: null` the bank may not have confirmed the close yet; see [Before the bank confirms a close](#before-the-bank-confirms-a-close). |
 
 `fiat_account.updated` fires when this changes, and
 `GET /fiat-accounts/{fiat_account_id}` answers the same thing when you poll.
@@ -243,7 +243,8 @@ An `active` account always carries `closes_at`: `null`, or the date it will be
 closed for inactivity unless money moves before then. A `closed` account always
 carries `closed_at`, `close_reason` (`inactivity` or `operator`) and
 `close_idle_days` (the inactivity window that closed it); each is `null` when it
-was not recorded.
+was not recorded, and all three are `null` while the bank has not confirmed the
+close (see [Before the bank confirms a close](#before-the-bank-confirms-a-close)).
 
 `GET /api/v1/partner/fiat-accounts?user_uuid={user_uuid}` lists one customer's
 accounts, with the last four digits of the identifier rather than the whole one.
@@ -300,6 +301,28 @@ When the account closes you receive `fiat_account.updated` with
 serving the customer, open a new account with the same request as the first
 one; it comes with new pay-in details, and the customer must not use the old
 ones again.
+
+### Before the bank confirms a close
+
+The bank does not always confirm a close at once, whether the close was for
+inactivity or made from the portal. Until it does, the account reads `closed`
+with `closed_at`, `close_reason` and `close_idle_days` all `null`, it carries no
+pay-in details, and no `fiat_account.updated` has been sent. This normally
+settles within hours, one of two ways:
+
+- The bank closed the IBAN. `closed_at` and the reason are filled in, and
+  `fiat_account.updated` with `status: closed` arrives then.
+- It did not. The account reads `active` again, with the same pay-in details. No
+  event is sent for that.
+
+So a `closed` read with `closed_at: null` is not yet a reason to tell the
+customer their IBAN is gone. To tell where it stands, send the request that
+opens the account (same customer, currency and jurisdiction): while the close is
+unsettled it answers `409 ACCOUNT_CLOSING` and opens nothing. Otherwise it
+answers as usual: a new account if the old one is closed for good, or the same
+account with `created: false` if its IBAN stayed open. A close that was never
+recorded also leaves `closed_at` at `null`; that close is final, and the request
+opens its replacement.
 
 ## Webhooks
 

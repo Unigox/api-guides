@@ -7595,7 +7595,10 @@ components:
             `active` — ready, and the pay-in details below are on this response.
             `failed` — the bank refused; this account will not become usable.
             `closed` — retired; its history stays readable. Do not let the customer pay into it again;
-            a new account for the same customer comes with new pay-in details.
+            a new account for the same customer comes with new pay-in details. A `closed` account with
+            `closed_at: null` may be a close the bank has not confirmed yet. It can still read `active`
+            again, with the same pay-in details and no event; while it is unsettled, a request to open
+            the same account answers `409 ACCOUNT_CLOSING` and opens nothing.
           example: active
         created:
           type: boolean
@@ -7658,7 +7661,9 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: Closed accounts only, always present. When it closed; `null` if not recorded.
+          description: |
+            Closed accounts only, always present. When it closed; `null` if not recorded, or while the
+            bank has not confirmed the close (the account may then still read `active` again).
           example: "2026-10-15T06:02:11Z"
         close_reason:
           type: string
@@ -7667,7 +7672,7 @@ components:
           description: |
             Closed accounts only, always present. `inactivity` — closed automatically after
             `close_idle_days` without money in or out; `operator` — closed by you from the portal, or by
-            Unigox on your behalf. `null` if not recorded.
+            Unigox on your behalf. `null` if not recorded, or while the bank has not confirmed the close.
           example: inactivity
         close_idle_days:
           type: integer
