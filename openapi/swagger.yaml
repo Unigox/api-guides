@@ -9159,6 +9159,8 @@ components:
             remainder to crypto_amount again. A separate partner markup remains separate.
             Omitted when this conversion basis is not known;
             absence does not mean zero margin. This is not the all-in rate; that is `rate`.
+            Only a delayed settlement (T+1) offer publishes this basis, so an instant quote or
+            estimate does not carry it.
           example: "7.25"
 
     PartnerOrderStatus:
