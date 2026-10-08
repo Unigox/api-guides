@@ -4917,7 +4917,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request could not be completed and may have been applied: read the order before retrying"
+                  message: "the request could not be completed: retry it"
         '504':
           description: >-
             From the API gateway: it got no answer in time. A read changes nothing; retry it.
@@ -4929,7 +4929,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
+                  message: "the request did not complete in time: retry it"
 
   /api/v1/partner/orders/{order_id}/settlement-consent:
     post:
@@ -5073,7 +5073,9 @@ paths:
             Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data`
             is not this order's release transaction; the signature does not recover to `signer_address`
             over it (sign again with the wallet that funded the order; the same signature can never
-            succeed); or the order is an on-ramp order.
+            succeed); or the order is an on-ramp order. Also from the API gateway: the request body
+            could not be read in full (it was cut off, or the request took longer than 15 seconds to
+            arrive). Nothing was sent on: send the request again.
           content:
             application/json:
               schema:
@@ -5336,7 +5338,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request could not be completed and may have been applied: read the order before retrying"
+                  message: "the request could not be completed: retry it"
         '504':
           description: >-
             From the API gateway: it got no answer in time. A read changes nothing; retry it.
@@ -5348,7 +5350,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
+                  message: "the request did not complete in time: retry it"
 
   /api/v1/partner/orders/{order_id}/source-of-funds/requirements:
     get:
@@ -5478,7 +5480,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request could not be completed and may have been applied: read the order before retrying"
+                  message: "the request could not be completed: retry it"
         '504':
           description: >-
             From the API gateway: it got no answer in time. A read changes nothing; retry it.
@@ -5490,7 +5492,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
+                  message: "the request did not complete in time: retry it"
 
   /api/v1/partner/orders/{order_id}/source-of-funds/declaration:
     post:
@@ -5549,7 +5551,10 @@ paths:
                       data:
                         $ref: '#/components/schemas/PartnerSourceOfFundsCase'
         '400':
-          description: Malformed `order_id` or request body, or the order is an on-ramp order.
+          description: >-
+            Malformed `order_id` or request body, or the order is an on-ramp order. Also from the API
+            gateway: the request body could not be read in full (it was cut off, or the request took
+            longer than 15 seconds to arrive). Nothing was sent on: send the request again.
           content:
             application/json:
               schema:
@@ -5628,7 +5633,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request could not be completed and may have been applied: read the order before retrying"
+                  message: "the request could not be completed and may have been applied: read the source-of-funds case (GET /api/v1/partner/orders/{order_id}/source-of-funds) before retrying"
         '504':
           description: >-
             From the API gateway: it got no answer in time. The declaration may still have been saved:
@@ -5641,7 +5646,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
+                  message: "the request did not complete in time and may still have been applied: read the source-of-funds case (GET /api/v1/partner/orders/{order_id}/source-of-funds) before retrying"
 
   /api/v1/partner/orders/{order_id}/source-of-funds/documents:
     post:
@@ -5854,7 +5859,7 @@ paths:
                 success: false
                 error:
                   code: INTERNAL_ERROR
-                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
+                  message: "the request did not complete in time and may still have been applied: read the source-of-funds case (GET /api/v1/partner/orders/{order_id}/source-of-funds) before retrying"
         '503':
           description: The document store is not available. Nothing was stored; retry.
           content:

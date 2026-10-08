@@ -815,7 +815,7 @@ failure in the gateway's own shape described below the table.
 | `error.code` | Status | When |
 | --- | --- | --- |
 | `UNAUTHORIZED` | 401 | `X-API-Key` is missing or names no partner. |
-| `INVALID_REQUEST` | 400 | Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the signature does not recover to `signer_address` over it; the uploaded file could not be read; the order is an on-ramp order. |
+| `INVALID_REQUEST` | 400 | Malformed `order_id` or body; `signature` or `signed_data` missing or blank; `signed_data` is not this order's release transaction; the signature does not recover to `signer_address` over it; the uploaded file could not be read; the order is an on-ramp order. From the API gateway: a consent or declaration body could not be read in full (it was cut off, or the request took longer than 15 seconds to arrive); nothing was sent on, so send the request again. |
 | `ORDER_NOT_FOUND` | 404 | No such order, not yours, or not one whose crypto you hold. On source of funds endpoints: the order is not delayed, the case does not exist yet, or the category does not exist. A missing case does not prove the review is unnecessary. |
 | `INVALID_STATUS` | 409 | A consent call on an order that is not delayed, not funded, or no longer waiting for the release. On source of funds endpoints: no liquidity provider has accepted the order yet. On source of funds writes: the order is past the release, the case is decided, the declaration conflicts with its saved requirements or a concurrent edit, or the same file is already held under that `document_type`. |
 | `OPERATION_NOT_ALLOWED` | 409 | The order is on hold and no crypto may move; the consent is already recorded (normally with the signature stored; see below for a call cut off part-way); or its deadline is missing or has passed. Read the order. |
@@ -825,7 +825,7 @@ failure in the gateway's own shape described below the table.
 | `INTERNAL_ERROR` | 429 | 10 files were stored on this case within the last minute. Nothing was stored; send the file again a minute later. |
 | `TRANSACTOR_ERROR` | 502 | The escrow service could not be reached or failed. Read the order (`GET /api/v1/partner/orders/{order_id}`); if it still offers `settlement-consent`, retry the same signature. |
 | `INTERNAL_ERROR` | 500 / 502 / 503 | `502` when document storage failed; `503` when the source of funds service or document storage is unavailable; `500` for any other server failure. Read the case before retrying an upload: an error does not prove nothing was stored. |
-| `INTERNAL_ERROR` | 502 / 504 | From the API gateway: it could not complete the call (`502`), or got no answer in time (`504`). The call may still have been applied: read the order or the case before retrying. |
+| `INTERNAL_ERROR` | 502 / 504 | From the API gateway: it could not complete the call (`502`), or got no answer in time (`504`). A read changed nothing: retry it. A write may still have been applied: read the order before retrying a consent, and the case before retrying a declaration or an upload. The message says which. |
 
 413, 415 and 422 share `INVALID_REQUEST`, and 429 carries `INTERNAL_ERROR`;
 branch on the HTTP status.
