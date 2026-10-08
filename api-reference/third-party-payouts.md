@@ -37,7 +37,9 @@ on another chain cannot fund an order and is not recoverable.
    relationship, and purpose.
 5. Initiate the quote. Unigox creates the order and applies the same compliance
    controls used by Portal payouts.
-6. Wait for a liquidity provider to accept. A new order starts at
+6. Wait for a licensed partner to accept. The **licensed partner** is the
+   business that buys your crypto and pays the recipient; order statuses call it
+   the liquidity provider. A new order starts at
    `awaiting_liquidity_provider` and has no escrow yet, so
    `transfer-authorization-parameters` answers `409 INVALID_STATUS` ("no
    liquidity provider has accepted it"). Poll `GET /orders/{order_id}` — or take
@@ -378,8 +380,8 @@ wallet's rail, `family`, and a purpose the wallet accepts:
 The wallet rails have a floor of **CNY 55.00**. Below it nothing can serve the
 payment and the quote comes back `409 NO_OFFERS_AVAILABLE`.
 
-`crypto_currency` and the amount are not decoration: a pair with no vendor
-liquidity, or an amount above what the corridor can currently serve, returns
+`crypto_currency` and the amount are not decoration: a pair no licensed partner
+serves, or an amount above what the corridor can currently serve, returns
 `409 NO_OFFERS_AVAILABLE`. Call `/api/v1/partner/liquidity` or
 `/api/v1/partner/offramp/estimate` first — both are public — instead of
 discovering the ceiling from a failed quote. Send `"recipient_payout": true` to
@@ -553,7 +555,7 @@ order — the request is rejected, and you act on the error:
 | `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on (`third-party recipient payout is not available for {CURRENCY} over {rail}`). A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. A rail served only by delayed (T+1) offers reads as not open until delayed settlement is enabled for you. | Use a destination on a rail that is open, or ask us to open this one; if delayed settlement is not enabled for you, ask us to enable it. A retry does not change it. |
 | `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
 | `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` | 422 | The rail refuses money sent from the country on your customer's verified identity. Alipay bars a list of sending countries whoever the beneficiary is. The message names the country. | Pay this beneficiary over a bank format (`cnaps`). No change to the sender's record opens the wallet rail, and a retry fails identically. |
-| `NO_OFFERS_AVAILABLE` | 409 | No vendor can currently serve this corridor and amount. | Retry later, or use a different amount. If delayed settlement is not enabled for you, an amount that only a delayed (T+1) offer covers gets this answer on every retry. Price the amount first with `POST /api/v1/partner/offramp/estimate`, sent with your API key, `recipient_id` and `recipient_destination_id`: it is matched as your quote is and answers the same 409 for an amount the quote cannot match. Or ask us to enable delayed settlement. If the estimate answers 409 at every amount, the currency or rail may not be open to your recipient payouts, for example one that only delayed (T+1) offers serve while delayed settlement is not enabled for you: the quote then answers `400 INVALID_REQUEST` or `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` (see those rows), and a retry does not change that. |
+| `NO_OFFERS_AVAILABLE` | 409 | No licensed partner can currently serve this corridor and amount. | Retry later, or use a different amount. If delayed settlement is not enabled for you, an amount that only a delayed (T+1) offer covers gets this answer on every retry. Price the amount first with `POST /api/v1/partner/offramp/estimate`, sent with your API key, `recipient_id` and `recipient_destination_id`: it is matched as your quote is and answers the same 409 for an amount the quote cannot match. Or ask us to enable delayed settlement. If the estimate answers 409 at every amount, the currency or rail may not be open to your recipient payouts, for example one that only delayed (T+1) offers serve while delayed settlement is not enabled for you: the quote then answers `400 INVALID_REQUEST` or `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` (see those rows), and a retry does not change that. |
 | `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
 | `THIRD_PARTY_PAYOUT_UNDER_REVIEW` | 422 | Returned on initiate. Compliance put this payout in review — someone looks at it on our side. | Do not retry the same payout; wait for the outcome. |
 | `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it outright, with nothing pending: a breached sender limit, a hold, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |
