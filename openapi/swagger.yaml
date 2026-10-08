@@ -151,7 +151,8 @@ tags:
 
       `fiat_account.closing` says the account will be closed for inactivity on `closes_at` unless money
       moves in or out first. `last_activity_at` is its last movement, or when it opened. If money moves
-      before the date, `closes_at` on the account goes back to `null` and no event is sent.
+      before the date, the account stays open, `closes_at` on it goes back to `null` within a few hours,
+      and no event is sent.
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
       and the same signature scheme. The structure of the `data` object differs per event type.

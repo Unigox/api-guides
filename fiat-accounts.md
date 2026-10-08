@@ -288,7 +288,8 @@ full. An account opened less than `idle_close_days` ago is never closed.
 You are told first. After `idle_close_days` minus `idle_close_notice_days` days
 without movement (23 by default), the account gets `closes_at` and you receive
 `fiat_account.closing` with that date. Nothing closes before it. If money moves
-in or out first, `closes_at` goes back to `null` and the account stays open;
+in or out first, the account stays open and `closes_at` goes back to `null`
+within a few hours;
 no event is sent for that, so read the account when you need to know. The same
 happens if Unigox pauses closing.
 
