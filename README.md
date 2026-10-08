@@ -162,9 +162,11 @@ First rollout, where nothing T+1 runs yet:
    re-affirming its payment check; against an older agent it holds every T+1
    trade of that vendor.
 4. trades (trades#538).
-5. api (api#66): the gateway routes for the partner T+1 endpoints, after trades.
+5. unigox.com.
+6. api (api#66): the gateway routes for the partner T+1 endpoints, after trades.
+   It merges only now, right before this repository, because merging it
+   publishes the gateway's own copy of the T+1 spec, which has no notice.
    Until it is deployed those endpoints answer the gateway's `404`.
-6. unigox.com.
 7. api-guides (this repository), the last repository: date the `Unreleased`
    entry and remove its four notices (the `**Not available yet.**` paragraph
    under the changelog's `Unreleased` heading, the top of
