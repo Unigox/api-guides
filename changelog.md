@@ -2,22 +2,13 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-09
+
+**Unused fiat accounts are closed automatically.** An account with no transactions for a period set by Unigox (30 days by default) is closed, and you receive `fiat_account.updated` with `status: closed`, as for any close. To serve the customer again, open a new account with the usual request; it comes with new pay-in details. See [Unused accounts are closed](./fiat-accounts.md#unused-accounts-are-closed).
+
 ## 2026-10-08
 
 **On-ramp send-out uses the same networks as the withdraw screen on unigox.com.** `GET /api/v1/partner/send-out/routes?crypto=USDT` is new: it lists the chains a completed on-ramp order of that crypto can be withdrawn to. Pass `destination_chain` to `bridge-authorization-parameters` and `authorize-bridge` exactly as listed (for example `Arbitrum One`, `BNB Smart Chain`), or the `chain_id`. The order's own crypto is sent, so a USDC order now goes out as USDC. Lowercase slugs such as `arbitrum` are no longer accepted. Tron, Solana and TON addresses are accepted in their own formats.
-
-**Empty fiat accounts with no money in or out for 30 days are now closed automatically.** The number of days is `idle_close_days` on the config (30 by default). No notice is sent before the close. When an account closes, you receive its `closed` update in `fiat_account.updated`, and its pay-in details cannot be used again. See [Accounts nobody uses are closed](./fiat-accounts.md#accounts-nobody-uses-are-closed).
-
-- **`fiat_account.updated` with `status: closed` now carries `reason`:** `inactivity`, `operator` when the account was closed from the portal, or `reason: null` when the bank closed the account itself (the account then reads `close_reason: null`).
-- **The `closed` update is now retried** like `order.status.changed` (up to 10 attempts), with a fixed `event_id`. `fiat_account.deposit.received` and the other `fiat_account.updated` events are still delivered once. The guide and the Webhooks section now say so. They previously promised the same retries for every event.
-- **The config is under `data.config`.** `GET /api/v1/partner/fiat-accounts/config` has always answered that way; the examples showed the fields directly under `data`.
-- **On the account:** a `closed` account carries `closed_at`, `close_reason`, `close_idle_days` and `closing`. **On the config:** `idle_close_days`, `null` while no account is being closed for inactivity.
-- **Reopening is the same request.** After a close, `POST /api/v1/partner/fiat-accounts` for the same customer and currency opens a new account with a new `fiat_account_id` and new pay-in details. Send `issuer_country` when you do, or the currency's default jurisdiction is used. While the old account is still being closed, the request answers `409 ACCOUNT_CLOSING` with `error.details.retry_after_seconds`.
-- **A close the bank has not confirmed yet reads `closed` with `closing: true`** and `closed_at: null`, and no `fiat_account.updated` is sent while it does. It normally settles within 15 minutes: either `closing` turns `false`, `closed_at` is filled in and the event arrives, or the account reads `active` again with the same pay-in details and no event. Do not tell the customer their IBAN is gone on that read alone; read the account again about 15 minutes later. `closing: false` is final, also on an account closed before close dates were recorded, whose `closed_at` stays `null`. Do not send the opening request to find out: on a final close it opens a new account with a new IBAN. See [Before the bank confirms a close](./fiat-accounts.md#before-the-bank-confirms-a-close).
-- **`409 PROVISIONING_IN_PROGRESS` now also covers a close in progress,** and carries `error.details.retry_after_seconds`. Read the account, or send the request again after that long. It previously said only that the account was already being opened.
-- **`409 IDENTIFICATION_ALREADY_LINKED` is back, for one case: the bank already holds the person under another customer record.** That case answered `409 PROVISIONING_IN_PROGRESS`, which now tells you to retry; this refusal does not clear on a retry and carries no `retry_after_seconds`. The 2026-09-18 entry lists the code as removed with the identity routes; it now has this one meaning.
-- **We no longer say a closed account's deposits "will not credit it".** What the bank does with a transfer to a closed IBAN is not established. Do not give a closed account's details out again.
-- **A repeat of the opening request carries no `created` field.** The reference said it answers `created: false`. `created: true` is sent only when the request opened the account, so test for `true`, not for `false`.
 
 ## 2026-09-23
 

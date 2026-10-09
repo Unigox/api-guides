@@ -130,9 +130,7 @@ tags:
       ```
 
       `order_id` is the on-ramp this deposit funded, or `null` when it matched no order.
-      `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`, and
-      `reason` (`inactivity`, `operator`, or `null` when the bank closed the account itself) when
-      `status` is `closed`.
+      `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`.
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
       and the same signature scheme. The structure of the `data` object differs per event type.
@@ -275,11 +273,6 @@ tags:
 
       Failed deliveries (non-2xx or timeout) are retried with exponential backoff:
       1 min → 5 min → 15 min → 1 h → 6 h → 12 h → 24 h (max 10 attempts over ~3.5 days).
-
-      Two fiat account events are not retried: `fiat_account.deposit.received`, and
-      `fiat_account.updated` for any status other than `closed`. They are delivered once. If you miss
-      one, read the account or its transactions for the same information. The `closed` update is
-      retried as above.
 
       **Partner-facing statuses** (`order.status.changed`)
 
@@ -4931,10 +4924,8 @@ paths:
         pay-in details; watch for `fiat_account.updated` — or poll the account — until it reads
         `active`, and only then tell the customer where to transfer.
 
-        **Idempotent per (user_uuid, currency, issuer_country)** while the account is `pending` or
-        `active`. A repeat answers `201` with the same account and no `created` field. Once that account
-        is `closed`, the same request opens a new account with a new `fiat_account_id` and new pay-in
-        details; send `issuer_country` when you reopen, or the currency's default is used.
+        **Idempotent per (user_uuid, currency, issuer_country).** A repeat answers `201` with the
+        same account and `created: false`.
 
         When the bank needs a field the KYC record does not have, this answers `422
         ISSUANCE_NOT_READY` and names those fields in `error.details.missing_fields`. They are KYC
@@ -4950,9 +4941,8 @@ paths:
       responses:
         '201':
           description: |
-            Opened, or the existing account for this (customer, currency, jurisdiction). An account
-            this request opened carries `created: true`; the existing one comes back with no `created`
-            field.
+            Opened, or the existing account for this (customer, currency, jurisdiction). `created`
+            distinguishes the two.
           content:
             application/json:
               schema:
@@ -4977,14 +4967,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: |
-            Another request for the same account is still running — an opening or a close in progress
-            (`PROVISIONING_IN_PROGRESS`; read the account, or retry after
-            `error.details.retry_after_seconds` seconds) — or the account this request would replace is
-            still being closed (`ACCOUNT_CLOSING`; nothing was opened — retry after
-            `error.details.retry_after_seconds` seconds). If the bank already holds this person under
-            another customer record, the answer is `IDENTIFICATION_ALREADY_LINKED`: nothing was opened,
-            and a retry gets the same answer, so it carries no `retry_after_seconds`.
+          description: The same account is already being opened (`PROVISIONING_IN_PROGRESS`)
           content:
             application/json:
               schema:
@@ -7495,8 +7478,7 @@ components:
                 `CUSTOMER_NOT_VERIFIED`, `CLIENT_NOT_APPROVED`, `HOLDER_REGISTRATION_IN_PROGRESS`,
                 `IDENTIFICATION_MISSING`, `IDENTIFICATION_ALREADY_LINKED`, `INVALID_DOCUMENT_TYPE`,
                 `POSTAL_CODE_REQUIRED`, `INVALID_POSTAL_CODE`, `MISSING_FIELDS`, `PRODUCT_NOT_ACTIVATED`,
-                `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`, `ACCOUNT_CLOSING`
-                (`error.details.retry_after_seconds` says how long to wait),
+                `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`,
                 `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY`, `CURRENCY_NOT_PERMITTED`,
                 `CURRENCY_NOT_PRICED`, `RECORD_FAILED`, `BANKING_ERROR`, `BANKING_UNAVAILABLE`.
 
@@ -7525,43 +7507,31 @@ components:
         data:
           type: object
           properties:
-            config:
+            enabled:
+              type: boolean
+              description: Whether you may use fiat accounts at all.
+              example: true
+            issues_accounts:
+              type: boolean
+              description: |
+                Whether you may OPEN accounts, as opposed to only reading the ones you have.
+              example: true
+            disabled_reason:
+              type: string
+              description: Why the product is unavailable. Present only when `enabled` is false.
+              example: PRODUCT_NOT_ACTIVATED
+            currencies:
+              type: array
+              items: { type: string }
+              description: ISO 4217 currencies an account may be denominated in.
+              example: ["EUR", "GBP"]
+            issuers:
               type: object
-              description: The fiat account product as it stands for you.
-              properties:
-                enabled:
-                  type: boolean
-                  description: Whether you may use fiat accounts at all.
-                  example: true
-                issues_accounts:
-                  type: boolean
-                  description: |
-                    Whether you may OPEN accounts, as opposed to only reading the ones you have.
-                  example: true
-                disabled_reason:
-                  type: string
-                  description: Why the product is unavailable. Present only when `enabled` is false.
-                  example: PRODUCT_NOT_ACTIVATED
-                currencies:
-                  type: array
-                  items: { type: string }
-                  description: ISO 4217 currencies an account may be denominated in.
-                  example: ["EUR", "GBP"]
-                issuers:
-                  type: object
-                  additionalProperties:
-                    type: array
-                    items: { type: string }
-                  description: Currency to issuing jurisdictions (ISO 3166-1 alpha-2), default first.
-                  example: { "EUR": ["NL", "MT"], "GBP": ["GB"] }
-                idle_close_days:
-                  type: integer
-                  nullable: true
-                  description: |
-                    An empty account with no money in or out for this many days is closed automatically.
-                    No notice is sent before the close. `null` while no account is being closed for
-                    inactivity.
-                  example: 30
+              additionalProperties:
+                type: array
+                items: { type: string }
+              description: Currency to issuing jurisdictions (ISO 3166-1 alpha-2), default first.
+              example: { "EUR": ["NL", "MT"], "GBP": ["GB"] }
 
     FiatAccountCreateRequest:
       type: object
@@ -7626,20 +7596,13 @@ components:
             `pending` — being opened, no pay-in details yet, do not send the customer to it.
             `active` — ready, and the pay-in details below are on this response.
             `failed` — the bank refused; this account will not become usable.
-            `closed` — retired; its history stays readable. Do not let the customer pay into it again;
-            a new account for the same customer comes with new pay-in details. A `closed` account with
-            `closing: true` is a close the bank has not confirmed yet. It can still read `active` again,
-            with the same pay-in details and no event. Read the account again about 15 minutes later to
-            see where it stands; do not send the opening request to find out, because on a final close
-            it opens a new account. While the close is unsettled, that request answers
-            `409 ACCOUNT_CLOSING` and opens nothing.
+            `closed` — retired; its history stays readable and new deposits will not credit it.
           example: active
         created:
           type: boolean
           description: |
-            `true`, on the issue response only, and only when THIS request opened the account. A
-            repeat that hands back an existing account carries no `created` field, and neither do the
-            reads.
+            On the issue response only: whether THIS request opened the account. `false` means it
+            already existed and is being handed back.
           example: true
         iban:
           type: string
@@ -7683,41 +7646,6 @@ components:
           description: |
             Single-account view only. True when the balance read failed — the balances are reported
             as unavailable rather than as zero.
-          example: false
-        closed_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: |
-            Closed accounts only, always present. When it closed; `null` if not recorded, or while the
-            bank has not confirmed the close (`closing: true`; the account may then still read `active`
-            again).
-          example: "2026-10-15T06:02:11Z"
-        close_reason:
-          type: string
-          enum: [inactivity, operator, null]
-          nullable: true
-          description: |
-            Closed accounts only, always present. `inactivity` — closed automatically after
-            `close_idle_days` without money in or out; `operator` — closed by you from the portal, or by
-            Unigox on your behalf. `null` when the bank closed the account itself, if not recorded, or
-            while the bank has not confirmed the close.
-          example: inactivity
-        close_idle_days:
-          type: integer
-          nullable: true
-          description: |
-            Closed accounts only, always present. The inactivity window that closed this account, on an
-            `inactivity` close; `null` otherwise. The rule in force now is `idle_close_days` on the
-            config.
-          example: 30
-        closing:
-          type: boolean
-          description: |
-            Closed accounts only, always present. `true` while the bank has not confirmed the close: the
-            account may still read `active` again, with the same pay-in details. `false` once the close
-            is final, also when `closed_at` is `null` (an account closed before close dates were
-            recorded).
           example: false
         created_at:
           type: string

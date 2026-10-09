@@ -94,13 +94,10 @@ X-API-Key: <api-key>
 {
   "success": true,
   "data": {
-    "config": {
-      "enabled": true,
-      "issues_accounts": true,
-      "currencies": ["EUR", "GBP"],
-      "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] },
-      "idle_close_days": 30
-    }
+    "enabled": true,
+    "issues_accounts": true,
+    "currencies": ["EUR", "GBP"],
+    "issuers": { "EUR": ["NL", "MT"], "GBP": ["GB"] }
   }
 }
 ```
@@ -108,9 +105,7 @@ X-API-Key: <api-key>
 `enabled` and `issues_accounts` say whether you may use the product and whether
 you may open accounts with it. `currencies` and `issuers` (currency →
 jurisdictions, default first) say what an account may be denominated in, and
-where it can be issued. `idle_close_days` is the rule for
-[accounts nobody uses](#accounts-nobody-uses-are-closed), and is `null` while no
-account is being closed for inactivity.
+where it can be issued.
 
 Entitlement is never an error here: when the product is off this still answers
 `200`, with `enabled: false` and a `disabled_reason`.
@@ -180,17 +175,10 @@ onto that record.
 }
 ```
 
-**Idempotent per (customer, currency, jurisdiction)** while the account is
-`pending` or `active`. A repeat answers `201` with the same account and no
-`created` field; it does not open a second one. `created: true` is sent only
-when the request opened the account. One customer may hold accounts in several
-currencies, and in several jurisdictions of the same currency.
-
-Once that account is `closed`, the same request opens a **new** account: a new
-`fiat_account_id` and a new IBAN or account number. Send `issuer_country` when
-you reopen, or the currency's default jurisdiction is used, which may not be the
-one the closed account had. If you call this endpoint as "get or create" before
-every order, you will reopen automatically after an inactivity close.
+**Idempotent per (customer, currency, jurisdiction).** A repeat answers `201`
+with the same account and no `created` flag; it does not open a second one. One
+customer may hold accounts in several currencies, and in several jurisdictions
+of the same currency.
 
 Registering the person with the bank happens behind this call, from the identity
 Unigox verified. There is nothing to submit and no second record to keep in
@@ -200,16 +188,7 @@ step.
 - The bank needs a field the KYC record does not have: `422
   ISSUANCE_NOT_READY`, with `error.details.missing_fields`. Patch the KYC record
   and post again.
-- Another request for the same account is still in progress (an opening or a
-  close): `409 PROVISIONING_IN_PROGRESS`, with
-  `error.details.retry_after_seconds`. Read the account, or send the request
-  again after that long.
-- The bank already holds this person under another customer record: `409
-  IDENTIFICATION_ALREADY_LINKED`. Nothing was opened, and sending the request
-  again does not change it, so there is no `retry_after_seconds`.
-- The account this request would replace is still being closed: `409
-  ACCOUNT_CLOSING`, with `error.details.retry_after_seconds`. Nothing was opened;
-  send the request again after that long.
+- The same account is already being opened: `409 PROVISIONING_IN_PROGRESS`.
 
 ### 4. Wait for `active`
 
@@ -222,7 +201,7 @@ and a customer sent to it loses the transfer to a bounce.
 | `pending` | Being opened. Do not tell the customer to transfer yet. |
 | `active` | Open. The pay-in details are on the account and money may be sent. |
 | `failed` | The bank refused. This account will not become usable. |
-| `closed` | Retired. Its history stays readable. Do not let the customer pay into it again. With `closing: true` the bank has not confirmed the close yet; see [Before the bank confirms a close](#before-the-bank-confirms-a-close). |
+| `closed` | Retired. Its history stays readable; new deposits will not credit it. |
 
 `fiat_account.updated` fires when this changes, and
 `GET /fiat-accounts/{fiat_account_id}` answers the same thing when you poll.
@@ -244,15 +223,6 @@ The pay-in details are shaped by the rail the account is on:
 Keys that do not apply are absent rather than empty. This view also carries
 `balances`, and `balances_unavailable: true` when the balance read failed: a
 balance we could not read is reported as unavailable rather than as zero.
-
-A `closed` account always carries
-`closed_at`, `close_reason` (`inactivity` or `operator`, or `null` when the bank
-closed the account itself) and `close_idle_days` (the inactivity window that
-closed it); each is `null` when it was not recorded, and all three are `null`
-while the bank has not confirmed the close. It also always carries `closing`:
-`true` while the bank has not confirmed the close, `false` once the close is
-final (see
-[Before the bank confirms a close](#before-the-bank-confirms-a-close)).
 
 `GET /api/v1/partner/fiat-accounts?user_uuid={user_uuid}` lists one customer's
 accounts, with the last four digits of the identifier rather than the whole one.
@@ -288,58 +258,14 @@ v1 is receive-only, so every row is a `credit`. `order_id` names the on-ramp
 this deposit funded, and is `null` when it funded none: that money simply stays
 on the customer's account.
 
-## Accounts nobody uses are closed
+## Unused accounts are closed
 
-An account with no money in or out for `idle_close_days` days (30 by default)
-is closed, while the config publishes `idle_close_days`. An account is never
-closed while it holds money in any currency, while an on-ramp order funded from
-it is unfinished, or when its payment history with the bank cannot be read in
-full. An account opened less than `idle_close_days` ago is never closed.
+An account with no transactions for a period set by Unigox (30 days by default)
+is closed automatically. You receive `fiat_account.updated` with
+`status: closed`, as for any close.
 
-No notice is sent before the close. An account stays open while it holds money,
-or while money moves in or out of it at least once every `idle_close_days` days.
-
-When the account closes you receive `fiat_account.updated` with
-`status: closed` and `reason: inactivity`. An account the bank closed itself
-sends the same event with `reason: null`, and reads `closed` with
-`close_reason: null`. Its IBAN is gone for good. To keep
-serving the customer, open a new account with the same request as the first
-one; it comes with new pay-in details, and the customer must not use the old
-ones again.
-
-### Before the bank confirms a close
-
-The bank does not always confirm a close at once, whether the close was for
-inactivity or made from the portal. Until it does, the account reads `closed`
-with `closing: true`, `closed_at`, `close_reason` and `close_idle_days` all
-`null`, it carries no pay-in details, and no `fiat_account.updated` has been
-sent. The bank's record is read every five minutes once the close is ten minutes
-old, so this normally settles within 15 minutes (longer only while that record
-cannot be read), one of two ways:
-
-- The bank closed the IBAN. `closing` turns `false`, `closed_at` and the reason
-  are filled in, and `fiat_account.updated` with `status: closed` arrives then.
-- It did not. The account reads `active` again, with the same pay-in details. No
-  event is sent for that.
-
-So a `closed` read with `closing: true` is not yet a reason to tell the customer
-their IBAN is gone. Read the account again with
-`GET /fiat-accounts/{fiat_account_id}` about 15 minutes later (an event arrives
-only if the close goes through):
-
-- `closing: false`: the close is final. `closed_at` can still be `null` on an
-  account closed before close dates were recorded.
-- The account reads `active`: the IBAN stayed open, with the same pay-in
-  details.
-- It still reads `closing: true`: the bank's record still cannot be read. Do not
-  send the customer to the IBAN unless it reads `active` again.
-
-Do not send the request that opens an account to find out where a close
-stands. When the close is final, that request opens a new account with a new
-IBAN, for a customer you may only have meant to look up. Send it when the
-customer needs an account again. If the old close is still unsettled then, it
-answers `409 ACCOUNT_CLOSING` with `error.details.retry_after_seconds` and opens
-nothing; send it again after that long.
+To serve the customer again, open a new account with the usual request
+([Open the account](#3-open-the-account)). It comes with new pay-in details.
 
 ## Webhooks
 
@@ -348,14 +274,8 @@ Two events, in the same envelope and with the same signature as
 
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
-| `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency`; `reason` when `status` is `closed` (`inactivity`, `operator`, or `null` when the bank closed it itself) |
+| `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency` |
 | `fiat_account.deposit.received` | Money arrived on the account. | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
-
-The `closed` update is retried like `order.status.changed` (up to 10 attempts)
-and has a fixed `event_id`, so de-duplicating by `event_id` is enough. The other
-`fiat_account.updated` events and `fiat_account.deposit.received` are delivered
-once and not retried. If you miss one, read the account or its transactions for
-the same information.
 
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
 no per-event subscription.
@@ -391,9 +311,7 @@ stays `payment_details`, and a third party stays a Recipient.
 | `ISSUANCE_NOT_GRANTED` | 403 | You may read accounts but not open them. |
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
 | `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account, or not yours. |
-| `PROVISIONING_IN_PROGRESS` | 409 | Another request for the same account is still in progress: an opening or a close. Read the account, or retry after `error.details.retry_after_seconds` seconds. |
-| `IDENTIFICATION_ALREADY_LINKED` | 409 | The bank already holds this person under another customer record. A retry gets the same answer, so there is no `retry_after_seconds`. |
-| `ACCOUNT_CLOSING` | 409 | The account this request would replace is still being closed. Retry after `error.details.retry_after_seconds` seconds. |
+| `PROVISIONING_IN_PROGRESS` | 409 | The same account is already being opened. Read it rather than retrying. |
 | `KYC_NOT_CLEARED` | 422 | The customer is not KYC-verified. |
 | `ISSUANCE_NOT_READY` | 422 | Verified, but the bank needs the fields in `error.details.missing_fields`. |
 | `CURRENCY_NOT_PRICED` | 422 | No pricing is configured for this currency yet. |
