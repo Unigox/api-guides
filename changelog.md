@@ -4,6 +4,8 @@ Notable changes to the Unigox partner API, newest first.
 
 ## 2026-10-08
 
+**On-ramp send-out uses the same networks as the withdraw screen on unigox.com.** `GET /api/v1/partner/send-out/routes?crypto=USDT` is new: it lists the chains a completed on-ramp order of that crypto can be withdrawn to. Pass `destination_chain` to `bridge-authorization-parameters` and `authorize-bridge` exactly as listed (for example `Arbitrum One`, `BNB Smart Chain`), or the `chain_id`. The order's own crypto is sent, so a USDC order now goes out as USDC. Lowercase slugs such as `arbitrum` are no longer accepted. Tron, Solana and TON addresses are accepted in their own formats.
+
 **Empty fiat accounts with no money in or out for 30 days are now closed automatically.** The number of days is `idle_close_days` on the config (30 by default). No notice is sent before the close. When an account closes, you receive its `closed` update in `fiat_account.updated`, and its pay-in details cannot be used again. See [Accounts nobody uses are closed](./fiat-accounts.md#accounts-nobody-uses-are-closed).
 
 - **`fiat_account.updated` with `status: closed` now carries `reason`:** `inactivity`, `operator` when the account was closed from the portal, or `reason: null` when the bank closed the account itself (the account then reads `close_reason: null`).

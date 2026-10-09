@@ -2651,6 +2651,58 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
+  /api/v1/partner/send-out/routes:
+    get:
+      tags:
+        - On-Ramp
+      summary: List send-out destinations
+      description: |
+        Lists where a completed on-ramp order of the given crypto can be withdrawn with
+        `bridge-authorization-parameters` / `authorize-bridge`. Same catalog and names as the
+        withdraw screen on unigox.com: the token is the order's crypto, and each route is a chain
+        that carries that token. Pass `destination_chain` exactly as listed (or the `chain_id`).
+      operationId: getSendOutRoutes
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: crypto
+          in: query
+          required: true
+          description: The order's crypto code, e.g. `USDT` or `USDC`
+          schema:
+            type: string
+          example: USDT
+      responses:
+        '200':
+          description: Destination chains for that crypto
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  crypto: USDT
+                  routes:
+                    - destination_chain: Arbitrum One
+                      chain_id: "42161"
+                      chain_type: EVM
+                      token:
+                        code: USDT
+                        address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+                        decimals: 6
+                    - destination_chain: Tron
+                      chain_id: "728126428"
+                      chain_type: TVM
+                      token:
+                        code: USDT
+                        address: "0xa614f803b6fd780986a42c78ec9c7f77e6ded13c"
+                        decimals: 6
+        '400':
+          description: Missing crypto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
   /api/v1/partner/orders/{order_id}/bridge-authorization-parameters:
     get:
       tags:
@@ -2667,8 +2719,9 @@ paths:
 
         **Prerequisites:**
         - Order status must be `completed` (internal: `escrow_released_to_buyer`)
-        - `destination_chain` must be a supported chain slug (e.g. `arbitrum`, `ethereum`)
-        - `destination_address` must be a valid EVM address
+        - `destination_chain` is a chain name exactly as `GET /partner/send-out/routes` lists it (e.g. `Arbitrum One`, `BNB Smart Chain`, case-insensitive) or its `chain_id`
+        - The order's own crypto is sent; only chains that carry that token are accepted
+        - `destination_address` must be valid for the chain type (EVM `0x…`, Tron `T…`, Solana, TON)
 
         **Response includes:**
         - `forward_request` — pre-filled EIP-712 ForwardRequest object to sign
@@ -2691,14 +2744,14 @@ paths:
         - name: destination_chain
           in: query
           required: true
-          description: Destination chain slug (e.g. `arbitrum`, `ethereum`)
+          description: Destination chain name as listed by `GET /partner/send-out/routes` (e.g. `Arbitrum One`), case-insensitive, or its `chain_id`
           schema:
             type: string
-          example: arbitrum
+          example: Arbitrum One
         - name: destination_address
           in: query
           required: true
-          description: Recipient EVM address on the destination chain
+          description: Recipient address on the destination chain, in that chain's format
           schema:
             type: string
           example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
@@ -2727,7 +2780,7 @@ paths:
                   forwarder_nonce: "63"
                   quote_id: "0x9b0539b1..."
                   to_amount: "10100"
-                  destination_chain: "arbitrum"
+                  destination_chain: "Arbitrum One"
                   destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
                   expires_at: "2026-04-03T17:13:12Z"
                   authorization_path: "/api/v1/partner/orders/ce3cfd6a-1234-5678-abcd-ef1234567890/authorize-bridge"
@@ -2805,11 +2858,11 @@ paths:
               properties:
                 destination_chain:
                   type: string
-                  description: Destination chain slug (must match the value used in bridge-authorization-parameters)
-                  example: arbitrum
+                  description: Destination chain name as listed by `GET /partner/send-out/routes` (or its `chain_id`); must match the value used in bridge-authorization-parameters
+                  example: Arbitrum One
                 destination_address:
                   type: string
-                  description: Recipient EVM address on the destination chain
+                  description: Recipient address on the destination chain, in that chain's format
                   example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
                 forward_request:
                   type: object
@@ -2842,7 +2895,7 @@ paths:
                   description: EIP-712 signature of the ForwardRequest (hex, with 0x prefix)
                   example: "0xc9a69a67..."
             example:
-              destination_chain: arbitrum
+              destination_chain: Arbitrum One
               destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
               forward_request:
                 from: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
