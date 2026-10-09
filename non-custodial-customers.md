@@ -14,8 +14,9 @@ and can off-ramp, on-ramp and withdraw by signing in your app. Your markup
 applies to their orders exactly as it does today.
 
 **What you need first.** A partner API key and the non-custodial mode switched
-on for you. It is not self-service; ask Unigox. Until it is on, the calls below
-answer `403 FEATURE_NOT_ENABLED`.
+on for you. It is not self-service; ask Unigox. Until it is on, creating an
+`external_wallet` customer answers `403 FEATURE_NOT_ENABLED`. Switching it off
+later stops new such customers only; existing ones keep working.
 
 **What your customer needs.** An ordinary EVM key (an externally owned account:
 MetaMask, a key your app derives, a hardware wallet). Smart-contract wallets
@@ -80,8 +81,8 @@ from it and paid out to it. It cannot be changed or unlinked.
 An address can be linked to only one of your customers (`409 WALLET_ALREADY_LINKED`).
 Addresses that belong to Unigox or to you, such as your partner wallet, are refused.
 
-Until the wallet is linked, quote, initiate, deposit-address and withdrawal
-calls for this customer answer `409 WALLET_NOT_LINKED`.
+Until the wallet is linked, order initiate, deposit-address and withdrawal
+calls for this customer answer `409 WALLET_NOT_LINKED` (a price quote still works).
 
 ## 3. Give the customer deposit addresses
 
@@ -170,18 +171,34 @@ POST /api/v1/partner/users/{user_uuid}/withdrawals/quote
 ```
 
 returns a `withdrawal_quote_id`, the amount that will arrive, the fee, the
-expiry, and a `forward_request` with its EIP-712 domain, ready to sign. Have the
-customer sign it unchanged, then:
+expiry, and a `forward_request` with its EIP-712 domain (`SyntheticAssetForwarder`,
+version `1`, chain 660279), ready to sign. Have the customer sign it unchanged
+(`eth_signTypedData_v4`), then:
 
 ```
 POST /api/v1/partner/users/{user_uuid}/withdrawals
 { "withdrawal_quote_id": "…", "forward_request": { … }, "signature": "0x…" }
 ```
 
-Unigox checks the request is the one quoted, signed by the customer, and relays
-it. Follow it with `GET /api/v1/partner/users/{user_uuid}/withdrawals/{withdrawal_id}`
-or the `wallet.withdrawal.status.changed` webhook until it is `completed` or
-`failed`. A failed withdrawal leaves the funds on the customer's XAI address.
+Unigox checks the request is exactly the one quoted (sender, token, calldata,
+gas, nonce, deadline), recovers the signer and requires the customer's linked
+address, re-checks KYC and the balance, and relays it. The answer is `202` with
+status `submitted`, meaning accepted for relay. A repeat of the same submit is
+safe and returns the same withdrawal. Only one withdrawal per customer can be in
+flight at a time.
+
+Follow it with `GET /api/v1/partner/users/{user_uuid}/withdrawals/{withdrawal_id}`
+or the `wallet.withdrawal.status.changed` webhook:
+
+| Status | Meaning |
+|---|---|
+| `submitted` | accepted for relay |
+| `bridging` | executed on XAI, on its way to the destination chain |
+| `completed` | arrived (`destination_tx_hash` for a bridge) |
+| `failed` | did not execute on XAI; the funds are still on the customer's address |
+| `needs_review` | the outcome could not be established automatically; Unigox reconciles it |
+
+Amounts are decimal strings with the token's full precision (`"25.000000"`).
 
 ## What stays the same
 
@@ -193,10 +210,30 @@ non-custodial customers.
 
 | Code | When |
 |---|---|
-| `403 FEATURE_NOT_ENABLED` | non-custodial mode is not switched on for your partner account |
+| `403 FEATURE_NOT_ENABLED` | creating an `external_wallet` customer while non-custodial mode is off for your partner account |
+| `404 CUSTOMER_NOT_FOUND` | no customer with this `user_uuid` belongs to your partner account |
+| `404 WITHDRAWAL_NOT_FOUND` | unknown withdrawal |
 | `409 WALLET_NOT_LINKED` | the customer has no linked address yet |
 | `409 WALLET_ALREADY_LINKED` | the customer is already linked, or the address is linked to another of your customers |
 | `422 WALLET_TYPE_MISMATCH` | a wallet call for a `partner_wallet` customer, or `authorize-bridge` for an `external_wallet` one |
 | `400 INVALID_SIGNATURE` | the challenge signature does not recover to the address, or the message was changed |
 | `410 CHALLENGE_EXPIRED` | the challenge is older than 10 minutes or was already used |
 | `422 INSUFFICIENT_BALANCE` | the customer's XAI balance does not cover the order or withdrawal |
+| `422 KYC_NOT_CLEARED` | the customer is not KYC-cleared (checked at quote and again at submit) |
+| `400 INVALID_REQUEST` | a malformed request, unsupported chain/token/address, or a submitted request that differs from the quote or is not signed by the customer |
+| `409 QUOTE_EXPIRED` | the withdrawal quote expired, the customer's forwarder nonce moved, or another withdrawal is in flight; request a new quote |
+| `429 ADDRESS_CAP_REACHED` | the customer holds the maximum number of deposit addresses of that chain type |
+| `502 BALANCE_UNAVAILABLE`, `502 DEPOSIT_ADDRESSES_UNAVAILABLE`, `500 INTERNAL_ERROR` | a dependency did not answer; safe to retry |
+
+## Webhooks
+
+Delivered like order webhooks (same signature headers). `data` per event:
+
+- `wallet.linked`: `user_uuid`, `address` (lower-case), `linked_at`.
+- `wallet.deposit.received`: `deposit_id` (stable, e.g. `intent:1234` — deduplicate on it), `user_uuid`,
+  `address`, `chain_id` (`"660279"`), `crypto_currency`, `token_address`, `amount`, `amount_atomic`,
+  `source_chain_id`, `source_tx_hash`, `tx_hash` (XAI), `credited_at`. Sent for credits through the
+  deposit addresses and bridges into XAI, retried with backoff; a plain transfer on XAI shows in the
+  balance only. The event id is stable across retries.
+- `wallet.withdrawal.status.changed`: `user_uuid` and `withdrawal` (the withdrawal object above), once
+  per status.

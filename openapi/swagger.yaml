@@ -75,8 +75,10 @@ tags:
       supported chain. Off-ramp and on-ramp orders use the usual order endpoints; for these customers
       the customer signs where the partner wallet signs today.
 
-      Requires the non-custodial mode to be switched on for your partner account (ask Unigox);
-      otherwise every route here answers `403 FEATURE_NOT_ENABLED`. See the Non-custodial customers guide.
+      Creating such a customer requires the non-custodial mode to be switched on for your partner account
+      (ask Unigox; `403 FEATURE_NOT_ENABLED` otherwise). Switching it off later stops new customers only.
+      Webhook payloads (`wallet.linked`, `wallet.deposit.received`, `wallet.withdrawal.status.changed`) and
+      withdrawal statuses are described in the Non-custodial customers guide.
     x-page-icon: wallet
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
@@ -1046,12 +1048,6 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/WalletChallenge'
-        '403':
-          description: '`FEATURE_NOT_ENABLED`'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartnerErrorResponse'
         '404':
           description: No customer with this `user_uuid` belongs to your partner account.
         '409':
@@ -1122,8 +1118,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-        '403':
-          description: '`FEATURE_NOT_ENABLED`'
         '404':
           description: No customer with this `user_uuid` belongs to your partner account.
         '409':
@@ -1164,8 +1158,6 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/CustomerWallet'
-        '403':
-          description: '`FEATURE_NOT_ENABLED`'
         '404':
           description: No customer with this `user_uuid` belongs to your partner account.
         '422':
@@ -1201,8 +1193,6 @@ paths:
                             type: array
                             items:
                               $ref: '#/components/schemas/CustomerDepositAddress'
-        '403':
-          description: '`FEATURE_NOT_ENABLED`'
         '404':
           description: No customer with this `user_uuid` belongs to your partner account.
         '409':
@@ -1255,8 +1245,6 @@ paths:
                             type: array
                             items:
                               $ref: '#/components/schemas/CustomerDepositAddress'
-        '403':
-          description: '`FEATURE_NOT_ENABLED`'
         '404':
           description: No customer with this `user_uuid` belongs to your partner account.
         '409':
@@ -1317,8 +1305,6 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/WithdrawalQuote'
-        '403':
-          description: '`FEATURE_NOT_ENABLED`'
         '404':
           description: No customer with this `user_uuid` belongs to your partner account.
         '409':
@@ -1384,10 +1370,10 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '404':
           description: Unknown customer or quote.
-        '410':
-          description: '`WITHDRAWAL_QUOTE_EXPIRED`'
+        '409':
+          description: '`QUOTE_EXPIRED` — the quote expired, the forwarder nonce moved, or another withdrawal is in flight.'
         '422':
-          description: '`INSUFFICIENT_BALANCE` — the balance dropped since the quote.'
+          description: '`INSUFFICIENT_BALANCE` (the balance dropped since the quote) or `KYC_NOT_CLEARED`.'
     get:
       tags:
         - Customer Wallets
@@ -5707,10 +5693,11 @@ components:
           format: uuid
         status:
           type: string
-          enum: [submitted, bridging, completed, failed]
+          enum: [submitted, bridging, completed, failed, needs_review]
           description: |
-            `submitted` — relayed on XAI; `bridging` — on its way to the destination chain;
-            `completed` — arrived; `failed` — did not leave XAI, the funds are still on the customer's address.
+            `submitted` — accepted for relay; `bridging` — executed on XAI, on its way to the destination chain;
+            `completed` — arrived; `failed` — did not execute on XAI, the funds are still on the customer's address;
+            `needs_review` — the outcome could not be established automatically, Unigox reconciles it.
           example: bridging
         crypto_currency:
           type: string
@@ -8157,7 +8144,7 @@ components:
                 - `WALLET_TYPE_MISMATCH` — the call does not apply to this customer's `wallet_type`
                 - `INVALID_SIGNATURE` — a wallet challenge signature does not recover to the address, or the message was altered
                 - `CHALLENGE_EXPIRED` — the wallet challenge is older than 10 minutes or was already used
-                - `WITHDRAWAL_QUOTE_EXPIRED` — the withdrawal quote expired; request a new one
+                - `CUSTOMER_NOT_FOUND` / `WITHDRAWAL_NOT_FOUND` — unknown customer or withdrawal on the customer wallet routes
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
 
                 Fiat account endpoints (`/partner/fiat-accounts/config` and the `/partner/users/{user_uuid}`
