@@ -30,7 +30,7 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   `fee_breakdown.payout_base_rate`, the verified conversion before provider costs and the licensed partner's margin. It allows
   the quoted total to be split into the recipient amount and one combined fee without charging the fee again.
   It is omitted when the conversion basis is unavailable or does not match the selected offer.
-  Fixed and market tariffs are supported; market observations expire after five minutes.
+  Fixed and market tariffs are supported; market observations expire after a bounded lifetime based on the provider refresh interval (legacy observations: five minutes).
   Existing amounts and the meaning of `fiat_rail_fee` are unchanged.
 - **Order fields.** Every order carries `delayed_settlement`, `settlement_hours`, `consent_deadline_at`,
   `payout_deadline_at`, six `delayed_settlement_*_at` timestamps, `source_of_funds_required` and

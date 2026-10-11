@@ -9234,7 +9234,7 @@ components:
             absence does not mean zero margin. This is not the all-in rate; that is `rate`.
             Supported Lightnet offers can publish this basis for either instant or delayed settlement,
             with fixed or market pricing. It is omitted when provider ownership, route or pricing
-            terms cannot be verified; market observations expire after five minutes.
+            terms cannot be verified; market observations expire after a bounded lifetime based on the provider refresh interval (legacy observations: five minutes).
           example: "7.25"
 
     PartnerOrderStatus:
