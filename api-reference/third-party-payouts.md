@@ -51,7 +51,9 @@ on another chain cannot fund an order and is not recoverable.
    `sender_address` is your wallet; `recipient_address` is the escrow deployed
    for this order.
 8. If the payout settles T+1, sign its release when the order asks for it
-   (`next_action: "sign_settlement_consent"`). See
+   (`next_action: "sign_settlement_consent"`): the crypto then goes from the
+   escrow to the licensed partner's wallet, and the recipient is paid after it.
+   From USD 50,000, your customer's source of funds must also be approved. See
    [When a payout is delayed](#when-a-payout-is-delayed).
 9. Read the order and compliance state.
 
@@ -449,9 +451,10 @@ with `422 THIRD_PARTY_CONTEXT_INVALID` (`rail does not match the recipient
 destination`). `RAIL_ROUTE_MISMATCH` belongs to self-payouts with
 `payment_details_id` and is never returned here.
 
-At quote time Unigox verifies tenant ownership, lifecycle, screening, route,
-currency, sender eligibility, relationship, and purpose. Trades stores an
-internal immutable snapshot and integrity hash.
+At quote time Unigox checks that the recipient and the destination are yours
+and active, their screening, the route and currency, the sender's eligibility,
+the relationship and the purpose. The quote keeps an unchangeable copy of what
+it checked.
 
 ## 4. Initiate the payout
 
@@ -496,11 +499,8 @@ T+1 offers out, but it also leaves out every other P2P offer, so use it only if
 that is what you want.
 
 Your payouts can be delayed only once Unigox has enabled delayed settlement for
-you. Delayed settlement is switched on for your account by Unigox on request:
-tell us once your integration can sign the release
-([Step 4](./delayed-settlement.md#step-4-sign-the-release)). It is a
-configuration change on our side, not an automatic consequence of a signature.
-Until then they match instant offers only, and a currency or rail that only
+you. We switch it on when you ask, once your integration can sign the release
+([Step 4](./delayed-settlement.md#step-4-sign-the-release)). Until then they match instant offers only, and a currency or rail that only
 delayed offers serve is refused at the quote, with `400 INVALID_REQUEST` for the
 currency and `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail
 ([Compliance in v1](#compliance-in-v1)). A retry does not change either.
@@ -567,17 +567,15 @@ order — the request is rejected, and you act on the error:
 | `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
 | `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` | 422 | The rail refuses money sent from the country on your customer's verified identity. Alipay bars a list of sending countries whoever the beneficiary is. The message names the country. | Pay this beneficiary over a bank format (`cnaps`). No change to the sender's record opens the wallet rail, and a retry fails identically. |
 | `NO_OFFERS_AVAILABLE` | 409 | No licensed partner can currently serve this corridor and amount. | Retry later, or use a different amount. If delayed settlement is not enabled for you, an amount that only a delayed (T+1) offer covers gets this answer on every retry. Price the amount first with `POST /api/v1/partner/offramp/estimate`, sent with your API key, `recipient_id` and `recipient_destination_id`: it is matched as your quote is and answers the same 409 for an amount the quote cannot match. Or ask us to enable delayed settlement. If the estimate answers 409 at every amount, the currency or rail may not be open to your recipient payouts, for example one that only delayed (T+1) offers serve while delayed settlement is not enabled for you: the quote then answers `400 INVALID_REQUEST` or `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` (see those rows), and a retry does not change that. |
-| `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The deployed payout agent has not confirmed support for per-payment relationship and purpose, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
+| `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The licensed partner's connection to its payout provider cannot yet pass on the relationship and purpose of each payment, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
 | `THIRD_PARTY_PAYOUT_UNDER_REVIEW` | 422 | Returned on initiate. Compliance put this payout in review — someone looks at it on our side. | Do not retry the same payout; wait for the outcome. |
 | `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it outright, with nothing pending: a breached sender limit, a hold, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |
 
-`THIRD_PARTY_PAYOUT_AGENT_NOT_READY` is a deliberate stop, not a fault: the
-relationship and purpose carried per payment on this corridor are only mapped
-correctly by an agent that has confirmed the capability, and an order created
-before that would be settled against hardcoded values.
+`THIRD_PARTY_PAYOUT_AGENT_NOT_READY` is a deliberate stop, not a fault: until
+that connection passes on each payment's own relationship and purpose, a
+payout would be sent with fixed values instead.
 
-Operator review happens on the Unigox side, over the same records, in the
-compliance queue. Value/velocity and fan-out holds surfaced to partners as
+Unigox reviews payouts on its side, over the same records. Value/velocity and fan-out holds surfaced to partners as
 order states are not part of v1 — do not build against the states listed in
 earlier drafts of this page.
 
@@ -647,7 +645,7 @@ byte count it passes on the wire:
 `postal_code` has no published ceiling on this corridor, and `phone_number`
 needs none: the format it already has to be in (`+`, then 8 to 15 digits) is
 shorter than what the rail accepts. Read the limits from `field_limits` rather
-than hard-coding this table: they are the vendor's, they differ per corridor,
+than hard-coding this table: they are the payout provider's, they differ per corridor,
 and a new corridor will bring its own.
 
 That patch is all-or-nothing: one rejected value writes none of the others, and
@@ -679,5 +677,5 @@ customer has to complete or redo KYC before that payout can go out.
 - Existing orders retain their frozen snapshots after an update or archive.
 
 Partner-facing fields use `recipient_*`,
-`sender_recipient_relationship`, and `purpose_of_payment`. Vendor-specific
-terminology is translated only inside vendor integrations.
+`sender_recipient_relationship`, and `purpose_of_payment`, whatever the payout
+provider calls them.

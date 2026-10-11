@@ -27,7 +27,7 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a
   liquidity provider accepts it; before acceptance every order, T+1 included, reads `false`.
 - **Payout base rate.** A payout estimate or quote priced on a T+1 offer may include
-  `fee_breakdown.payout_base_rate`, the verified conversion before provider costs and vendor margin. It allows
+  `fee_breakdown.payout_base_rate`, the verified conversion before provider costs and the licensed partner's margin. It allows
   the quoted total to be split into the recipient amount and one combined fee without charging the fee again.
   An instant price never carries it, and a T+1 one omits it when the conversion basis is unavailable.
   Existing amounts and the meaning of `fiat_rail_fee` are unchanged.

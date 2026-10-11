@@ -14,6 +14,16 @@ Larger amounts on some corridors are only available this way.
 This page tells you how to spot such an order, what you have to do differently,
 and how to follow the payment to the end.
 
+## Ordinary and delayed orders side by side
+
+| Step | Ordinary off-ramp order | Delayed (T+1) order |
+| --- | --- | --- |
+| Quote and create | `offramp/quote`, then `offramp/initiate`. | The same. The quote and the order say `delayed_settlement: true` and give `settlement_hours`. |
+| Fund the escrow | `transfer-authorization-parameters`, then `authorize-crypto-transfer`. | The same. |
+| Large orders | Nothing extra. | From USD 50,000: your customer's source of funds, sent with `source-of-funds/declaration` and `source-of-funds/documents` and approved by Unigox ([Step 5](#step-5-source-of-funds-on-large-orders)). |
+| Release of the crypto | After the bank payment: the licensed partner pays, the payment is confirmed, and the crypto leaves the escrow for the licensed partner. | Before the bank payment: you sign the release (`settlement-consent-parameters`, then `settlement-consent`), and the crypto leaves the escrow for the licensed partner's wallet. `confirm-fiat-received` is refused. |
+| Bank payment | Already made. The order is `completed`. | Made after the release, expected within `settlement_hours`. The order reads `settlement_in_progress`, then `completed` when the money arrives. |
+
 ## The words on this page
 
 - **You** are the business integrating this API. **Your customer** is the person
@@ -62,11 +72,9 @@ An order is delayed when all four hold:
   which in practice means the amount is above the corridor's instant ceiling.
 - **You hold the crypto.** Orders your customers create in the embedded widget
   are never delayed, because there the wallet is theirs.
-- **Unigox has enabled delayed settlement for you.** Delayed settlement is
-  switched on for your account by Unigox on request: tell us once your
-  integration can sign the release ([Step 4](#step-4-sign-the-release)). It is a
-  configuration change on our side, not an automatic consequence of a signature.
-  Until then your quotes and orders match instant offers only, and so does an
+- **Unigox has enabled delayed settlement for you.** We switch it on when you
+  ask, once your integration can sign the release
+  ([Step 4](#step-4-sign-the-release)). Until then your quotes and orders match instant offers only, and so does an
   estimate you send with your credentials: a quote for an amount no instant
   offer covers answers `409 NO_OFFERS_AVAILABLE`. For a third-party payout, a
   currency or rail that only delayed offers serve does not get that answer: the
@@ -143,7 +151,7 @@ The estimate also says whether the order would need a source of funds review
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `source_of_funds_required` | boolean | `true` when the price is on a T+1 offer and the order it would open reaches the threshold, valued the way Step 5 values an order, at current USD rates. Always present; `false` on an instant estimate. Indicative: the order's own field decides. |
-| `source_of_funds_threshold_usd` | number | The threshold in force. Present only when `delayed_settlement` is `true`: the estimate carries the figure only when it priced a T+1 offer and omits it on an instant estimate, whereas the order carries it always, instant or delayed, so read it from the order when you need it for every order. |
+| `source_of_funds_threshold_usd` | number | The threshold in force. On an estimate, only when it priced a T+1 offer (`delayed_settlement: true`). Every order carries it. |
 
 ## Step 2: create and fund the order
 
@@ -217,7 +225,7 @@ X-API-Key: <api-key>
 | `recipient_address` | The licensed partner's wallet, where the crypto goes. Check it before signing. |
 | `amount_human`, `crypto_currency`, `crypto_decimals` | What the licensed partner receives after the platform fee, as a decimal string, with the currency and token precision. |
 | `direction` | Always `to_buyer`: the licensed partner is buying the crypto. |
-| `tx_hash` | The hash of the release transaction. Not a broadcast transaction and not proof of anything yet. |
+| `tx_hash` | The hash of the release transaction. It has not been sent to the chain and proves nothing on its own. |
 | `safe_params`, `domain`, `types` | The complete EIP-712 payload. Use it exactly as returned. |
 | `settlement_hours`, `consent_deadline_at` | The expected payment window, and the UTC deadline for your signature. |
 | `authorization_path` | Where to post the signature. |
@@ -303,8 +311,8 @@ and waits for your refund signature. It is omitted once the release has started
 or when nothing is owed. It never asks for another release signature: this
 response already confirms the consent is stored.
 
-Unigox adds its own signature and releases the crypto automatically once three
-things are in place: your consent, any required source of funds approval, and
+Unigox adds its own signature and releases the crypto to the licensed partner's
+wallet (`recipient_address` above) automatically once three things are in place: your consent, any required source of funds approval, and
 the licensed partner's payment check. Where the licensed partner is connected to
 a payout provider, it checks that it can make this payment and keeps confirming
 that while the order waits; the crypto leaves the escrow only while the check is
@@ -599,8 +607,8 @@ change and no event is sent. Unigox follows the payment up; contact support if
 you need an answer for your customer.
 
 A return that the payout provider reports after the money was already recorded
-as paid does not change the order; Unigox keeps it on file. Only an operator
-correcting the record can clear `paid_at` and set `returned_at`.
+as paid does not change the order; Unigox keeps it on file. Only Unigox can
+correct the record: clear `paid_at` and set `returned_at`.
 
 ### The fields on the order
 
@@ -818,9 +826,9 @@ with its own `event_id`. No subscription change is needed.
 The consent and source of funds endpoints answer their errors in the standard
 partner envelope, `{"success": false, "error": {"code": ..., "message": ...}}`,
 including the errors of the API gateway in front of them. The one exception is
-a `503` with `data.error_key: "trades_service_unavailable"` and no `error`, which
-comes from a configuration fault of the gateway. Treat it like the gateway
-failure in the gateway's own shape described below the table.
+a `503` with no `error` and `data.error_key: "trades_service_unavailable"`: the
+service behind the API was not reachable. Treat it like the gateway failure
+described below the table.
 
 | `error.code` | Status | When |
 | --- | --- | --- |
@@ -871,21 +879,17 @@ hold, or the deadline passed: read the error and the order rather than treating
 every `409` as success.
 
 A retry can also answer `409 OPERATION_NOT_ALLOWED` ("this order has already
-been consented to") while the order read still offers `settlement-consent`.
-Unigox records your consent on the order before it hands the signature to the
-escrow, and the call that was cut off still holds that record: it is still
-finishing on Unigox's side, or it stopped before it could store the signature or
-take the record back. Once the record is two minutes old with no signature
-stored, it no longer blocks the order. Wait two minutes after that `409`, then
-read the order again. If it no longer offers `settlement-consent`, do not sign
-again: either the call that was cut off stored your signature, or the order
-moved on (it went on hold, was cancelled, or passed `consent_deadline_at`).
-Read its `status` and `next_action` to see where it stands. If it still offers
-`settlement-consent`, retry the same signature once more. Until those two
-minutes have passed, a `cancel` can answer `409 OPERATION_NOT_ALLOWED` as well;
-after them it goes through. If the retry answers "already consented" again, stop: do not sign
-anything else, and send the `order_id` to Unigox support. Left as it is, the
-order moves to a refund at `consent_deadline_at`.
+been consented to") while the order read still offers `settlement-consent`. The
+call that was cut off noted your consent but may not have stored the signature,
+and that note blocks the order for two minutes. During them a `cancel` can
+answer the same `409`. Wait two minutes, then read the order again:
+
+- It no longer offers `settlement-consent`: do not sign again. Either the
+  signature was stored, or the order moved on (on hold, cancelled, or past
+  `consent_deadline_at`). Read its `status` and `next_action`.
+- It still offers `settlement-consent`: retry the same signature once more. If
+  that answers "already consented" again, stop and send the `order_id` to Unigox
+  support. Left as it is, the order moves to a refund at `consent_deadline_at`.
 
 After an uncertain upload, read the document list before sending the same bytes
 again.
