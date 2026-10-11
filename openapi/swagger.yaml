@@ -5052,23 +5052,20 @@ paths:
 
         After a timeout or 502, read the order with `GET /api/v1/partner/orders/{order_id}` (not the
         list, whose row can already read `await_review` for a call cut off before anything was stored)
-        before retrying: if it still offers `settlement-consent`, the signature is not stored; retry the
-        same signature. A stored consent must not be signed again to retry release. A 409 can mean a
+        before retrying: `settlement-consent` can mean missing consent or an unavailable escrow lookup.
+        Retry only the same signature. A stored consent must not be signed again to retry release. A 409 can mean a
         changed state, hold, expired window or stored consent; it is not by itself proof of success.
 
         If that retry answers `409 OPERATION_NOT_ALLOWED` ("this order has already been consented to")
-        while the order read still offers `settlement-consent`, the call that was cut off still holds
-        the consent record Unigox writes before it hands the signature to the escrow: that call is
-        still finishing, or it stopped before it could store the signature or take the record back. A
-        record two minutes old with no signature stored no longer blocks the order. Wait two minutes
-        after that 409 and read the order again. If it no longer offers `settlement-consent`, do not
-        sign again: either the signature was stored, or the order moved on (it went on hold, was
-        cancelled, or passed `consent_deadline_at`); read its `status` and `next_action` to see where
-        it stands. If it still offers `settlement-consent`, retry the same signature once more. Until
-        those two minutes have passed, `cancel` can answer `409 OPERATION_NOT_ALLOWED` too; after
-        them it goes through. If the retry answers "already
-        consented" again, stop: do not sign anything else, and send the `order_id` to Unigox support.
-        Left as it is, the order moves to a refund at `consent_deadline_at`.
+        while the order read still offers `settlement-consent`, the call may still be in progress,
+        or the escrow lookup may be unavailable even though the signature is stored. An abandoned
+        claim with no stored signature stops blocking the order after two minutes; stored consent
+        does not expire with it. Wait two minutes, then read the order again. If it no longer offers
+        `settlement-consent`, do not sign again: inspect `status` and `next_action`. If it still does,
+        retry only the same signature once more. If the conflict persists, stop and send the
+        `order_id` to Unigox support. Neither the action hint nor the two-minute interval guarantees
+        that cancellation is allowed or a refund will occur at `consent_deadline_at`; those depend
+        on the stored consent, release and review state.
 
         A consent is recorded once. A second call answers `409`: `OPERATION_NOT_ALLOWED` while the order
         is still funded and waiting for the release (for the source-of-funds decision, say), `INVALID_STATUS` once the
@@ -5188,9 +5185,10 @@ paths:
             The order does not take a settlement consent — it does not settle T+1, is not funded and waiting
             for the release, or has no funded escrow (`INVALID_STATUS`); or it is held for review, or the
             consent has already been given or its deadline is missing/expired (`OPERATION_NOT_ALLOWED`).
-            An "already consented" answer while the order read still offers `settlement-consent` means
-            a call cut off part-way still holds the consent record without a stored signature; it stops
-            blocking the order two minutes after it was written: see the operation description.
+            An "already consented" answer while the order read still offers `settlement-consent` can mean
+            a call is still in progress or the escrow lookup is unavailable. An abandoned claim expires
+            after two minutes; stored consent does not. Re-read the order, retry only the same
+            signature and contact support if the conflict persists.
           content:
             application/json:
               schema:
@@ -5410,6 +5408,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: The order has no accepted trade (`INVALID_STATUS`). Wait for acceptance only while it is still pending; a cancelled or expired order cannot use this endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "order is not ready for this action yet: no liquidity provider has accepted it"
         '503':
           description: Source-of-funds review is not available. Nothing was changed; retry.
           content:
@@ -5461,7 +5470,7 @@ paths:
         `reviewChecks` is not served here.
 
         Keyed by order id like its siblings, so it answers for any delayed order of yours — including
-        one below the threshold, whose three sibling endpoints answer `404`. Cache against `revision`.
+        one below the threshold, whose three sibling endpoints answer `404`. Compare individual category revisions; the top-level maximum is not a cache version.
       operationId: getPartnerSourceOfFundsRequirements
       security:
         - ApiKeyAuth: []
@@ -5496,7 +5505,7 @@ paths:
                         properties:
                           revision:
                             type: integer
-                            description: The highest rule revision in the catalogue. Cache against it.
+                            description: The highest rule revision in the catalogue, not a cache version. Compare individual category revisions; use the case requirements_snapshot once declared.
                           categories:
                             type: array
                             items:
@@ -5552,6 +5561,17 @@ paths:
                 error:
                   code: ORDER_NOT_FOUND
                   message: "No source-of-funds category is called lottery"
+        '409':
+          description: The order has no accepted trade (`INVALID_STATUS`). Wait for acceptance only while it is still pending; a cancelled or expired order cannot use this endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "order is not ready for this action yet: no liquidity provider has accepted it"
         '503':
           description: Source-of-funds review is not available. Retry.
           content:
@@ -9212,8 +9232,9 @@ components:
             remainder to crypto_amount again. A separate partner markup remains separate.
             Omitted when this conversion basis is not known;
             absence does not mean zero margin. This is not the all-in rate; that is `rate`.
-            Only a delayed settlement (T+1) offer publishes this basis, so an instant quote or
-            estimate does not carry it.
+            Supported Lightnet offers can publish this basis for either instant or delayed settlement,
+            with fixed or market pricing. It is omitted when provider ownership, route or pricing
+            terms cannot be verified; market observations expire after five minutes.
           example: "7.25"
 
     PartnerOrderStatus:

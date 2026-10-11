@@ -873,8 +873,9 @@ first, with `GET /api/v1/partner/orders/{order_id}` rather than the list: the
 order read asks the escrow whether your signature is stored, while a list row
 can already show `await_review` for a call that was cut off before it stored
 anything. If `allowed_actions` no longer contains `settlement-consent`, do not
-sign again. If it still does, the signature is not stored: retry the same
-signature. Fetch fresh parameters and sign again only if that retry answers
+sign again. If it still does, consent may be missing or the escrow lookup may
+be unavailable; this action is not proof that the signature was lost. Retry
+only the same signature. Fetch fresh parameters and sign again only if that retry answers
 `400` because `signed_data` is no longer this order's release transaction. A
 `409` can mean the signature was saved, the state changed, the order is on
 hold, or the deadline passed: read the error and the order rather than treating
@@ -882,8 +883,9 @@ every `409` as success.
 
 A retry can also answer `409 OPERATION_NOT_ALLOWED` ("this order has already
 been consented to") while the order read still offers `settlement-consent`. The
-call that was cut off noted your consent but may not have stored the signature,
-and that note blocks the order for two minutes. During them a `cancel` can
+call may still be in progress, or the escrow lookup may be unavailable. An
+abandoned claim without a stored signature blocks the order for two minutes;
+a stored signature does not expire with that claim. During them a `cancel` can
 answer the same `409`. Wait two minutes, then read the order again:
 
 - It no longer offers `settlement-consent`: do not sign again. Either the
@@ -891,7 +893,9 @@ answer the same `409`. Wait two minutes, then read the order again:
   `consent_deadline_at`). Read its `status` and `next_action`.
 - It still offers `settlement-consent`: retry the same signature once more. If
   that answers "already consented" again, stop and send the `order_id` to Unigox
-  support. Left as it is, the order moves to a refund at `consent_deadline_at`.
+  support. The action hint and the two-minute interval do not guarantee that
+  cancellation is allowed or a refund will occur at `consent_deadline_at`;
+  those depend on the stored consent, release and review state.
 
 After an uncertain upload, read the document list before sending the same bytes
 again.
