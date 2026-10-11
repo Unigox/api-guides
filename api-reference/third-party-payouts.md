@@ -107,6 +107,8 @@ Content-Type: application/json
     "account_number": "6222021234567890123",
     "company_name": "Shenzhen Example Trading Co Ltd",
     "company_name_native": "深圳示例贸易有限公司",
+    "first_name": "Wei",
+    "last_name": "Zhang",
     "mobile_number": "13800138000"
   }
 }
@@ -299,10 +301,12 @@ For `rail: "cnaps"`, institutions of type `traditional-banks`:
 
 | Paying | `recipient_kind` | Required `details` |
 | --- | --- | --- |
-| a company | `business` | `bank_name`, `account_number`, `company_name`, `company_name_native`, `mobile_number` |
+| a company | `business` | `bank_name`, `account_number`, `company_name`, `company_name_native`, `first_name`, `last_name` (the company's contact person, in Latin letters), `mobile_number` |
 | a person | `individual` | `bank_name`, `account_number`, `first_name`, `last_name`, `native_first_name`, `native_last_name`, `mobile_number`; `id_number` is optional |
 
-`mobile_number` is an 11-digit Chinese mobile number. Send the bare 11 digits
+The rail's formats list what each one requires
+(`GET /api/v1/supported/payment-rails`); read them rather than hard-coding this
+table. `mobile_number` is an 11-digit Chinese mobile number. Send the bare 11 digits
 (`13800138000`). On `cnaps` a `86` or `+86` prefix also passes, spaces and dashes
 are removed, and the number is stored with the prefix you sent; the wallet rails
 accept the bare 11 digits only.

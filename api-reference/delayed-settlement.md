@@ -759,7 +759,9 @@ an event too, without `delayed_settlement_crypto_sent_to_provider_at`.
 
 An order that ends before the release and needs your refund signature also
 sends `order.refund.required`, once, with the same `action_required` block the
-order carries. Follow it with `authorize-refund`.
+order carries. Follow it with `authorize-refund`. The event comes from a check
+that runs every few minutes, so a refund you sign straight after your own cancel
+can be done before it would be sent; it is then not sent.
 
 `data.provider` is `p2p` on every delayed order: the licensed partner takes part
 as a P2P liquidity provider. For the same reason `provider_scope=licensed_only`
