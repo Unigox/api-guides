@@ -162,7 +162,8 @@ their crypto onward with a withdrawal (step 6), which they sign.
 ## 6. Withdraw
 
 A customer can send any part of their XAI balance to an address on any
-supported chain.
+supported chain. Withdrawals need no KYC: it is the customer's own money on
+their own address. KYC applies to on-ramp and off-ramp orders only.
 
 ```
 POST /api/v1/partner/users/{user_uuid}/withdrawals/quote
@@ -182,7 +183,7 @@ POST /api/v1/partner/users/{user_uuid}/withdrawals
 
 Unigox checks the request is exactly the one quoted (sender, token, calldata,
 gas, nonce, deadline), recovers the signer and requires the customer's linked
-address, re-checks KYC and the balance, and relays it. The answer is `202` with
+address, re-checks the balance, and relays it. The answer is `202` with
 status `submitted`, meaning accepted for relay. A repeat of the same submit is
 safe and returns the same withdrawal. Only one withdrawal per customer can be in
 flight at a time.
@@ -219,7 +220,7 @@ non-custodial customers.
 | `400 INVALID_SIGNATURE` | the challenge signature does not recover to the address, or the message was changed |
 | `410 CHALLENGE_EXPIRED` | the challenge is older than 10 minutes or was already used |
 | `422 INSUFFICIENT_BALANCE` | the customer's XAI balance does not cover the order or withdrawal |
-| `422 KYC_NOT_CLEARED` | the customer is not KYC-cleared (checked at quote and again at submit) |
+| `422 KYC_NOT_CLEARED` | the customer is not KYC-cleared for an order (on-ramp, off-ramp). Deposits and withdrawals need no KYC |
 | `400 INVALID_REQUEST` | a malformed request, unsupported chain/token/address, or a submitted request that differs from the quote or is not signed by the customer |
 | `409 QUOTE_EXPIRED` | the withdrawal quote expired, the customer's forwarder nonce moved, or another withdrawal is in flight; request a new quote |
 | `429 ADDRESS_CAP_REACHED` | the customer holds the maximum number of deposit addresses of that chain type |

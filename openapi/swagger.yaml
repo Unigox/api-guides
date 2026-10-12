@@ -1373,7 +1373,7 @@ paths:
         '409':
           description: '`QUOTE_EXPIRED` — the quote expired, the forwarder nonce moved, or another withdrawal is in flight.'
         '422':
-          description: '`INSUFFICIENT_BALANCE` (the balance dropped since the quote) or `KYC_NOT_CLEARED`.'
+          description: '`INSUFFICIENT_BALANCE` (the balance dropped since the quote).'
     get:
       tags:
         - Customer Wallets
