@@ -5747,7 +5747,7 @@ components:
                 example: USDC
               token_address:
                 type: string
-                example: "0x3333333333333333333333333333333333333333"
+                example: "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43"
               amount_human:
                 type: string
                 example: "25"
@@ -5777,9 +5777,11 @@ components:
         withdrawal_quote_id:
           type: string
           format: uuid
+          example: "0b8e6c1e-3f0a-4c2e-9d55-6a1f4c3b2e10"
         expires_at:
           type: string
           format: date-time
+          example: "2026-10-12T10:20:00Z"
         crypto_currency:
           type: string
           example: USDC
@@ -5808,21 +5810,28 @@ components:
             from:
               type: string
               description: The customer's linked address
+              example: "0x8ba1f109551bd432803012645ac136ddd64dba72"
             to:
               type: string
               description: Token contract on XAI
+              example: "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43"
             value:
               type: string
               example: "0"
             gas:
               type: string
+              example: "150000"
             nonce:
               type: string
+              example: "3"
             deadline:
               type: string
+              description: Unix seconds; equals `expires_at`
+              example: "1791800400"
             data:
               type: string
               description: ERC-20 `transfer` calldata
+              example: "0xa9059cbb…"
         eip712_domain:
           type: object
           properties:
@@ -5846,9 +5855,12 @@ components:
         withdrawal_id:
           type: string
           format: uuid
+          description: Equals `withdrawal_quote_id`
+          example: "0b8e6c1e-3f0a-4c2e-9d55-6a1f4c3b2e10"
         withdrawal_quote_id:
           type: string
           format: uuid
+          example: "0b8e6c1e-3f0a-4c2e-9d55-6a1f4c3b2e10"
         status:
           type: string
           enum: [submitted, bridging, completed, failed, needs_review]
@@ -5872,23 +5884,29 @@ components:
           example: Arbitrum One
         destination_address:
           type: string
+          example: "0x1111111111111111111111111111111111111111"
         source_tx_hash:
           type: string
           nullable: true
           description: Transaction on XAI
+          example: "0x5c1e…9a02"
         destination_tx_hash:
           type: string
           nullable: true
           description: Transaction on the destination chain, once known
+          example: null
         failure_reason:
           type: string
           nullable: true
+          example: null
         created_at:
           type: string
           format: date-time
+          example: "2026-10-12T10:11:04Z"
         updated_at:
           type: string
           format: date-time
+          example: "2026-10-12T10:11:40Z"
 
     KycDocumentType:
       type: string
