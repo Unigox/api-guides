@@ -98,3 +98,28 @@ One-time setup (Settings → Secrets and variables → Actions):
 
 Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
 scripts/publish-changelog.mjs` resolves the page read-only and makes no changes.
+
+## Bridge crypto payment guide (integration preview)
+
+- `crypto-payments.md`: merchant checkout and settlement walkthrough.
+- `api-reference/bridge-payments.md`: signed address requests, responses, callback
+  verification and transaction reconciliation.
+
+These pages describe the memo-address release contract, checked against Quote
+`653080043c2a23bc68316e58daac7c3de1f7cd02`. They do not claim deployment or a live
+merchant canary. The wallet UI's Privy path does not accept merchant callback URLs;
+these examples use direct EVM wallet signing.
+
+Publication requires adding the two Markdown pages to the GitBook space and
+linking them under Tutorials and API Reference. The current CI publishes only
+`openapi/swagger.yaml` and `changelog.md`; merging a new guide file alone does not
+publish it. These drafts are submitted for wording and integration review. Publish only
+after that approval, deployment of the matching memo services, confirmation of
+the merchant bridge base URL, and a real payment with callback verification and
+settlement reconciliation. Release readiness notes belong here, not in the
+client-facing payment guide.
+
+The existing Partner API OpenAPI spec is unchanged: bridge paths use another base
+URL and wallet-signature authorization. Do not put them under the Partner API's
+global server/API-key contract without per-operation overrides or a dedicated
+bridge spec.

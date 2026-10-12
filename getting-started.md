@@ -12,6 +12,8 @@ Start with the section that matches where you are in the integration process.
 
 ## Where to go next
 
+* [Accept crypto payments on EVM, TON, Solana and Tron](crypto-payments.md) using collection addresses, invoice references and payment webhooks.
+
 * Read [Basics](https://developers.unigox.com/basics/how-it-works) for webhook behavior, lifecycle, and production readiness.
 * Read [Off-Ramp Partner Playbook](https://developers.unigox.com/tutorials/off-ramp-playbook) for the full phased integration flow.
 * Use [API Reference](https://developers.unigox.com/reference) when implementing requests.
