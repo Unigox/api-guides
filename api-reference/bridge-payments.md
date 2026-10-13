@@ -226,7 +226,7 @@ Event example:
 3. Resolve the key ID through `GET /config` on the configured bridge endpoint. Keys contain `algorithm: "ed25519"`, a base64-encoded 32-byte `publicKey`, and `status: "active"` or `"retiring"`. Unknown IDs require a key refresh from that endpoint. Keys supplied in callback payloads are not trusted.
 4. Verify Ed25519 over `UTF8(timestamp + ".") || rawBody`. Signature validation requires a valid signature and a timestamp within the five-minute replay window. Future timestamps are limited by the receiver's permitted clock skew.
 5. Validate `type: "deposit.credited"`, `apiVersion: "1"` and `data.status: "DONE"`.
-6. Validate `callbackUrlHash` against keccak256 of the exact registered URL. The `wallet`, `memoLockId`, address family and deposit address must match the invoice association. Signature validation alone does not establish the intended recipient.
+6. Validate `callbackUrlHash` against keccak256 of the exact registered URL. The `wallet`, `memoLockId`, address family and deposit address must match the invoice association. Compare valid EVM wallet and deposit addresses by their 20-byte value; hexadecimal letter case may differ ([ERC-55](https://eips.ethereum.org/EIPS/eip-55)). Preserve the case of non-EVM deposit addresses. Signature validation alone does not establish the intended recipient.
 7. Store the authenticated event under a unique `(environment, type, id)` before returning 2xx. Valid duplicate deliveries also receive 2xx.
 8. Apply each `intentId` once. Payment deduplication and the invoice update must be atomic; multiple transfers within one transaction remain separate payments.
 
