@@ -133,6 +133,10 @@ These describe how the API already behaves; the API does not change.
   names both `country` and `currency`.
 - `payment_details_id` is `""` on third-party payout events.
 
+## 2026-10-09
+
+**Unused fiat accounts are closed automatically.** An account with no transactions for a period set by Unigox (30 days by default) is closed, and you receive `fiat_account.updated` with `status: closed`, as for any close. To serve the customer again, open a new account with the usual request; it comes with new pay-in details. See [Unused accounts are closed](./fiat-accounts.md#unused-accounts-are-closed).
+
 ## 2026-10-08
 
 **On-ramp send-out uses the same networks as the withdraw screen on unigox.com.** `GET /api/v1/partner/send-out/routes?crypto=USDT` is new: it lists the chains a completed on-ramp order of that crypto can be withdrawn to. Pass `destination_chain` to `bridge-authorization-parameters` and `authorize-bridge` exactly as listed (for example `Arbitrum One`, `BNB Smart Chain`), or the `chain_id`. The order's own crypto is sent, so a USDC order now goes out as USDC. Lowercase slugs such as `arbitrum` are no longer accepted. Tron, Solana and TON addresses are accepted in their own formats.

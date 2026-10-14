@@ -258,6 +258,15 @@ v1 is receive-only, so every row is a `credit`. `order_id` names the on-ramp
 this deposit funded, and is `null` when it funded none: that money simply stays
 on the customer's account.
 
+## Unused accounts are closed
+
+An account with no transactions for a period set by Unigox (30 days by default)
+is closed automatically. You receive `fiat_account.updated` with
+`status: closed`, as for any close.
+
+To serve the customer again, open a new account with the usual request
+([Open the account](#3-open-the-account)). It comes with new pay-in details.
+
 ## Webhooks
 
 Two events, in the same envelope and with the same signature as
