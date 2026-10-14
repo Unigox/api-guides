@@ -316,7 +316,7 @@ Event example:
     "quoteId": "<quote ID>",
     "fromChain": "42161",
     "fromTx": "<source transaction hash>",
-    "logIndex": 3,
+    "logIndex": "3",
     "fromToken": "<source token contract>",
     "fromAmount": "1500000",
     "status": "DONE",
@@ -327,7 +327,7 @@ Event example:
 }
 ```
 
-`fromAmount` contains source-token base units. `wallet` identifies the collection-address owner. `fromTx` and `logIndex` are nullable. Destination token, amount and transaction hash are available through transaction status.
+`fromAmount` contains source-token base units. `wallet` identifies the collection-address owner. `logIndex` is a decimal string identifying the source event; on TON it contains the transfer's logical time. `fromTx` and `logIndex` are nullable. Destination token, amount and transaction hash are available through transaction status.
 
 ### Authentication and acknowledgement
 
@@ -360,6 +360,12 @@ The response uses `{status: "found", code: 200, data: {...}}`. `data` includes:
 Payment confirmation requires a matching source identity and lock, a completed non-refunded settlement, the expected destination wallet, chain and token, and the amount required by the invoice. Refund status and destination details are supplied by this endpoint rather than the webhook.
 
 The event's `quoteId` selects the corresponding payment. `?logIndex={logIndex}` is an alternative selector for deposits with a known source log index. Without either selector, the endpoint returns only the lowest intent ID for the transaction.
+
+`logIndex` uses the exact decimal string from the webhook or wallet history, including for TON. Its range is `"0"` through `"9223372036854775807"`. Leading zeroes (except `"0"`), signs, fractions, exponents and larger values return HTTP 400. Preserve it as a string; converting large values to a JavaScript number can change the identifier.
+
+```http
+GET /transaction/{fromChain}/{fromTx}?logIndex=100000000000001
+```
 
 A 404 indicates that no matching indexed record is available; the deposit may still be awaiting indexing. A source transaction hash is required for this lookup. When the source hash is unavailable, [wallet transaction history](#wallet-transaction-history) can retrieve the saved record by memo association or collection address.
 
