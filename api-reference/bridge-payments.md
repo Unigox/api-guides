@@ -4,9 +4,9 @@ API reference for [crypto payments on EVM, TON, Solana and Tron](../crypto-payme
 
 ## Authentication
 
-The owner signs EIP-712 typed data using an EVM wallet. The `wallet` field identifies the merchant receiving settlement, not the customer paying an invoice. No Partner API key or account JWT is required on these routes.
+The owner signs EIP-712 typed data using an EVM wallet. For memo-address operations, `wallet` identifies the merchant receiving settlement, not the customer paying an invoice. Wallet history returns the signing wallet’s own incoming and outgoing records. No Partner API key or account JWT is required on these routes.
 
-Domain:
+Memo-address domain:
 
 ```json
 {"name":"Unigox Bridge Memo Locks","version":"1","chainId":42161}
@@ -170,6 +170,106 @@ Content-Type: application/json
 
 A nonempty response contains the same lock objects as allocation. Optional query fields are strings: `chainType`, `address`, `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`), `limit` (default 50, maximum 100) and `before` (a lock ID). An omitted `chainType` includes all families. `nextBefore` supplies the next page's `before` value; null indicates the final page. The endpoint returns memo associations, not payment history.
 
+## Wallet transaction history
+
+```http
+POST /transactions/history
+Content-Type: application/json
+```
+
+Returns the signing wallet's incoming and outgoing Bridge records. No UNIGOX account, account JWT or Partner API key is required. History is available with or without a memo; memo fields are omitted by default.
+
+History uses a separate EIP-712 domain and primary type:
+
+```json
+{"name":"Unigox Bridge History","version":"1","chainId":42161}
+```
+
+```text
+History(string action,address wallet,string environment,uint64 issuedAt,uint64 expiresAt,bool includeMemo)
+```
+
+`action` is `"history"`. `includeMemo` is part of the signature: `false` authorizes ordinary history; `true` also requests memo fields. An omitted request field is interpreted as `false` and must have been signed as `false`. A memo-list signature does not authorize history.
+
+The read window uses the same limits as listing associations: at most 86,400 seconds, with up to 300 seconds of clock skew for `issuedAt`. The authorization can be reused for pages and refreshed results until expiry. Changing the wallet, environment, signing chain, expiry or memo permission requires a new signature.
+
+```js
+const now = Math.floor(Date.now() / 1000);
+const authorization = {
+  action: "history",
+  wallet: account.address,
+  environment: "production",
+  issuedAt: String(now),
+  expiresAt: String(now + 3600),
+  includeMemo: true,
+};
+const domain = {name: "Unigox Bridge History", version: "1", chainId: 42161};
+const types = {
+  History: [
+    {name: "action", type: "string"},
+    {name: "wallet", type: "address"},
+    {name: "environment", type: "string"},
+    {name: "issuedAt", type: "uint64"},
+    {name: "expiresAt", type: "uint64"},
+    {name: "includeMemo", type: "bool"},
+  ],
+};
+const signature = await walletClient.signTypedData({
+  account, domain, types, primaryType: "History", message: authorization,
+});
+const response = await fetch(`${BRIDGE_BASE_URL}/transactions/history`, {
+  method: "POST",
+  headers: {"Content-Type": "application/json"},
+  body: JSON.stringify({
+    chainId: domain.chainId, authorization, signature,
+    query: {memoLockId: "12", limit: 50},
+  }),
+});
+const result = await response.json();
+if (!response.ok) throw new Error(result.details ?? "history_failed");
+const {transactions, nextBefore} = result.data;
+```
+
+Optional `query` fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `limit` | Number | Page size, 1–100; default 50 |
+| `before` | Decimal string | Exclusive intent ID cursor from `nextBefore` |
+| `direction` | String | `incoming` or `outgoing`; omitted includes both |
+| `memoLockId` | Decimal string | Original invoice association |
+| `chainType` | String | Source address family: `evm`, `svm`, `tvm` or `ton` |
+| `depositAddress` | String | Collection address; requires `chainType` |
+
+Filters narrow the signing wallet's history. They cannot select another wallet. EVM address comparison is case-insensitive; Tron accepts Base58 or hex and returns Base58. Solana and TON address filters use the exact returned address.
+
+Response envelope:
+
+```json
+{
+  "status": "history_retrieved",
+  "code": 200,
+  "data": {
+    "transactions": [],
+    "nextBefore": null
+  }
+}
+```
+
+Each transaction contains the [transaction-status fields](#transaction-status), plus `intentId` and nullable `logIndex` as decimal strings. `fromChain` and `toChain` are decimal strings; amounts are integer strings in token base units. An intent appears once, including when the wallet is both sender and recipient. Separate deposits in the same source transaction retain separate intent IDs.
+
+With `includeMemo: false`, `memo`, `memoHash`, `memoSource` and `memoLockId` are omitted; execution details also omit their memo fields. With `includeMemo: true`, a collection-address memo is returned only to the wallet that owned its original association. The payer cannot read the merchant's private memo. Returned memo text is the payment's saved reference, unaffected by later address reassignment.
+
+Results include pending and failed records as well as completed ones. The presence of a record does not confirm payment; settlement checks below still apply. Responses use `Cache-Control: no-store`.
+
+### Missed payment notifications
+
+Payment history remains available after webhook retries are exhausted, without a callback URL, and after the original memo association expires or is unlocked. A source transaction hash is not required.
+
+Use `memoLockId` for an invoice or `chainType` and `depositAddress` for a collection address. Pages are ordered by descending `intentId`; pass `nextBefore` as `before` until it is null. Match records by `intentId`, including records already received by webhook.
+
+The cursor paginates records; it is not a stream of status changes. An older pending record can settle later without receiving a new ID. A reconciliation pass starts again without `before` for the invoice or address and reevaluates pending records. An empty result means no matching indexed record is available yet.
+
 ## Lock or unlock an existing address
 
 | Route | Signed primary type | Success data |
@@ -232,7 +332,7 @@ Event example:
 
 Retries retain the event ID and use fresh delivery timestamps and signatures. Non-2xx responses, redirects and transport errors trigger retries within the configured retry schedule and attempt limit. A 2xx response acknowledges durable receipt; invoice processing may complete asynchronously.
 
-Webhook memo text is delivered only to the callback URL signed for that lock. Authorized allocation, lock and list responses also contain it. Public transaction status returns `memo: null`, `memoSource: "deposit_address"`, `memoHash` and `memoLockId`. `memoHash` is a public, deterministic hash; it does not provide confidentiality for predictable memo values.
+Webhook memo text is delivered only to the callback URL signed for that lock. Authorized allocation, lock and list responses also contain it, as does wallet history with signed memo permission for the original owner. Public transaction status returns `memo: null`, `memoSource: "deposit_address"`, `memoHash` and `memoLockId`. `memoHash` is a public, deterministic hash; it does not provide confidentiality for predictable memo values.
 
 ## Transaction status
 
@@ -251,14 +351,14 @@ Payment confirmation requires a matching source identity and lock, a completed n
 
 The event's `quoteId` selects the corresponding payment. `?logIndex={logIndex}` is an alternative selector for deposits with a known source log index. Without either selector, the endpoint returns only the lowest intent ID for the transaction.
 
-A 404 indicates that no matching indexed record is available; the deposit may still be awaiting indexing. A source transaction hash is required for this lookup. Events without one remain unresolved until their source transaction is identified.
+A 404 indicates that no matching indexed record is available; the deposit may still be awaiting indexing. A source transaction hash is required for this lookup. When the source hash is unavailable, [wallet transaction history](#wallet-transaction-history) can retrieve the saved record by memo association or collection address.
 
 ## Common errors
 
 | HTTP | Detail/status | Meaning |
 | --- | --- | --- |
 | 400 | Invalid fields, environment, memo or deadline | Request validation failed; corrected signed fields require a new signature |
-| 401 | `memo_lock_signature_invalid` / `memo_lock_signature_expired` | Signature verification failed or the authorization expired |
+| 401 | `memo_lock_signature_invalid` / `memo_lock_signature_expired` / `history_signature_invalid` / `history_authorization_expired` | Signature verification failed or the authorization expired |
 | 404 | `deposit_address_not_found` / `memo_lock_not_found` | Address or memo association was not found for the owner |
 | 409 | `memo_lock_nonce_used` | Nonce already consumed; the original response is not replayed |
 | 409 | `deposit_address_already_locked` / `memo_lock_not_active` | The current association state prevents the operation |
@@ -266,4 +366,4 @@ A 404 indicates that no matching indexed record is available; the deposit may st
 | 503 | `addresses_not_watched` with allocated address data | Address allocated but monitoring registration incomplete; allocation recovery applies |
 | 503 | `signature_verification_unavailable` | Signature verification temporarily unavailable; an uncertain earlier write still requires reconciliation |
 
-An error response does not guarantee that no address was allocated. Recovery states are defined under [Allocation recovery](#allocation-recovery).
+On allocation routes, an error response does not guarantee that no address was allocated. Recovery states are defined under [Allocation recovery](#allocation-recovery).

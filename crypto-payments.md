@@ -9,7 +9,7 @@ The invoice reference is stored as a **memo** attached to the collection address
 1. Allocate a collection address with `POST /memo-locks/allocate`. The signed request contains the invoice reference and HTTPS callback URL. Existing addresses support reassignment as described below.
 2. Display the collection address, network, asset and amount at checkout.
 3. Receive the signed `deposit.credited` webhook. Its `memoLockId` identifies the invoice association; its `intentId` identifies the payment.
-4. Retrieve transaction status to confirm the credited amount, asset and recipient. Payment confirmation requires webhook authentication and a completed, non-refunded settlement matching the invoice.
+4. Retrieve transaction status or wallet-signed history to confirm the credited amount, asset and recipient. Payment confirmation requires a completed, non-refunded settlement matching the invoice. Any webhook used must also pass signature verification.
 
 Signing schemas, request and response formats, and webhook authentication are defined in the [API reference](api-reference/bridge-payments.md).
 
@@ -46,5 +46,9 @@ Payments are credited to the merchant's **UNIGOX balance on the XAI chain (chain
 An address can receive multiple payments under one memo. Invoice totals, partial payments and overpayments are managed by the merchant application. A memo association does not enforce a payment amount or initiate refunds.
 
 Webhook delivery can repeat when an acknowledgement is not received or recorded. Retries retain the same event ID. Event deduplication uses `(environment, type, id)`; payment deduplication uses `intentId`. A transaction can contain multiple payments, each with a separate intent.
+
+`POST /transactions/history` returns incoming and outgoing Bridge records with a wallet signature and no UNIGOX account. Memo fields are omitted by default; signed `includeMemo: true` includes the owner's invoice references. Filters support the original memo association and collection address.
+
+History covers payments whose callbacks were missed or exhausted their retries. It retains the original invoice reference after address reassignment. See [wallet transaction history](api-reference/bridge-payments.md#wallet-transaction-history) for signing, pagination and reconciliation.
 
 Amounts are integer strings in token base units. The source and destination token decimals determine their respective scales.
