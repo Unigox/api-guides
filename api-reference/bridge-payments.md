@@ -132,15 +132,25 @@ Each successful request allocates one address, subject to allocation limits. An 
 
 ### Allocation recovery
 
-An error response can include `data.allocated` even when allocation has not completed. A 503 `addresses_not_watched` indicates incomplete monitoring registration. Payment readiness requires a `memo_locked` response containing an `ACTIVE` lock.
+Allocation retries use the original signed request body: the same `chainId`, `message` and `signature`.
+The wallet and nonce identify one allocation; all signed fields must match. A new nonce creates a new allocation.
 
-| Allocation state | Recovery operation |
+| Allocation state | Response or recovery operation |
 | --- | --- |
-| Address returned without an active lock | `POST /memo-locks/lock` for the returned address with a new nonce after monitoring registration becomes available |
-| Response unavailable | `POST /memo-locks/list` to identify a completed lock |
-| No allocation identifiable from the response or lock list | Allocation remains unresolved; reconciliation with Unigox is required before another allocation for that invoice |
+| Response unavailable | Repeat `POST /memo-locks/allocate` with the original signed body |
+| Address committed; monitoring or memo attachment incomplete | The same request resumes the original address while its signature is valid; errors include `data.allocated` |
+| Allocation completed | The same request returns the original address and lock ID, with the lock's current status |
+| Signature expired; address committed but no lock | The retry returns the original address with `memo_lock_signature_expired`; a fresh signed `POST /memo-locks/lock` activates that address |
+| Original lock unlocked or expired | The retry returns that closed lock; it does not create or reactivate a memo association |
+| Legacy consumed nonce without a saved allocation receipt | 409 `memo_lock_nonce_used`; the earlier allocation requires reconciliation |
 
-Reusing a consumed nonce returns 409 `memo_lock_nonce_used`; the API does not replay the original response. A new allocation request creates another address rather than repairing an existing allocation.
+Payment readiness requires a `memo_locked` response containing an `ACTIVE` lock. A 503 `addresses_not_watched`
+indicates incomplete monitoring registration. A completed result remains retrievable with its exact original
+signature after the write deadline; that signature cannot authorize further writes.
+
+A different memo, family, callback or other signed field with an already recorded nonce returns 409
+`memo_lock_nonce_used`. An expired request with no identifiable allocation remains unresolved; expiry alone is not
+proof that an earlier request created no address.
 
 ## List memo associations
 
@@ -360,7 +370,7 @@ A 404 indicates that no matching indexed record is available; the deposit may st
 | 400 | Invalid fields, environment, memo or deadline | Request validation failed; corrected signed fields require a new signature |
 | 401 | `memo_lock_signature_invalid` / `memo_lock_signature_expired` / `history_signature_invalid` / `history_authorization_expired` | Signature verification failed or the authorization expired |
 | 404 | `deposit_address_not_found` / `memo_lock_not_found` | Address or memo association was not found for the owner |
-| 409 | `memo_lock_nonce_used` | Nonce already consumed; the original response is not replayed |
+| 409 | `memo_lock_nonce_used` | Lock/unlock nonce already consumed, allocation terms conflict, or a legacy allocation has no saved receipt |
 | 409 | `deposit_address_already_locked` / `memo_lock_not_active` | The current association state prevents the operation |
 | 429 | `rate_limited` / `deposit_addresses_cap_exceeded` | Request rate or address allocation limit exceeded |
 | 503 | `addresses_not_watched` with allocated address data | Address allocated but monitoring registration incomplete; allocation recovery applies |
