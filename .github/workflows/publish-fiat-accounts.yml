@@ -1,0 +1,40 @@
+name: Publish Fiat accounts guide to GitBook
+
+# Same mechanism as publish-changelog.yml: the GitBook space is not git-synced, so
+# fiat-accounts.md is pushed into the existing "Fiat accounts" tutorial page on every
+# change. Edit fiat-accounts.md here, never the page in GitBook — a hand edit is
+# overwritten by the next run, and a page nobody republishes goes stale (it kept the
+# removed identity routes after 2026-09-18 and partners integrated against them).
+#
+# Uses the same GITBOOK_TOKEN secret and GITBOOK_SPACE variable as the changelog job.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fiat-accounts.md"
+      - "scripts/publish-page.mjs"
+  workflow_dispatch: {} # allow manual re-publish from the Actions tab
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Publish fiat-accounts.md to GitBook
+        env:
+          GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+          GITBOOK_SPACE: ${{ vars.GITBOOK_SPACE }}
+          SOURCE_FILE: fiat-accounts.md
+          PAGE_PATH: tutorials/fiat-accounts
+        run: |
+          if [ -z "$GITBOOK_TOKEN" ] || [ -z "$GITBOOK_SPACE" ]; then
+            echo "::error::Missing GITBOOK_TOKEN secret or GITBOOK_SPACE variable. See publish-changelog.yml."
+            exit 1
+          fi
+          node scripts/publish-page.mjs

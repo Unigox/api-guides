@@ -79,7 +79,7 @@ published at developers.unigox.com.
 `changelog.md` is the source of truth for the public changelog page. Like the
 OpenAPI spec, the GitBook space is **not** git-synced, so the file is pushed into
 the GitBook **Changelog** page by CI (`.github/workflows/publish-changelog.yml` →
-`scripts/publish-changelog.mjs`) on every change to `changelog.md`. The script
+`scripts/publish-page.mjs`) on every change to `changelog.md`. The script
 replaces the whole page via a change request (create → update → merge), so the
 live page always equals `changelog.md` — **edit `changelog.md`, never the GitBook
 page directly** (direct edits are overwritten on the next publish).
@@ -97,7 +97,7 @@ One-time setup (Settings → Secrets and variables → Actions):
 - The **Changelog** page must already exist in the space (create it once).
 
 Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
-scripts/publish-changelog.mjs` resolves the page read-only and makes no changes.
+scripts/publish-page.mjs` resolves the page read-only and makes no changes.
 
 ## Bridge crypto payment guide (integration preview)
 
@@ -116,9 +116,9 @@ or a live merchant canary. The wallet UI's Privy path does not accept merchant c
 these examples use direct EVM wallet signing.
 
 Publication requires adding the two Markdown pages to the GitBook space and
-linking them under Tutorials and API Reference. The current CI publishes only
-`openapi/swagger.yaml` and `changelog.md`; merging a new guide file alone does not
-publish it. These drafts are submitted for wording and integration review. Publish only
+linking them under Tutorials and API Reference. The current CI publishes
+`openapi/swagger.yaml`, `changelog.md` and `fiat-accounts.md`; merging a new guide
+file alone does not publish it. These drafts are submitted for wording and integration review. Publish only
 after that approval, deployment of the matching memo services, confirmation of
 the merchant bridge base URL, and a real payment with callback verification and
 settlement reconciliation. Release readiness notes belong here, not in the
