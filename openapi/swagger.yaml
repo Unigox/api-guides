@@ -1376,13 +1376,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '400':
-          description: '`INVALID_REQUEST` — a missing field, an unsupported chain or token, a malformed destination address, or an amount with too many decimals.'
+          description: '`INVALID_REQUEST` — a missing field, an unsupported chain or token, a malformed destination address, a destination the chain cannot pay (`error.details.reason`), or an amount with too many decimals.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '422':
-          description: '`INSUFFICIENT_BALANCE` or `WALLET_TYPE_MISMATCH`.'
+          description: '`INSUFFICIENT_BALANCE`, `WALLET_TYPE_MISMATCH`, or `AMOUNT_TOO_LOW` — too small to bridge to that chain (the bridge fee would exceed 2%); `error.details.estimated_minimum_amount` when known.'
           content:
             application/json:
               schema:
@@ -3359,7 +3359,7 @@ paths:
                   expires_at: "2026-04-03T17:13:12Z"
                   authorization_path: "/api/v1/partner/orders/ce3cfd6a-1234-5678-abcd-ef1234567890/authorize-bridge"
         '400':
-          description: Invalid destination_chain or destination_address
+          description: '`INVALID_REQUEST` — invalid destination_chain or destination_address, or a destination the chain cannot pay (`error.details.reason`)'
           content:
             application/json:
               schema:
@@ -3378,6 +3378,12 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: Order is not in `completed` status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`AMOUNT_TOO_LOW` — the order amount is too small to bridge to that chain (the bridge fee would exceed 2%); `error.details.estimated_minimum_amount` when known.'
           content:
             application/json:
               schema:

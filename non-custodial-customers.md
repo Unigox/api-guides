@@ -303,6 +303,12 @@ bridge.
 }
 ```
 
+Bridging to another chain costs a fee, deducted from what arrives: `to_amount`
+shows the result. A quote whose fee would exceed 2% of the amount is refused with
+`422 AMOUNT_TOO_LOW`. On Solana the fee includes opening the destination's token
+account when it has none, so the first withdrawal to a fresh address needs a
+larger amount than later ones.
+
 The quote is valid for 10 minutes. Have the customer sign `forward_request`
 with `eip712_domain`, unchanged (`eth_signTypedData_v4`), before `expires_at`,
 then:
@@ -378,7 +384,7 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 
 | `error.code` | Status | What it means |
 | --- | --- | --- |
-| `INVALID_REQUEST` | 400 | A malformed request or address, an unsupported chain or token, too many decimals, or a submitted withdrawal that differs from its quote. |
+| `INVALID_REQUEST` | 400 | A malformed request or address, an unsupported chain or token, too many decimals, a destination the chain cannot pay (`error.details.reason` says why, e.g. `validation_solana_recipient_off_curve`), or a submitted withdrawal that differs from its quote. |
 | `INVALID_SIGNATURE` | 400 | The challenge signature does not recover to the address, the message was changed, or `address` differs from the challenged one. |
 | `FEATURE_NOT_ENABLED` | 403 | Creating an `external_wallet` customer while non-custodial mode is off for your partner account. |
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
@@ -392,6 +398,7 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 | `INVALID_REQUEST` | 422 | Deposit-address allocate with an unknown `chain_type` or a `count` outside 1 to 50. |
 | `WALLET_TYPE_MISMATCH` | 422 | A wallet call for a `partner_wallet` customer, or the order-bound send-out for an `external_wallet` one. |
 | `INSUFFICIENT_BALANCE` | 422 | The customer's XAI balance does not cover the order or withdrawal. |
+| `AMOUNT_TOO_LOW` | 422 | The amount is too small to bridge to that chain: the bridge refused it, or its fee would exceed 2% of the amount. `error.details.estimated_minimum_amount`, when present, is roughly the smallest amount that passes. |
 | `KYC_NOT_CLEARED` | 422 | The customer is not KYC-cleared for an order. |
 | `ADDRESS_CAP_REACHED` | 429 | Allocating would take the customer past 1,000 addresses for that chain type. |
 | `INTERNAL_ERROR` | 500 | Something failed on our side. Safe to retry. |

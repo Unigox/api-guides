@@ -10,7 +10,8 @@ Notable changes to the Unigox partner API, newest first.
 - **Deposit addresses of their own** on EVM chains, Solana, Tron and TON, credited to the customer's address on XAI. `GET /users/{user_uuid}/wallet` shows the balance; `wallet.deposit.received` fires on each credit.
 - **Orders.** On an off-ramp the customer signs the escrow funding and any refund, and refunds land on their own address. On an on-ramp the crypto is released to the customer's address and your partner fee to your partner wallet, in the same transaction.
 - **Withdrawals** to any supported chain, signed by the customer, gas paid by Unigox: `POST /users/{user_uuid}/withdrawals/quote`, then `POST /users/{user_uuid}/withdrawals`. `wallet.withdrawal.status.changed` follows each one. Deposits and withdrawals need no KYC; orders do.
-- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`.
+- **Bridge refusals are 4xx.** A withdrawal quote or send-out to an address the destination chain cannot pay answers `400 INVALID_REQUEST` with `error.details.reason`; an amount too small to bridge (the bridge fee would exceed 2%) answers `422 AMOUNT_TOO_LOW`, previously both `500`.
+- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`, `AMOUNT_TOO_LOW`.
 
 **Every new customer gets their own Unigox account.** A customer created with `POST /api/v1/partner/users` from today has their own account, separate from a Unigox app user or another partner's customer with the same email. Customers you already have are unchanged.
 
