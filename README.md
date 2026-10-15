@@ -124,7 +124,13 @@ the merchant bridge base URL, and a real payment with callback verification and
 settlement reconciliation. Release readiness notes belong here, not in the
 client-facing payment guide.
 
-The existing Partner API OpenAPI spec is unchanged: bridge paths use another base
-URL and wallet-signature authorization. Do not put them under the Partner API's
-global server/API-key contract without per-operation overrides or a dedicated
-bridge spec.
+The Partner API OpenAPI spec also documents customer deposit-address allocation
+and listing, including saved addresses returned with pending monitoring and the
+per-network confirmations used before accepting payments. Those routes use the
+Partner API base URL, API key and customer ownership checks. Their matching
+Account/Quote readiness changes must be deployed before publishing this contract.
+
+The wallet-signed Bridge paths use another base URL and authorization contract.
+They remain in the separate Bridge payment reference; do not put them under the
+Partner API's global server/API-key contract without per-operation overrides or
+a dedicated bridge spec.
