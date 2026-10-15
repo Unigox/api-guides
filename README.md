@@ -98,3 +98,136 @@ One-time setup (Settings → Secrets and variables → Actions):
 
 Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
 scripts/publish-changelog.mjs` resolves the page read-only and makes no changes.
+
+## Releasing documentation ahead of the code
+
+Merging to `main` publishes: the two jobs above put the spec and the changelog on
+developers.unigox.com. Docs for an API change must therefore reach `main` only
+once every service behind the change is deployed, or partners read about
+endpoints that answer `404` and behaviour production does not have yet.
+
+- Merge the api-guides pull request **last**, after the services it describes and
+  the API gateway routes are live.
+- While the change is not live, keep its changelog entry under an
+  `## Unreleased` heading. Both publish jobs run `scripts/check-release.mjs` first
+  and refuse to publish while such a heading exists (the job fails and says why).
+  That stops the two CI jobs and nothing else. The raw URL above serves `main`'s
+  spec the moment it merges, and GitBook can pick that spec up without the CI job
+  (the re-fetch described under "Updating the docs after a spec change"). The
+  guard is a backstop for a mistaken merge, not a way to merge early.
+- Neither job publishes the markdown pages, and where GitBook Git Sync is on a
+  page on `main` reaches developers.unigox.com without them: treat every page on
+  `main` as published. So a page written ahead of its release, or the section of a
+  page that is, opens with a notice that starts `> **Not available yet.**`, and
+  the `Unreleased` entry links to that page or section. An index entry that points
+  to such a page (a list item of a folder's `README.md` or of a `SUMMARY.md`) ends
+  with the same words. `scripts/check-release.mjs` holds both ends: while the
+  entry is `Unreleased` it also fails when a page or section the entry links to
+  does not open with the notice, or an index entry listing such a page does not
+  carry the words; once no entry is `Unreleased` it fails while any page or the
+  changelog still carries them (this README is not checked).
+- Once the release is live, replace `Unreleased` with the release date and remove
+  every notice in the same push. That push publishes the changelog and the spec
+  together.
+
+Run the guard's tests with `node --test scripts/*.test.mjs`. CI runs them on
+every pull request and every push to `main` (`.github/workflows/test.yml`); make
+that job a required status check of `main` so a red run blocks the merge.
+
+### Pending: delayed settlement (T+1) and third-party payouts
+
+The changelog's `Unreleased` entry describes the release on the
+`feat/t1-third-party-payouts-20261002` branch. The account repository's runbook,
+`docs/bill-payment-settlement-t1-runbook.md` ("Deploy order" and "Upgrading a
+live deployment"), owns the order of the services and their preconditions; if it
+and this list ever disagree, the runbook wins. The lists below restate it in
+short, the API gateway (api#66) and this repository included.
+
+Merge the pull requests in the same order as the deploys below. The api-guides
+pull request is merged last, after api#66 is deployed, because merging it is
+what publishes the T+1 docs.
+
+First rollout, where nothing T+1 runs yet:
+
+1. account: the T+1 migrations, checked as the runbook's "Deploy preconditions"
+   says, then the account build. Over main's builds from before its migration
+   20261007160000, which drops `users.partner`, finish main's own release first:
+   its account, trades and verification, then `up` to 20261007200000 with
+   main's build. This release's account cannot start before that `up`.
+2. verification: after account's migrations and before trades. trades stores the
+   source-of-funds documents and payout receipts through this build's routes;
+   against an older build every such upload fails in trades.
+3. agent-scripts: the Lightnet agent's build from this release (`ec799ec` or
+   later), before trades. This trades releases a parked T+1 trade only while
+   the agent keeps re-affirming its payment check; against an older agent it
+   holds every T+1 trade of that vendor.
+4. trades (trades#538).
+5. unigox.com.
+6. api (api#66): the gateway routes for the partner T+1 endpoints, after trades.
+   It merges only now, right before this repository, because merging it
+   publishes the gateway's own copy of the T+1 spec, which has no notice.
+   Until it is deployed those endpoints answer the gateway's `404`.
+7. api-guides (this repository), the last repository: date the `Unreleased`
+   entry and remove its four notices (the `**Not available yet.**` paragraph
+   under the changelog's `Unreleased` heading, the top of
+   `api-reference/delayed-settlement.md`, the "When a payout is delayed" section
+   of `api-reference/third-party-payouts.md`, and the delayed settlement entry of
+   `api-reference/README.md`), then merge. `node scripts/check-release.mjs` must
+   then pass: it names any notice left behind.
+
+offers goes out at any point after account's migrations (its build reads
+`users.delayed_settlement` on every user read, its sign-in check included, and
+the T+1 offer columns, all added by them) and before agent-scripts, as the
+runbook's "Deploy order" says: its build keeps a T+1 offer's two fee lists when
+the agent updates only the offer's capacity, so going first keeps them whole
+from the first such update. An instant offer's update rebuilds its fee lists
+from the body, as on main.
+
+Upgrading a deployment that already runs T+1:
+
+1. account: the T+1 migrations and the runbook's checks, before any new build
+   starts. A database migrated under an earlier T+1 branch's numbers needs the
+   runbook's `migrate force` first. Where `users.partner` still exists, as on a
+   stage at the 20261006090… numbers, the force and the `up` go after step 4
+   instead, once account, trades and verification run this release.
+2. offers and verification, in either order.
+3. agent-scripts, unigox.com, trades, in that order.
+4. account's build, so that no replica of the old build mails a receipt while
+   one of the new build runs (a mixed fleet mails two receipts for every delayed
+   bill that completes while both run): stop-start, every replica of the old
+   build stopped before the first replica of the new one starts, or, on a
+   rolling deploy, with receipts off across the roll, as the runbook describes.
+5. api (api#66).
+6. api-guides, last, as above.
+
+In both, the switches come after the deploys and follow the runbook ("Deploy
+order", step 7), in this order:
+
+1. In the hub's Agent Config panel for the Lightnet agent, set
+   `LIGHTNET_DELAYED_PAYOUTS_ENABLED=true` (off by default). Off, every parked
+   T+1 trade's payment check reads `pending` / `delayed_payouts_disabled`, so
+   trades holds the release and the order is refunded at its consent deadline.
+   Decide on `LIGHTNET_DELAYED_CNY_CORPORATE_CONFIRMED` too, as the runbook
+   says.
+2. The grant (`users.delayed_settlement`) to the Lightnet agent's vendor user.
+3. That vendor's T+1 offer. Before the flag, a stage test trade parked on that
+   offer must show `preflight` with `state` `passed` in
+   `GET /api/v1/admin/trade/:id/delayed-settlement`; `pending` with
+   `delayed_payouts_disabled` or `cny_corporate_rail_unconfirmed` names a switch
+   still off.
+4. The offer flag, last. A partner is listed in `DELAYED_SETTLEMENT_PARTNERS`
+   only once api#66 is live and the partner has implemented the consent
+   signing.
+
+The T+1 pages and the spec describe trades#538 with its review fixes (T-01 to
+T-31; the CONS-4 follow-up `0d5a99c4`, whose recipient-payout gates leave T+1
+offers out for a partner without delayed settlement; and the other cross-repo
+follow-ups), rechecked against its branch head `9a5ceb30`. If trades changes
+after that, check the T+1 docs against it again before dating the entry. The
+other unreleased changes the entry lists (the estimate fields, the quote's
+`THIRD_PARTY_CONTEXT_INVALID` messages, the orders filter) carry no notice on
+their pages and rely on the merge order alone. So does the T+1 text in the live
+sections of `api-reference/third-party-payouts.md`: step 8 of "End-to-end
+flow", "3. Request a quote" and the error table under "Compliance in v1".
+
+Delete this subsection when the entry is dated.

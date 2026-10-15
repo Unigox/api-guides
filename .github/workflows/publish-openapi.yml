@@ -16,12 +16,20 @@ name: Publish OpenAPI to GitBook
 #
 # Find ORG and SPEC by running locally once after `gitbook auth`:
 #   gitbook openapi publish --organization <org> --spec <spec> openapi/swagger.yaml
+#
+# This job publishes nothing while changelog.md holds an "Unreleased" entry: the spec then describes
+# endpoints that are not live yet (scripts/check-release.mjs). It holds back this job only: the raw
+# URL serves main's spec as soon as it merges (README, "Releasing documentation ahead of the code").
+# Once the entry is dated, it also publishes nothing while a page still says "Not available yet.".
+# The push that dates the entry touches only changelog.md, which is why that path triggers this job
+# too.
 
 on:
   push:
     branches: [main]
     paths:
       - "openapi/swagger.yaml"
+      - "changelog.md"
   workflow_dispatch: {} # allow manual re-publish from the Actions tab
 
 jobs:
@@ -33,6 +41,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Refuse to publish docs for a release that is not live
+        run: node scripts/check-release.mjs
 
       # Pinned to the version verified locally; bump deliberately.
       - name: Install GitBook CLI
