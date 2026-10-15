@@ -196,7 +196,9 @@ The wallet and nonce identify one allocation; all signed fields must match. A ne
 
 Payment readiness requires an `ACTIVE` lock and confirmation for the selected network. A completed allocation remains
 retrievable with its exact original signature after the write deadline; that signature cannot authorize further writes.
-Solana retains its synchronous registration response: 503 `addresses_not_watched` means attachment has not completed.
+Solana retains its synchronous registration response: HTTP 503 with `status: "addresses_not_watched"` and
+`details: "deposit_address_not_watched"` means attachment has not completed. On `/memo-locks/allocate`, this response
+includes the saved address in `data.allocated`; [monitoring error examples](#monitoring-errors) distinguish it from `/memo-locks/lock`.
 
 A different memo, family, callback or other signed field with an already recorded nonce returns 409
 `memo_lock_nonce_used`. An expired request with no identifiable allocation remains unresolved; expiry alone is not
@@ -433,15 +435,71 @@ A 404 indicates that no matching indexed record is available; the deposit may st
 
 ## Common errors
 
-| HTTP | Detail/status | Meaning |
-| --- | --- | --- |
-| 400 | Invalid fields, environment, memo or deadline | Request validation failed; corrected signed fields require a new signature |
-| 401 | `memo_lock_signature_invalid` / `memo_lock_signature_expired` / `history_signature_invalid` / `history_authorization_expired` | Signature verification failed or the authorization expired |
-| 404 | `deposit_address_not_found` / `memo_lock_not_found` | Address or memo association was not found for the owner |
-| 409 | `memo_lock_nonce_used` | Lock/unlock nonce already consumed, allocation terms conflict, or a legacy allocation has no saved receipt |
-| 409 | `deposit_address_already_locked` / `memo_lock_not_active` | The current association state prevents the operation |
-| 429 | `rate_limited` / `deposit_addresses_cap_exceeded` | Request rate or address allocation limit exceeded |
-| 503 | `addresses_not_watched` with allocated address data | Solana address allocated but monitoring confirmation incomplete; allocation recovery applies |
-| 503 | `signature_verification_unavailable` | Signature verification temporarily unavailable; an uncertain earlier write still requires reconciliation |
+`code` matches the HTTP status. `status` identifies the response outcome; `details` contains the error key.
+They are separate fields. In the memo table, route names are relative to `/memo-locks/`.
+
+| Route | HTTP | `status` | `details` | Meaning |
+| --- | --- | --- | --- | --- |
+| All memo routes | 400 | `bad_request` | `validation_memo_lock_request_invalid` / `validation_environment_mismatch` | Malformed signed request or wrong environment |
+| `allocate`, `lock`, `unlock` | 400 | `bad_request` | `validation_deadline_invalid` | Submission deadline exceeds the allowed window |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_memo_required` / `validation_expires_at_invalid` | Missing memo or invalid memo expiry |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_callback_url_not_public` | Callback URL does not resolve exclusively to permitted public addresses |
+| Memo writes | 400 | `bad_request` | `memo_not_supported_for_chain` | Address family is unsupported or unavailable for the requested memo operation |
+| `list` | 400 | `bad_request` | `validation_read_authorization_invalid` / `validation_invalid_list_query` | Invalid authorization window or list filter |
+| All memo routes | 401 | `memo_lock_failed` | `memo_lock_signature_invalid` | Signature does not authorize the request |
+| `allocate`, `lock`, `unlock` | 401 | `memo_lock_failed` | `memo_lock_signature_expired` | Write deadline passed; allocation retries follow [Allocation recovery](#allocation-recovery) |
+| `list` | 401 | `memo_lock_failed` | `memo_lock_read_authorization_expired` | Read authorization expired |
+| Memo writes | 404 | `memo_lock_failed` | `deposit_address_not_found` / `memo_lock_not_found` | Address or memo association was not found for the owner |
+| Memo writes | 409 | `memo_lock_failed` | `memo_lock_nonce_used` | Nonce already consumed, allocation terms conflict, or a legacy allocation has no saved receipt |
+| Memo writes | 409 | `memo_lock_failed` | `deposit_address_already_locked` / `memo_lock_not_active` | Current association state prevents the operation |
+| All memo routes | 422 | `memo_lock_failed` | `invalid_chain_type` | Invalid address-family value in the message or list filter |
+| All memo routes | 429 | `memo_lock_failed` | `rate_limited` | Request rate limit exceeded |
+| `allocate` | 429 | `cap_exceeded` | `deposit_addresses_cap_exceeded` | Address allocation limit exceeded; `data.remaining` reports remaining capacity |
+| `allocate` | 503 | `addresses_not_watched` | `deposit_address_not_watched` | Monitoring confirmation incomplete; the saved address is in `data.allocated` |
+| `lock` | 503 | `addresses_not_watched` | `deposit_address_not_watched` | Monitoring confirmation incomplete for the existing address; no `data` field |
+| All memo routes | 503 | `memo_lock_failed` | `signature_verification_unavailable` | Signature verification temporarily unavailable |
+
+For `POST /transactions/history`:
+
+| HTTP | `status` | `details` | Meaning |
+| --- | --- | --- | --- |
+| 400 | `history_failed` | `validation_history_request_invalid` / `validation_environment_mismatch` / `validation_read_authorization_invalid` | Invalid request, filter, environment or authorization window |
+| 401 | `history_failed` | `history_signature_invalid` / `history_authorization_expired` | Signature verification failed or the read authorization expired |
+| 429 | `history_failed` | `rate_limited` | Request or signature-verification limit exceeded |
+| 503 | `history_failed` | `signature_verification_unavailable` | Signature verification temporarily unavailable |
+
+The shared IP limiter can reject history requests before the history handler with HTTP 429,
+`status: "memo_lock_failed"` and `details: "rate_limited"`.
+These tables list common errors. Validation errors can identify other invalid fields; changing signed fields requires a new signature.
+
+### Monitoring errors
+
+`POST /memo-locks/allocate`, HTTP 503:
+
+```json
+{
+  "status": "addresses_not_watched",
+  "code": 503,
+  "details": "deposit_address_not_watched",
+  "data": {
+    "chainType": "svm",
+    "allocated": [{"addressIndex": 1, "address": "<collection address>"}]
+  }
+}
+```
+
+The address is saved, but the memo attachment has not completed. [Allocation recovery](#allocation-recovery) reuses this address and the original signed request.
+
+`POST /memo-locks/lock`, HTTP 503:
+
+```json
+{
+  "status": "addresses_not_watched",
+  "code": 503,
+  "details": "deposit_address_not_watched"
+}
+```
+
+This request operates on the existing signed `depositAddress`. No new address is allocated and no new memo association is written by this failed request.
 
 On allocation routes, an error response does not guarantee that no address was allocated. Recovery states are defined under [Allocation recovery](#allocation-recovery).

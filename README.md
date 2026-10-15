@@ -106,8 +106,8 @@ scripts/publish-changelog.mjs` resolves the page read-only and makes no changes.
   verification and transaction reconciliation.
 
 These pages describe the memo-address release contract, initially checked against Quote
-`653080043c2a23bc68316e58daac7c3de1f7cd02`. Deadline metadata, address projections and
-webhook environment guidance were checked against Quote
+`653080043c2a23bc68316e58daac7c3de1f7cd02`. Deadline metadata, address projections,
+webhook environment guidance and route-specific error responses were checked against Quote
 `4de61c51b7b025d6993c27091259e7f3237e6af9` on 2026-10-15. They do not claim deployment
 or a live merchant canary. The wallet UI's Privy path does not accept merchant callback URLs;
 these examples use direct EVM wallet signing.
