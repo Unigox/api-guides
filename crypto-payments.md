@@ -7,7 +7,7 @@ The invoice reference is stored as a **memo** attached to the collection address
 ## Payment flow
 
 1. Allocate a collection address with `POST /memo-locks/allocate`. The signed request contains the invoice reference and HTTPS callback URL. Existing addresses support reassignment as described below.
-2. Display the collection address, network, asset and amount at checkout.
+2. Wait for the selected network to be ready, then display the collection address, network, asset and amount at checkout.
 3. Receive the signed `deposit.credited` webhook. Its `memoLockId` identifies the invoice association; its `intentId` identifies the payment.
 4. Retrieve transaction status or wallet-signed history to confirm the credited amount, asset and recipient. Payment confirmation requires a completed, non-refunded settlement matching the invoice. Any webhook used must also pass signature verification.
 
@@ -20,7 +20,7 @@ Collection addresses support successive invoices. Reassignment after payment con
 1. End the previous memo association with `POST /memo-locks/unlock`.
 2. Attach the new invoice reference and callback URL with `POST /memo-locks/lock`.
 
-Reassignment preserves the address and creates a new `lockId`. The new association is ready when the API returns `memo_locked` with an `ACTIVE` lock. Delayed webhooks retain the lock ID associated with the original deposit.
+Reassignment preserves the address and creates a new `lockId`. The new association has an `ACTIVE` lock. [Network readiness](api-reference/bridge-payments.md#network-readiness) is reported separately in `monitoring`. Delayed webhooks retain the lock ID associated with the original deposit.
 
 Deposit attribution uses the memo active at the deposit's on-chain timestamp. Deposits during the new lock's window carry the new invoice reference; deposits between locks have no memo. Unlocking or expiry does not prevent transfers to the address.
 
@@ -33,7 +33,7 @@ Deposit attribution uses the memo active at the deposit's on-chain timestamp. De
 | `svm` | Solana |
 | `tvm` | Tron |
 
-`GET /config` provides chain IDs, token addresses and decimals. Deposit availability is limited to supported network and asset combinations; the `active` flag alone does not establish deposit support.
+`GET /config` provides chain IDs, token addresses and decimals. For EVM and Tron collection addresses, `monitoring.chains` identifies which networks are ready; each network is confirmed independently. Deposit availability is limited to supported network and asset combinations; the `active` flag alone does not establish deposit support.
 
 ## Settlement
 

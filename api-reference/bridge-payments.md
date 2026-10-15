@@ -93,9 +93,13 @@ const response = await fetch(`${BRIDGE_BASE_URL}/memo-locks/allocate`, {
 const result = await response.json();
 if (!response.ok) throw new Error(result.details ?? "allocation_failed");
 const allocation = result.data?.allocated?.[0];
-if (result.status !== "memo_locked" || allocation?.lock?.status !== "ACTIVE") {
-  throw new Error("address_not_ready");
+if (!allocation || allocation.lock?.status !== "ACTIVE") {
+  throw new Error("allocation_incomplete");
 }
+// For this EVM example, select a confirmed deposit network from the response.
+const readyChainIds = allocation.monitoring?.chains
+  ?.filter(chain => chain.confirmed).map(chain => chain.chainId) ?? [];
+// HTTP 202 keeps the same allocation; signed /memo-locks/list reports subsequent readiness.
 ```
 
 Response example:
@@ -109,6 +113,7 @@ Response example:
     "allocated": [{
       "addressIndex": 1,
       "address": "0x2222222222222222222222222222222222222222",
+      "monitoring": {"watched": true, "chains": [{"chainId": 1, "confirmed": true}]},
       "lock": {
         "lockId": "12",
         "wallet": "0x1111111111111111111111111111111111111111",
@@ -130,6 +135,24 @@ Response example:
 
 Each successful request allocates one address, subject to allocation limits. An active lock applies across supported tokens and networks of its address family and can receive multiple payments.
 
+### Network readiness
+
+EVM and Tron registration runs in the background. An allocated address and its signed memo are saved before the
+response. HTTP 202 `addresses_preparing` includes the same allocation and `ACTIVE` lock as a completed response,
+with current monitoring facts:
+
+```json
+{"watched":false,"chains":[{"chainId":1,"confirmed":true},{"chainId":42161,"confirmed":false}]}
+```
+
+This address accepts payments on Ethereum while Arbitrum is preparing. Only networks with `confirmed: true` are
+ready; a missing network or empty EVM/Tron `chains` array is not confirmation. `watched: true` means all required
+networks are ready. The supported assets on each ready network come from `GET /config`.
+
+`POST /memo-locks/list` returns fresh `monitoring` on each active lock. The existing read authorization can be reused
+until it expires. Checking readiness does not create another address or change the memo. A 202 response requires no
+new write or signature. TON and Solana use `monitoring.watched` for their single-network readiness.
+
 ### Allocation recovery
 
 Allocation retries use the original signed request body: the same `chainId`, `message` and `signature`.
@@ -138,15 +161,16 @@ The wallet and nonce identify one allocation; all signed fields must match. A ne
 | Allocation state | Response or recovery operation |
 | --- | --- |
 | Response unavailable | Repeat `POST /memo-locks/allocate` with the original signed body |
-| Address committed; monitoring or memo attachment incomplete | The same request resumes the original address while its signature is valid; errors include `data.allocated` |
+| Address and memo saved; EVM/Tron registration pending | 202 `addresses_preparing`; use signed `/memo-locks/list` for readiness |
+| Address committed; memo attachment incomplete | The same request resumes the original address while its signature is valid; errors include `data.allocated` |
 | Allocation completed | The same request returns the original address and lock ID, with the lock's current status |
 | Signature expired; address committed but no lock | The retry returns the original address with `memo_lock_signature_expired`; a fresh signed `POST /memo-locks/lock` activates that address |
 | Original lock unlocked or expired | The retry returns that closed lock; it does not create or reactivate a memo association |
 | Legacy consumed nonce without a saved allocation receipt | 409 `memo_lock_nonce_used`; the earlier allocation requires reconciliation |
 
-Payment readiness requires a `memo_locked` response containing an `ACTIVE` lock. A 503 `addresses_not_watched`
-indicates incomplete monitoring registration. A completed result remains retrievable with its exact original
-signature after the write deadline; that signature cannot authorize further writes.
+Payment readiness requires an `ACTIVE` lock and confirmation for the selected network. A completed allocation remains
+retrievable with its exact original signature after the write deadline; that signature cannot authorize further writes.
+Solana retains its synchronous registration response: 503 `addresses_not_watched` means attachment has not completed.
 
 A different memo, family, callback or other signed field with an already recorded nonce returns 409
 `memo_lock_nonce_used`. An expired request with no identifiable allocation remains unresolved; expiry alone is not
@@ -178,7 +202,7 @@ Content-Type: application/json
 {"status":"memo_locks_retrieved","code":200,"data":{"locks":[],"nextBefore":null}}
 ```
 
-A nonempty response contains the same lock objects as allocation. Optional query fields are strings: `chainType`, `address`, `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`), `limit` (default 50, maximum 100) and `before` (a lock ID). An omitted `chainType` includes all families. `nextBefore` supplies the next page's `before` value; null indicates the final page. The endpoint returns memo associations, not payment history.
+A nonempty response contains the same lock objects as allocation, with `monitoring` added to each `ACTIVE` lock. Closed locks do not carry readiness. Optional query fields are strings: `chainType`, `address`, `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`), `limit` (default 50, maximum 100) and `before` (a lock ID). An omitted `chainType` includes all families. `nextBefore` supplies the next page's `before` value; null indicates the final page. The endpoint returns memo associations, not payment history.
 
 ## Wallet transaction history
 
@@ -284,14 +308,14 @@ The cursor paginates records; it is not a stream of status changes. An older pen
 
 | Route | Signed primary type | Success data |
 | --- | --- | --- |
-| `POST /memo-locks/lock` | `Lock` | `{ "lock": { ... } }`, status `memo_locked` |
+| `POST /memo-locks/lock` | `Lock` | `{ "lock": { ... }, "monitoring": { ... } }`, status `memo_locked` or `addresses_preparing` |
 | `POST /memo-locks/unlock` | `Unlock` | `{ "lock": { ... } }`, status `memo_unlocked` |
 
 Both endpoints accept `{chainId, message, signature}` with the corresponding signing schema. **Lock** contains the allocation fields plus `depositAddress`, with `action: "lock"`. **Unlock** contains `action`, `wallet`, `environment`, `chainType`, `depositAddress`, `lockId`, `nonce` and `deadline`, with `action: "unlock"`.
 
 Only the owner can change an association. Each address supports one active lock. Unlocking does not reject incoming transfers, initiate refunds or cancel earlier credits.
 
-Address reassignment requires a successful `memo_unlocked` response followed by a lock request containing the new invoice reference and callback URL. Each request requires a fresh nonce. Reassignment is complete when the API returns `memo_locked` with an `ACTIVE` lock and a new `lockId`. An expired association can be replaced directly with a lock request.
+Address reassignment requires a successful `memo_unlocked` response followed by a lock request containing the new invoice reference and callback URL. Each request requires a fresh nonce. Reassignment saves an `ACTIVE` lock with a new `lockId`; payments on a selected network require its monitoring confirmation. An expired association can be replaced directly with a lock request.
 
 Deposit attribution uses the on-chain timestamp. Deposits between locks have no memo; deposits within a lock's window carry that lock's reference. Delayed events retain the lock ID associated with the deposit.
 
@@ -379,7 +403,7 @@ A 404 indicates that no matching indexed record is available; the deposit may st
 | 409 | `memo_lock_nonce_used` | Lock/unlock nonce already consumed, allocation terms conflict, or a legacy allocation has no saved receipt |
 | 409 | `deposit_address_already_locked` / `memo_lock_not_active` | The current association state prevents the operation |
 | 429 | `rate_limited` / `deposit_addresses_cap_exceeded` | Request rate or address allocation limit exceeded |
-| 503 | `addresses_not_watched` with allocated address data | Address allocated but monitoring registration incomplete; allocation recovery applies |
+| 503 | `addresses_not_watched` with allocated address data | Solana address allocated but monitoring confirmation incomplete; allocation recovery applies |
 | 503 | `signature_verification_unavailable` | Signature verification temporarily unavailable; an uncertain earlier write still requires reconciliation |
 
 On allocation routes, an error response does not guarantee that no address was allocated. Recovery states are defined under [Allocation recovery](#allocation-recovery).
