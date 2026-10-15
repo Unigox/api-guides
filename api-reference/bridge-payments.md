@@ -37,12 +37,16 @@ ListLocks(string action,address wallet,string environment,uint64 issuedAt,uint64
 | `expiresAt` for writes | Unix seconds when the memo association ends; `"0"` means no expiry |
 | `callbackUrl` | Exact public HTTPS receiver URL, or `""` for no callback |
 | `nonce` | Fresh random 32 bytes, encoded as `0x` plus 64 hex digits; single use per wallet |
-| `deadline` | Submission deadline in Unix seconds: later than the server's current time, at most 600 seconds ahead |
+| `deadline` | Submission deadline in Unix seconds: later than server time, at most `memoLimits.maxWriteDeadlineSeconds` ahead |
 | `issuedAt`, `expiresAt` for lists | Read authorization window, at most 86,400 seconds; `issuedAt` may be at most 300 seconds ahead of the server |
 
 Integer fields inside `message` or `authorization` accept decimal strings or safe JSON integers. Top-level `chainId` requires a JSON number. Additional message fields are rejected.
 
-Write deadlines are evaluated against server time and must be within `(now, now + 600 seconds]`. They limit request submission, not the lifetime of the deposit address or invoice. List authorizations remain reusable until expiry and cannot be revoked early.
+Write deadlines are evaluated at submission and must be within `(server now, server now + maxWriteDeadlineSeconds]`. They limit request submission, not the lifetime of the deposit address or invoice. List authorizations remain reusable until expiry and cannot be revoked early.
+
+Fetch fresh `GET /config` from the same Bridge endpoint before signing. Its top-level `memoLimits` object contains `serverTimeSeconds` and `maxWriteDeadlineSeconds`; it is a sibling of `data`, not a field inside the chain list. Calculate the deadline from these values rather than the wallet or browser clock. The allocation example below uses the full advertised window.
+
+Signing and submission must finish before that deadline. Changing a deadline requires a new signature. For an allocation already submitted, follow [Allocation recovery](#allocation-recovery) instead of changing the original signed request.
 
 ## Allocate a collection address
 
@@ -51,9 +55,16 @@ POST /memo-locks/allocate
 Content-Type: application/json
 ```
 
-The example assumes a connected `walletClient`, merchant `account`, `invoiceReference`, and a valid `deadline` in Unix seconds. The callback URL is a placeholder; requests require a reachable public HTTPS receiver.
+The example assumes a connected `walletClient`, merchant `account`, and `invoiceReference`. The callback URL is a placeholder; requests require a reachable public HTTPS receiver.
 
 ```js
+const configResponse = await fetch(`${BRIDGE_BASE_URL}/config`, {cache: "no-store"});
+if (!configResponse.ok) throw new Error("bridge_config_unavailable");
+const {memoLimits} = await configResponse.json();
+const deadline = (
+  BigInt(memoLimits.serverTimeSeconds) + BigInt(memoLimits.maxWriteDeadlineSeconds)
+).toString();
+
 const domain = {
   name: "Unigox Bridge Memo Locks", version: "1", chainId: 42161,
 };
@@ -134,6 +145,21 @@ Response example:
 ```
 
 Each successful request allocates one address, subject to allocation limits. An active lock applies across supported tokens and networks of its address family and can receive multiple payments.
+
+### Collection address formats
+
+New collection addresses use the following formats. Allocation and lock responses use `address`; webhooks, transaction status and history use `depositAddress`.
+
+| `chainType` | Collection address format |
+| --- | --- |
+| `evm` | `0x`-prefixed hexadecimal address; compare by its 20-byte value, not letter case |
+| `svm` | Base58 Solana address; case-sensitive |
+| `tvm` | Base58Check Tron address, matching the allocated address; case-sensitive |
+| `ton` | Non-bounceable, URL-safe TON address; preserve the returned string |
+
+Reuse the returned `address` for signed lock/unlock requests and memo-list address filters. EVM, Solana and TON address text is preserved in other responses; an existing TON address can also be in raw `workchain:hex` form. When present, Tron `depositAddress` is presented in Base58Check.
+
+Tron formatting applies to the collection address only. `fromTx` and `fromToken` are returned without address-format conversion, including any hexadecimal prefix and letter case. Use these values unchanged; do not convert them to Base58 when matching a payment or requesting transaction status.
 
 ### Network readiness
 
@@ -351,7 +377,7 @@ Event example:
 }
 ```
 
-`fromAmount` contains source-token base units. `wallet` identifies the collection-address owner. `logIndex` is a decimal string identifying the source event; on TON it contains the transfer's logical time. `fromTx` and `logIndex` are nullable. Destination token, amount and transaction hash are available through transaction status.
+`fromAmount` contains source-token base units. `wallet` identifies the collection-address owner. `logIndex` is a decimal string identifying the source event; on TON it contains the transfer's logical time. `fromTx` and `logIndex` are nullable. Destination token, amount and transaction hash are available through transaction status. See [collection address formats](#collection-address-formats) for `depositAddress`.
 
 ### Environment and event identity
 
@@ -390,6 +416,8 @@ The response uses `{status: "found", code: 200, data: {...}}`. `data` includes:
 - `toChain`, `toToken`, `toAmount`, `recipientAddress`, `toTx`, `toTxMinedAt`;
 - `status`, `subStatus`, `refund`, `refundTx`;
 - `memoSource`, `memoLockId`, `memoHash`, `depositAddress`.
+
+`depositAddress` follows the [collection address format rules](#collection-address-formats). Status and history return `null` when no collection address is recorded. Source transaction and token identifiers are returned unchanged.
 
 Payment confirmation requires a matching source identity and lock, a completed non-refunded settlement, the expected destination wallet, chain and token, and the amount required by the invoice. Refund status and destination details are supplied by this endpoint rather than the webhook.
 
