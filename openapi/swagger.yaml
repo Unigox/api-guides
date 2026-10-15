@@ -1066,6 +1066,12 @@ paths:
         GET `/api/v1/partner/users/{user_uuid}/deposit-addresses`; do not repeat this POST.
         An empty saved-address list in a 503 response does not prove that nothing was allocated.
 
+        `502 DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN` means the allocation outcome could not be
+        confirmed after sending the request. Check saved addresses with the same GET; do not
+        automatically repeat this allocation. An immediate empty list does not prove failure,
+        because the original request may still complete. The allocation POST is not idempotent:
+        repeating it can create additional addresses. Treat a lost HTTP response as uncertain too.
+
         These partner endpoints do not attach a memo. Wallet-signed memo-address requests
         use the separate Bridge payment API.
       operationId: allocatePartnerCustomerDepositAddresses
@@ -1134,7 +1140,23 @@ paths:
         '429':
           description: ADDRESS_CAP_REACHED; the configured address cap prevents this allocation.
         '502':
-          description: Allocation outcome could not be confirmed. Retrieve existing addresses before requesting another allocation.
+          description: |
+            DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN means the allocation may have committed.
+            Check saved addresses; do not automatically repeat the allocation.
+            DEPOSIT_ADDRESSES_UNAVAILABLE covers other failures, including a failed address
+            count before allocation was attempted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                allocationUnknown:
+                  summary: The request was sent, but its outcome is unknown.
+                  value:
+                    success: false
+                    error:
+                      code: DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN
+                      message: "allocation outcome is unknown; check saved deposit addresses and do not automatically repeat this allocation"
         '503':
           description: |
             DEPOSIT_ADDRESS_NOT_WATCHED preserves any returned allocation while monitoring is
