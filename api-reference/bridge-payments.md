@@ -300,7 +300,7 @@ Results include pending and failed records as well as completed ones. The presen
 
 Payment history remains available after webhook retries are exhausted, without a callback URL, and after the original memo association expires or is unlocked. A source transaction hash is not required.
 
-Use `memoLockId` for an invoice or `chainType` and `depositAddress` for a collection address. Pages are ordered by descending `intentId`; pass `nextBefore` as `before` until it is null. Match records by `intentId`, including records already received by webhook.
+Use `memoLockId` for an invoice or `chainType` and `depositAddress` for a collection address. Pages are ordered by descending `intentId`; pass `nextBefore` as `before` until it is null. Match records by `(environment, intentId)`, including records already received by webhook. For history responses, `environment` comes from the configured Bridge API endpoint used for the request.
 
 The cursor paginates records; it is not a stream of status changes. An older pending record can settle later without receiving a new ID. A reconciliation pass starts again without `before` for the invoice or address and reevaluates pending records. An empty result means no matching indexed record is available yet.
 
@@ -353,6 +353,16 @@ Event example:
 
 `fromAmount` contains source-token base units. `wallet` identifies the collection-address owner. `logIndex` is a decimal string identifying the source event; on TON it contains the transfer's logical time. `fromTx` and `logIndex` are nullable. Destination token, amount and transaction hash are available through transaction status.
 
+### Environment and event identity
+
+Webhook bodies do not contain `environment`. Event IDs and intent IDs are scoped to the Bridge environment and can repeat between staging and production.
+
+Use a separate callback URL for each environment, such as `/webhooks/unigox/production` and `/webhooks/unigox/staging`. Each receiver route maps to a fixed environment, Bridge API endpoint and verification-key set. The environment used for deduplication comes from that receiver configuration.
+
+A shared callback URL requires distinct verification keys for each environment. In that case, derive the environment from the configured association of the key that successfully verifies the signature. The `X-Unigox-Key-Id` header alone does not establish the environment.
+
+Event deduplication uses `(environment, type, id)`. Payment deduplication uses `(environment, intentId)` across webhook deliveries and history results. Both keys use the configured environment, not a field from the webhook body.
+
 ### Authentication and acknowledgement
 
 1. Preserve the raw HTTP body bytes for signature verification. JSON reserialization changes the signed input.
@@ -362,7 +372,7 @@ Event example:
 5. Validate `type: "deposit.credited"`, `apiVersion: "1"` and `data.status: "DONE"`.
 6. Validate `callbackUrlHash` against keccak256 of the exact registered URL. The `wallet`, `memoLockId`, address family and deposit address must match the invoice association. Compare valid EVM wallet and deposit addresses by their 20-byte value; hexadecimal letter case may differ ([ERC-55](https://eips.ethereum.org/EIPS/eip-55)). Preserve the case of non-EVM deposit addresses. Signature validation alone does not establish the intended recipient.
 7. Store the authenticated event under a unique `(environment, type, id)` before returning 2xx. Valid duplicate deliveries also receive 2xx.
-8. Apply each `intentId` once. Payment deduplication and the invoice update must be atomic; multiple transfers within one transaction remain separate payments.
+8. Apply each `(environment, intentId)` once. Payment deduplication and the invoice update must be atomic; multiple transfers within one transaction remain separate payments.
 
 Retries retain the event ID and use fresh delivery timestamps and signatures. Non-2xx responses, redirects and transport errors trigger retries within the configured retry schedule and attempt limit. A 2xx response acknowledges durable receipt; invoice processing may complete asynchronously.
 

@@ -45,7 +45,9 @@ Payments are credited to the merchant's **UNIGOX balance on the XAI chain (chain
 
 An address can receive multiple payments under one memo. Invoice totals, partial payments and overpayments are managed by the merchant application. A memo association does not enforce a payment amount or initiate refunds.
 
-Webhook delivery can repeat when an acknowledgement is not received or recorded. Retries retain the same event ID. Event deduplication uses `(environment, type, id)`; payment deduplication uses `intentId`. A transaction can contain multiple payments, each with a separate intent.
+Webhook delivery can repeat when an acknowledgement is not received or recorded. Retries retain the same event ID. Event deduplication uses `(environment, type, id)`; payment deduplication uses `(environment, intentId)`. A transaction can contain multiple payments, each with a separate intent.
+
+The webhook body does not include `environment`. It comes from the receiver configuration: a separate callback URL for each environment, or distinct environment-specific verification keys for a shared URL. See [environment and event identity](api-reference/bridge-payments.md#environment-and-event-identity).
 
 `POST /transactions/history` returns incoming and outgoing Bridge records with a wallet signature and no UNIGOX account. Memo fields are omitted by default; signed `includeMemo: true` includes the owner's invoice references. Filters support the original memo association and collection address.
 
