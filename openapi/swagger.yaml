@@ -2162,7 +2162,10 @@ paths:
         crypto base as the platform fee (non-compounding). There's no separate transfer leg for on-ramp:
         at release the full buyer amount lands in your partner wallet, and the markup is captured by
         withholding it when the crypto bridges out at send-out (for a crypto-anchored order, the trade is
-        sized up beforehand so the requested amount still arrives net of the withheld fee). What the end
+        sized up beforehand so the requested amount still arrives net of the withheld fee). The withheld
+        markup stays in your partner wallet: a fee wallet set in the partner dashboard (see the off-ramp
+        quote) does not move it. For a non-custodial (external_wallet) customer nothing is withheld at
+        send-out: the markup is paid at release, to your fee wallet. What the end
         user receives: `crypto_amount − fee_breakdown.platform_fee − fee_breakdown.partner_fee` for a
         fiat-anchored order, or exactly the `crypto_amount` you requested for a crypto-anchored order.
 
@@ -3341,8 +3344,13 @@ paths:
         `platform_fee` (our fee in crypto), `partner_fee` (your per-order markup in crypto — declare it
         by passing `partner_fee_pct` on the quote/estimate request, where `1` means 1%), `partner_fee_pct`
         (the percentage applied), and `total_fee` (sum of both). The partner fee is computed on the same
-        crypto base as the platform fee (non-compounding) and is settled on-chain to your partner wallet
-        on successful release. An order that does not settle is never charged the markup, and the refund
+        crypto base as the platform fee (non-compounding) and is settled on-chain, on XAI, to your fee
+        wallet on successful release. Your fee wallet is the address you set under **Fee wallet** in the
+        partner dashboard, or your partner wallet if you have not set one. It can only be changed from the
+        dashboard (or by Unigox), never with the API key. A change applies to orders created after it; an
+        order keeps the fee wallet it was created with. The fee wallet only receives the markup: funding,
+        refunds and the balance check still use your partner wallet. An order that does not settle is
+        never charged the markup, and the refund
         returns the full funded amount with the markup in it. Note that the refund is not automatic once
         the escrow has been funded: the crypto stays there until you sign for it — see
         `POST /orders/{order_id}/authorize-refund`.
