@@ -33,7 +33,11 @@ Deposit attribution uses the memo active at the deposit's on-chain timestamp. De
 | `svm` | Solana |
 | `tvm` | Tron |
 
-`GET /config` provides chain IDs, token addresses and decimals. For EVM and Tron collection addresses, `monitoring.chains` identifies which networks are ready; each network is confirmed independently. Deposit availability is limited to supported network and asset combinations; the `active` flag alone does not establish deposit support.
+Collection supports configured ERC-20 tokens on EVM networks, TRC-20 tokens on Tron, jettons on TON and SPL tokens on Solana. Native coins such as ETH, TRX, TON and SOL are not supported by this collection flow. XAI (chain ID `660279`) is the settlement chain, not a collection network.
+
+`GET /config` includes inactive and native assets as well as collection assets. Checkout options require an active source chain, an active non-native token with a compatible XAI settlement token, and a ready collection address on that network. The [supported payment assets](api-reference/bridge-payments.md#supported-payment-assets) section defines the fields and matching rules.
+
+Payments on an unsupported network or in an unsupported asset are not automatically credited or refunded. Recovery requires a support assessment and is not guaranteed.
 
 ## Settlement
 

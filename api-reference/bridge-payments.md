@@ -173,11 +173,36 @@ with current monitoring facts:
 
 This address accepts payments on Ethereum while Arbitrum is preparing. Only networks with `confirmed: true` are
 ready; a missing network or empty EVM/Tron `chains` array is not confirmation. `watched: true` means all required
-networks are ready. The supported assets on each ready network come from `GET /config`.
+networks are ready. Assets on each ready network must also pass the [supported payment asset checks](#supported-payment-assets).
 
 `POST /memo-locks/list` returns fresh `monitoring` on each active lock. The existing read authorization can be reused
 until it expires. Checking readiness does not create another address or change the memo. A 202 response requires no
 new write or signature. TON and Solana use `monitoring.watched` for their single-network readiness.
+
+### Supported payment assets
+
+`GET /config` returns chain objects in `data`. It includes inactive and native tokens; the full response is not a list of payable checkout options.
+
+An eligible checkout option must meet all of these conditions:
+
+| Check | Required configuration |
+| --- | --- |
+| Collection network | Source chain `active: true`, a matching address family, and `chainId` other than XAI `660279` |
+| Address readiness | An `ACTIVE` memo lock and [monitoring confirmation](#network-readiness) for the selected network |
+| Collection token | Source `tokens[]` entry with `active: true`, `native: false` and a nonempty `address`; identify the token by network and contract or mint address, not symbol alone |
+| Settlement token | An active, non-native token with a nonempty address on the active XAI chain, matching the source token as described below |
+
+Configuration uses `chainType` values `EVM`, `SOLANA`, `TVM` (or `TRON`) and `TON`; memo requests use `evm`, `svm`, `tvm` and `ton`, respectively.
+
+Token matching uses `tokens[].groupId`. A source token with a non-null `groupId` matches XAI tokens in that same group. For EVM, Tron and TON source tokens without a group, matching uses the same `symbol`. Solana requires a non-null matching group and has no symbol fallback. Missing groups must not be matched to one another.
+
+Include an option only when there is exactly one eligible source token for its contract or mint and exactly one eligible XAI match. Missing or ambiguous matches are not checkout options. Source and settlement amounts use their respective token `decimals`; transaction status identifies the token and amount actually credited.
+
+Collection accepts configured ERC-20, TRC-20, jetton and SPL token transfers. Native ETH, TRX, TON and SOL transfers are outside this flow. On Solana, token payments must reach the collection wallet's canonical associated token account; an arbitrary token account with the same owner is not sufficient. For Solana Token-2022 transfers with a fee, credit is based on the net amount received.
+
+`quotingThreshold` is quote configuration, not a collection-payment minimum. `/config` does not expose a universal minimum collection amount. Token decimal conversion can round down; supported assets do not imply that every nonzero source amount produces a nonzero credit.
+
+Payments in an unsupported asset or on an unconfirmed or unsupported network are not guaranteed automatic credit or refund. Support can assess recovery; recovery is not guaranteed.
 
 ### Allocation recovery
 
