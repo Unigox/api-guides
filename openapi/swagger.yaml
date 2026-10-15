@@ -2164,7 +2164,8 @@ paths:
         withholding it when the crypto bridges out at send-out (for a crypto-anchored order, the trade is
         sized up beforehand so the requested amount still arrives net of the withheld fee). The withheld
         markup stays in your partner wallet: a fee wallet set in the partner dashboard (see the off-ramp
-        quote) does not move on-ramp markup. What the end
+        quote) does not move it. For a non-custodial (external_wallet) customer nothing is withheld at
+        send-out: the markup is paid at release, to your fee wallet. What the end
         user receives: `crypto_amount − fee_breakdown.platform_fee − fee_breakdown.partner_fee` for a
         fiat-anchored order, or exactly the `crypto_amount` you requested for a crypto-anchored order.
 
