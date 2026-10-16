@@ -64,6 +64,13 @@ A reminder, since it came up: the markup you set in the partner dashboard applie
 
 ## 2026-09-09
 
+**You can fund your wallet from another chain, and read the deposit addresses we monitor for you.** Getting USDC onto XAI is no longer your problem. We provision a deposit address for your account on each supported chain and watch it: a deposit is bridged to your XAI wallet automatically, credited 1:1 with no bridge fee, normally within a minute. `GET /api/v1/partner/deposit-addresses` returns the set, with the tokens each chain accepts.
+
+- Funding was previously described only under third-party payouts, which understated it. The same wallet funds on-ramp and off-ramp orders as well, so it now has its own page: [Funding your wallet](./api-reference/funding-your-wallet.md).
+- **The accepted tokens differ per chain, and a mismatch is unrecoverable.** Solana takes USDC only; Tron and TON take USDT only; Base and Avalanche take USDC only; the remaining EVM chains take both. Read the list off the endpoint rather than assuming a chain behaves like its neighbours.
+- **A deposit address is not your XAI wallet address.** They are never interchangeable, and a send to the wrong one is unrecoverable in either direction. The previous wording — "a transfer on another chain cannot fund an order and is not recoverable" — remains true of your *XAI wallet address* specifically, and is now stated that way.
+- Nothing changes about signing. You still hold the key and still authorize every movement with an EIP-712 signature; this only changes how crypto reaches the wallet.
+
 **Retail accounts are now Fiat accounts, on the standard envelope, scoped to the customer you already have. This replaces the `/api/v1/partner/retail/*` endpoints, which are removed.** The product is unchanged — you still issue dedicated IBANs for your own customers and read their balances, ledger and payments. What changes is the shape, and every part of it was a departure from the rest of this API that should not have shipped.
 
 - **The endpoints moved under the customer.** There is no separate "retail client" to register, and no `POST .../clients` step. An account holder IS the customer you created with `POST /api/v1/partner/users` — that was always true in our data model, and publishing it as a second entity gave you two identities and two KYC statuses to keep in step for one person. Submitting an identity is now `POST /api/v1/partner/users/{user_uuid}/identification`, and issuing is `POST /api/v1/partner/users/{user_uuid}/fiat-accounts`. Reads live at `/api/v1/partner/fiat-accounts`.
