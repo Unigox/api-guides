@@ -43,7 +43,17 @@ Payments on an unsupported network or in an unsupported asset are not automatica
 
 The merchant's EVM wallet owns the collection addresses and authorizes their creation and memo changes across all four address families.
 
-Payments are credited to the merchant's **UNIGOX balance on the XAI chain (chain ID 660279)**. Transaction status provides the settlement chain, token, amount, recipient and transaction hash. The webhook's `fromAmount` represents the source deposit; `toAmount` in transaction status represents the destination credit.
+Payments are credited to the merchant's **UNIGOX balance on the XAI chain (chain ID 660279)**. Transaction status provides the settlement chain, token, amount, recipient and transaction hash. The webhook's `fromAmount` represents the source deposit. In status and history, `toAmount` is the expected destination amount; `actualToAmount`, when present, is the confirmed amount received. Use the confirmed amount for reconciliation, falling back to `toAmount` on older completed records that lack it.
+
+## Quoted bridge payouts
+
+For an ordinary EVM payout whose quote includes `snapshot.payoutCostPolicy`, destination execution costs may use the customer's accepted slippage allowance. The final payout must meet `toAmountMin`, with the quoted service fee and rebalance deductions preserved. `toAmount` remains the original expected output; the completed payment's `actualToAmount` reports what the recipient received.
+
+This allowance applies to eligible quotes for EVM destinations other than XAI. Collection settlement on XAI, sponsored withdrawals and destination-execution quotes keep their respective quoted terms. A quote without this policy grants no execution-cost allowance.
+
+A direct quote that cannot cover its accepted minimum, service fee and known execution costs is refused with HTTP 402 `amount_too_low`. After funding, execution waits if current prices or costs prevent it from meeting the accepted terms. Quote age alone does not refuse an already funded ordinary payout. Track the original payment in status or history rather than sending it again.
+
+See [quoted amounts and confirmed receipts](api-reference/bridge-payments.md#quoted-amounts-and-confirmed-receipts) for the response fields.
 
 ## Payment records
 

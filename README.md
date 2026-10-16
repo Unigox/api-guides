@@ -124,6 +124,12 @@ the merchant bridge base URL, and a real payment with callback verification and
 settlement reconciliation. Release readiness notes belong here, not in the
 client-facing payment guide.
 
+The payout minimum and confirmed-amount additions describe the coordinated cost-slippage release contract.
+The Quote projection and quote policy were checked against lane commit
+`bf2592deec3896e71290fb4ca88a6e24638de525` on 2026-10-16. The matching Relay/KMS enforcement,
+Core immutability, and Account wallet projection must be verified in the integrated release before publication.
+These edits do not establish that the behavior is deployed or that a funded payout has exercised it.
+
 The Partner API OpenAPI spec also documents customer deposit-address allocation
 and listing, including saved addresses returned with pending monitoring and the
 per-network confirmations used before accepting payments. Those routes use the

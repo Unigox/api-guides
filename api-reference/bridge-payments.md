@@ -343,7 +343,7 @@ Response envelope:
 }
 ```
 
-Each transaction contains the [transaction-status fields](#transaction-status), plus `intentId` and nullable `logIndex` as decimal strings. `fromChain` and `toChain` are decimal strings; amounts are integer strings in token base units. An intent appears once, including when the wallet is both sender and recipient. Separate deposits in the same source transaction retain separate intent IDs.
+Each transaction contains the [transaction-status fields](#transaction-status), plus `intentId` and nullable `logIndex` as decimal strings. `fromChain` and `toChain` are decimal strings; amounts are integer strings in token base units. `toAmount` retains the expected output, while `actualToAmount` reports the confirmed recipient amount when available. An intent appears once, including when the wallet is both sender and recipient. Separate deposits in the same source transaction retain separate intent IDs.
 
 With `includeMemo: false`, `memo`, `memoHash`, `memoSource` and `memoLockId` are omitted; execution details also omit their memo fields. With `includeMemo: true`, a collection-address memo is returned only to the wallet that owned its original association. The payer cannot read the merchant's private memo. Returned memo text is the payment's saved reference, unaffected by later address reassignment.
 
@@ -431,6 +431,26 @@ Retries retain the event ID and use fresh delivery timestamps and signatures. No
 
 Webhook memo text is delivered only to the callback URL signed for that lock. Authorized allocation, lock and list responses also contain it, as does wallet history with signed memo permission for the original owner. Public transaction status returns `memo: null`, `memoSource: "deposit_address"`, `memoHash` and `memoLockId`. `memoHash` is a public, deterministic hash; it does not provide confidentiality for predictable memo values.
 
+## Quoted amounts and confirmed receipts
+
+`GET /quote` and `POST /quote` return `toAmount` as the expected destination output and `toAmountMin` as the accepted minimum, both in destination-token base units.
+
+An eligible ordinary EVM quote includes `snapshot.payoutCostPolicy: {"version": 1, "minimumOutputAmount": "..."}`. `minimumOutputAmount` equals the public `toAmountMin` exactly. Execution costs may use the accepted slippage allowance while preserving the service fee and any rebalance deductions already included in the quote. The recipient's payout must remain at or above that minimum. The original `toAmount` is retained for comparison with the confirmed receipt.
+
+This policy excludes XAI destinations, sponsored withdrawals, non-EVM payouts and `destinationExecution` quotes. An older quote without the policy grants no execution-cost allowance.
+
+| Field | Surface | Meaning |
+| --- | --- | --- |
+| `toAmount` | Quote, transaction status and signed history | Original expected output; a completed payout can differ within its accepted terms |
+| `toAmountMin` | Quote | Minimum accepted recipient output |
+| `actualToAmount` | Transaction status and signed history | Exact confirmed recipient output for a `DONE` / `COMPLETED`, non-refunded payment; otherwise `null` or absent |
+| `receiving.tokenAmount` | Transaction status and signed history | Confirmed `actualToAmount` when available; otherwise the original `toAmount` |
+| `actual_to_amount` | Account wallet Bridge records | The corresponding confirmed recipient output; unavailable on older records without a saved actual amount |
+
+All these amounts are decimal integer strings in destination-token base units. Keep them as strings or use integer arithmetic such as `BigInt`; JavaScript `Number` can lose precision. Apply the destination token's decimals only for display. Reconciliation uses `actualToAmount` when present, with the original amount as a compatibility fallback on older completed records. Completion, recipient, chain, token and refund checks still apply; an amount field alone does not confirm payment.
+
+A direct quote is refused with HTTP 402, `status: "not_quoted"`, `details: "amount_too_low"` when known execution costs leave insufficient value for the accepted minimum and service fee. Public expected and minimum amounts are not silently reduced to make the quote fit. After funding, an ordinary payout waits when current prices or costs cannot meet the accepted terms. Quote age alone does not refuse that funded payout; use the existing payment identity to follow its status.
+
 ## Transaction status
 
 ```http
@@ -440,13 +460,13 @@ GET /transaction/{fromChain}/{fromTx}?quoteId={quoteId}
 The response uses `{status: "found", code: 200, data: {...}}`. `data` includes:
 
 - `quoteId`, `fromChain`, `fromToken`, `fromAmount`, `fromTx`;
-- `toChain`, `toToken`, `toAmount`, `recipientAddress`, `toTx`, `toTxMinedAt`;
+- `toChain`, `toToken`, `toAmount`, `actualToAmount`, `recipientAddress`, `toTx`, `toTxMinedAt`;
 - `status`, `subStatus`, `refund`, `refundTx`;
 - `memoSource`, `memoLockId`, `memoHash`, `depositAddress`.
 
 `depositAddress` follows the [collection address format rules](#collection-address-formats). Status and history return `null` when no collection address is recorded. Source transaction and token identifiers are returned unchanged.
 
-Payment confirmation requires a matching source identity and lock, a completed non-refunded settlement, the expected destination wallet, chain and token, and the amount required by the invoice. Refund status and destination details are supplied by this endpoint rather than the webhook.
+Payment confirmation requires a matching source identity and lock, a completed non-refunded settlement, the expected destination wallet, chain and token, and the amount required by the invoice. Use the [confirmed recipient amount](#quoted-amounts-and-confirmed-receipts) when available. Refund status and destination details are supplied by this endpoint rather than the webhook.
 
 The event's `quoteId` selects the corresponding payment. `?logIndex={logIndex}` is an alternative selector for deposits with a known source log index. Without either selector, the endpoint returns only the lowest intent ID for the transaction.
 
