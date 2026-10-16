@@ -16,8 +16,10 @@ Your customer never sends crypto to you through Unigox — how they pay you, if 
 all, is outside this API.
 
 Your partner wallet signs the transfer into each order's escrow, so **an empty
-balance stops every payout**, not just the next one. The same wallet funds
-on-ramp and off-ramp orders too.
+balance stops every payout**, not just the next one. This is for `partner_wallet`
+senders. An `external_wallet` sender funds from their own address and signs the
+transfer themselves; see [Non-custodial customers](../non-custodial-customers.md). Your
+partner wallet also receives on-ramp crypto for your `partner_wallet` customers.
 
 See [Funding your wallet](./funding-your-wallet.md) for the address, the chains
 and tokens you can fund from, and the deposit addresses we monitor on your
@@ -575,9 +577,8 @@ order — the request is rejected, and you act on the error:
 that connection passes on each payment's own relationship and purpose, a
 payout would be sent with fixed values instead.
 
-Unigox reviews payouts on its side, over the same records. Value/velocity and fan-out holds surfaced to partners as
-order states are not part of v1 — do not build against the states listed in
-earlier drafts of this page.
+Unigox reviews payouts on its side. In v1, value, velocity and fan-out holds are
+not shown to you as order states.
 
 ### The sender on consumer-to-consumer rails
 

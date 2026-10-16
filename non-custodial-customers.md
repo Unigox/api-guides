@@ -1,7 +1,7 @@
 # Non-custodial customers
 
-The how-to. The endpoint-by-endpoint reference is the **Customer Wallets**
-section of the API reference, plus the order endpoints you already use.
+This guide walks through the flow end to end. Each endpoint is described in the
+**Customer Wallets** section of the API reference.
 
 Let your customers hold their own crypto. Each customer brings their own EVM
 address, deposits to it, and signs every movement of their funds with their own
@@ -46,10 +46,11 @@ from a Unigox app user or another partner's customer with the same email, with
 its own orders and KYC status. Customers created before that date keep sharing
 the Unigox app account that holds their email, if there is one.
 
-Within your partner account one email is one account. A second `user_ref` with
-an email you have already used gets its own `user_uuid` but the same account:
-the same funds, orders, KYC and, for `external_wallet`, the same wallet. An
-email that already belongs to your customer of the other `wallet_type` is
+Among your customers created from 2026-10-12, one email is one account: a
+second `user_ref` with such an email gets its own `user_uuid` but the same
+account (funds, orders, KYC and, for `external_wallet`, the same wallet). A new
+`user_ref` with the email of a customer created before that date gets a new
+account. An email that already belongs to your customer of the other `wallet_type` is
 refused with `409 WALLET_TYPE_MISMATCH`.
 
 The funds of an `external_wallet` customer are whatever is on their EVM
@@ -149,21 +150,23 @@ Content-Type: application/json
     "linked_at": "2026-10-12T10:01:12Z",
     "chain_id": "660279",
     "balances": [
-      { "crypto_currency": "USDT", "token_address": "0xf86c…edca", "amount_human": "0", "decimals": 6 },
-      { "crypto_currency": "USDC", "token_address": "0x37bf…af43", "amount_human": "0", "decimals": 6 }
+      { "crypto_currency": "USDT", "token_address": "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA", "amount_human": "0", "decimals": 6 },
+      { "crypto_currency": "USDC", "token_address": "0x37BF70ee0dC89a408De31B79cCCC3152F0C8AF43", "amount_human": "0", "decimals": 6 }
     ]
   }
 }
 ```
 
 The link is permanent: deposits credit the address, orders are funded from it
-and paid out to it, and it cannot be changed or unlinked. Addresses are
-returned in lower case. An empty `balances` means the balance could not be read
+and paid out to it, and it cannot be changed or unlinked. The linked address
+is returned in lower case; compare token and contract addresses
+case-insensitively. An empty `balances` means the balance could not be read
 at that moment, not that it is zero.
 
 An address can be linked to only one of your customers (another partner may
-link the same address). Addresses that belong to Unigox or to you, such as
-your partner wallet, are refused. Both answer `409 WALLET_ALREADY_LINKED`.
+link the same address). Addresses that Unigox holds for an account (a Unigox
+app wallet, your partner wallet, an escrow) or uses itself are refused. Both
+answer `409 WALLET_ALREADY_LINKED`.
 
 Until the wallet is linked, order initiate, deposit-address and withdrawal
 calls for this customer answer `409 WALLET_NOT_LINKED`. A price quote works.
@@ -185,18 +188,26 @@ Content-Type: application/json
 to 1,000 addresses per chain type. `GET /users/{user_uuid}/deposit-addresses`
 lists the ones already allocated. Each address is tied to the customer's linked
 address, so two of your customers depositing the same amount at the same time
-are never confused. Supported tokens and chains are listed by
+are never confused. Deposit addresses belong to the linked address: if the
+customer linked the same address at another partner, the list includes
+addresses allocated there, and the 1,000 cap is shared. Supported tokens and chains are listed by
 `GET /api/v1/supported/blockchains`.
 
 When a deposit has been credited on XAI you receive `wallet.deposit.received`,
 and the balance shows in `GET /users/{user_uuid}/wallet`. Balances and deposit
-webhooks cover USDT and USDC on XAI. A transfer on XAI that did not come through
-a deposit address shows in the balance but sends no webhook.
+webhooks cover USDT and USDC on XAI. Credits that arrive through the bridge
+(deposit addresses included) send `wallet.deposit.received`. A plain transfer
+on XAI, an on-ramp release or a refund shows in the balance but sends no wallet
+webhook; follow those through the order webhooks.
 
 ### 4. Off-ramp
 
 Quote and initiate as for a `partner_wallet` customer
 (`POST /offramp/quote`, `POST /offramp/initiate`). What changes is who signs.
+
+Off-ramp orders of an `external_wallet` customer settle instantly only; they
+are never matched to a delayed-settlement (T+1) offer. If no instant offer
+covers the amount, the quote answers `409 NO_OFFERS_AVAILABLE`.
 
 **Funding the escrow.** When `next_action` is `authorize_crypto_transfer`:
 
@@ -211,9 +222,12 @@ Quote and initiate as for a `partner_wallet` customer
 
 `from` must be the customer's linked address and the request must move exactly
 this order's amount to this order's escrow; otherwise `400 INVALID_REQUEST`
-names the field. The forwarder checks the signature on chain: one not made by
-`from`, or made with a nonce that has already been used, fails with
-`502 TRANSACTOR_ERROR`. Fetch new parameters and have the customer sign again.
+names the field. Unigox also recovers the signer before relaying. A signature
+not made by `from`, a `deadline` in the past, or a `nonce` that is not the
+customer's current forwarder nonce is refused with `400 INVALID_REQUEST`, and
+nothing is relayed. Fetch new parameters and have the customer sign again. If
+an earlier request for this order failed without moving funds, a new signed
+request is accepted.
 
 The money must already be on the customer's XAI address. If it is short,
 `authorize-crypto-transfer` answers `422 INSUFFICIENT_BALANCE` and nothing is
@@ -240,12 +254,13 @@ Quote, initiate and pay as for a `partner_wallet` customer. When the order
 completes, the crypto is released to the **customer's own address**, not to
 your partner wallet.
 
-Your partner fee is paid to your partner wallet in the same release
-transaction: the customer receives the order amount net of your fee, and you
-receive your fee at the same moment. The order and its webhooks report both
-amounts (`crypto_amount`, `partner_fee`). An on-ramp with `partner_fee_pct`
-above zero needs a partner wallet on your partner account to receive the fee;
-without one, initiate answers `409 OPERATION_NOT_ALLOWED`.
+Your partner fee is paid in the same release transaction to your fee wallet
+(set under **Fee wallet** in the partner dashboard), or to your partner wallet
+if you have not set one. The customer receives the order amount net of your
+fee. The order and its webhooks report both (`crypto_amount`,
+`fee_breakdown.partner_fee`). An on-ramp with `partner_fee_pct` above zero
+needs one of the two wallets; without either, initiate answers
+`409 OPERATION_NOT_ALLOWED`.
 
 The order-bound send-out (`bridge-authorization-parameters` /
 `authorize-bridge`) is for `partner_wallet` customers only and answers
@@ -290,14 +305,14 @@ bridge.
     "destination_address": "0x1111111111111111111111111111111111111111",
     "forward_request": {
       "from": "0x8ba1f109551bd432803012645ac136ddd64dba72",
-      "to": "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43",
-      "value": "0", "gas": "…", "nonce": "3", "deadline": "1791807600", "data": "0xa9059cbb…"
+      "to": "0x37BF70ee0dC89a408De31B79cCCC3152F0C8AF43",
+      "value": "0", "gas": "500000", "nonce": "3", "deadline": "1791800400", "data": "0xa9059cbb…"
     },
     "eip712_domain": {
       "name": "SyntheticAssetForwarder",
       "version": "1",
       "chainId": "660279",
-      "verifyingContract": "0x6ffcf38bec8c733b096958fcd2a8e31a00530edc"
+      "verifyingContract": "0x6fFCF38bEc8c733b096958fcd2a8E31A00530EDC"
     }
   }
 }
@@ -348,7 +363,7 @@ Follow it with `GET /users/{user_uuid}/withdrawals/{withdrawal_id}` or the
 | `submitted` | Accepted for relay. |
 | `bridging` | Executed on XAI, on its way to the destination chain. |
 | `completed` | Arrived. `destination_tx_hash` is set when the withdrawal crossed chains. |
-| `failed` | Did not execute on XAI before the quote's deadline. The funds are still on the customer's address. |
+| `failed` | Did not take effect on XAI (reverted, or not executed before the quote's deadline). The funds are still on the customer's address. |
 | `needs_review` | Could not be settled automatically, for example the bridge failed after the funds left XAI, or the withdrawal is still open after 24 hours. Unigox reconciles it. |
 
 ## Amounts
@@ -374,7 +389,7 @@ Three events, in the same envelope and with the same signature headers as
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
 | `wallet.linked` | The customer's address was linked. Sent once and not retried; read `GET /users/{user_uuid}/wallet` to confirm. | `user_uuid`, `address` (lower case), `linked_at` |
-| `wallet.deposit.received` | A deposit was credited on XAI, about two minutes after the credit. Retried with backoff, up to 10 attempts. | `deposit_id`, `user_uuid`, `address`, `chain_id` (`"660279"`), `crypto_currency`, `token_address`, `amount`, `amount_atomic`, `source_chain_id`, `source_tx_hash`, `tx_hash` (XAI), `credited_at` |
+| `wallet.deposit.received` | A deposit was credited on XAI, two to three minutes after the credit. Retried with backoff (30 s doubling, at most 6 h apart), up to 10 attempts. | `deposit_id`, `user_uuid`, `address`, `chain_id` (`"660279"`), `crypto_currency`, `token_address`, `amount`, `amount_atomic`, `source_chain_id`, `source_tx_hash`, `tx_hash` (XAI), `credited_at` |
 | `wallet.withdrawal.status.changed` | A withdrawal changed status, once per status. Retried like order webhooks. | `user_uuid`, `withdrawal` (the object `GET /users/{user_uuid}/withdrawals/{withdrawal_id}` returns) |
 
 `deposit_id` is an opaque string, stable across retries; deduplicate on it. If
@@ -390,20 +405,20 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
 | `WITHDRAWAL_NOT_FOUND` | 404 | No such withdrawal, or a quote that was never submitted. |
 | `WALLET_NOT_LINKED` | 409 | The customer has no linked address yet. |
-| `WALLET_ALREADY_LINKED` | 409 | The customer is already linked, the address is linked to another of your customers, or it belongs to Unigox or to you. |
+| `WALLET_ALREADY_LINKED` | 409 | The customer is already linked, the address is linked to another of your customers, or Unigox holds it for an account or uses it itself. |
 | `WALLET_TYPE_MISMATCH` | 409 | Creating a customer whose `user_ref` or email already belongs to your customer of the other `wallet_type`. |
 | `QUOTE_EXPIRED` | 409 | The withdrawal quote expired, the customer's forwarder nonce moved, or another withdrawal has not executed yet. Request a new quote. |
-| `OPERATION_NOT_ALLOWED` | 409 | An on-ramp with a partner fee while your partner account has no partner wallet. |
+| `OPERATION_NOT_ALLOWED` | 409 | An on-ramp with a partner fee while your partner account has neither a fee wallet nor a partner wallet. |
 | `CHALLENGE_EXPIRED` | 410 | No challenge was issued, it is older than 10 minutes, it was already used, or a newer one replaced it. |
 | `INVALID_REQUEST` | 422 | Deposit-address allocate with an unknown `chain_type` or a `count` outside 1 to 50. |
 | `WALLET_TYPE_MISMATCH` | 422 | A wallet call for a `partner_wallet` customer, or the order-bound send-out for an `external_wallet` one. |
 | `INSUFFICIENT_BALANCE` | 422 | The customer's XAI balance does not cover the order or withdrawal. |
-| `AMOUNT_TOO_LOW` | 422 | The amount is too small to bridge to that chain: the bridge refused it, or its fee would exceed 2% of the amount. `error.details.estimated_minimum_amount`, when present, is roughly the smallest amount that passes. |
+| `AMOUNT_TOO_LOW` | 422 | The amount is too small to bridge to that chain: the bridge refused it, or its fee would exceed 2% of the amount. `error.details.reason` says why the bridge refused it. When the fee cap applied, `error.details.bridge_fee` and `max_fee_pct` (2) are present, and `estimated_minimum_amount`, when present, is roughly the smallest amount that passes. |
 | `KYC_NOT_CLEARED` | 422 | The customer is not KYC-cleared for an order. |
 | `ADDRESS_CAP_REACHED` | 429 | Allocating would take the customer past 1,000 addresses for that chain type. |
 | `INTERNAL_ERROR` | 500 | Something failed on our side. Safe to retry. |
-| `TRANSACTOR_ERROR` | 502 | The forwarder refused the signed request, for example a signature not made by `from` or a used nonce. |
-| `BALANCE_UNAVAILABLE` | 502 | The XAI balance could not be read. Safe to retry. |
+| `TRANSACTOR_ERROR` | 502 | The relay did not accept a request that passed every check, or a refund could not be executed. Retry. |
+| `BALANCE_UNAVAILABLE` | 502 | `GET /users/{user_uuid}/wallet` could not read the XAI balance. Safe to retry. (A withdrawal quote in the same case answers `500 INTERNAL_ERROR`.) |
 | `DEPOSIT_ADDRESSES_UNAVAILABLE` | 502 | Deposit addresses could not be fetched or allocated. Safe to retry. |
 
 `INVALID_REQUEST` and `WALLET_TYPE_MISMATCH` come with two statuses depending

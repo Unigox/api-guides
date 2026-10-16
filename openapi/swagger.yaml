@@ -956,10 +956,11 @@ paths:
                   type: string
                   format: email
                   description: |
-                    User's email address. Within your partner account one email is one account: a
-                    second `user_ref` with the same email gets its own `user_uuid` but the same account
-                    (funds, orders, KYC, wallet). The same email at another partner or in the Unigox app
-                    is a separate account. This applies to customers created from 2026-10-12.
+                    User's email address. Among your customers created from 2026-10-12, one email is
+                    one account: a second `user_ref` with such an email gets its own `user_uuid` but the
+                    same account (funds, orders, KYC and, for `external_wallet`, the same wallet). A new
+                    `user_ref` with the email of a customer created before that date gets a new account.
+                    The same email at another partner or in the Unigox app is a separate account.
                   example: user@example.com
                 wallet_type:
                   $ref: '#/components/schemas/WalletType'
@@ -1085,7 +1086,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: '`WALLET_ALREADY_LINKED` — the customer is already linked, or the address is linked to another of your customers or belongs to Unigox or to you.'
+          description: '`WALLET_ALREADY_LINKED` — the customer is already linked, or the address is linked to another of your customers. Addresses that Unigox holds for an account (a Unigox app wallet, your partner wallet, an escrow) or uses itself are refused the same way.'
           content:
             application/json:
               schema:
@@ -1215,6 +1216,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: '`BALANCE_UNAVAILABLE` — the XAI balance could not be read. Safe to retry.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
 
   /api/v1/partner/users/{user_uuid}/deposit-addresses:
     get:
@@ -1254,6 +1261,18 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: '`DEPOSIT_ADDRESSES_UNAVAILABLE` — deposit addresses could not be read. Safe to retry.'
           content:
             application/json:
               schema:
@@ -1307,6 +1326,12 @@ paths:
                             type: array
                             items:
                               $ref: '#/components/schemas/CustomerDepositAddress'
+        '400':
+          description: '`INVALID_REQUEST` — the request body is not valid JSON.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '404':
           description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
           content:
@@ -1320,13 +1345,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '422':
-          description: '`INVALID_REQUEST` — unknown `chain_type`, or `count` outside 1 to 50.'
+          description: '`INVALID_REQUEST` — unknown `chain_type`, or `count` outside 1 to 50. `WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '429':
           description: '`ADDRESS_CAP_REACHED` — allocating would take the customer past the limit for this chain type; `error.message` states the limit.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: '`DEPOSIT_ADDRESSES_UNAVAILABLE` — deposit addresses could not be allocated. Safe to retry.'
           content:
             application/json:
               schema:
@@ -1408,7 +1439,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '422':
-          description: '`INSUFFICIENT_BALANCE`, `WALLET_TYPE_MISMATCH`, or `AMOUNT_TOO_LOW` — too small to bridge to that chain (the bridge fee would exceed 2%); `error.details.estimated_minimum_amount` when known.'
+          description: '`INSUFFICIENT_BALANCE`, `WALLET_TYPE_MISMATCH`, or `AMOUNT_TOO_LOW` — too small to bridge to that chain: the bridge refused it (`error.details.reason`), or its fee would exceed 2% (`error.details.bridge_fee`, `estimated_minimum_amount`, `max_fee_pct`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '500':
+          description: '`INTERNAL_ERROR` — the balance, a bridge quote or the forwarder nonce could not be read. Retry shortly.'
           content:
             application/json:
               schema:
@@ -1478,13 +1515,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: '`QUOTE_EXPIRED` — the quote expired, the forwarder nonce moved, or another withdrawal has not executed on XAI yet.'
+          description: '`QUOTE_EXPIRED` — the quote expired, the forwarder nonce moved, or another withdrawal has not executed on XAI yet. `WALLET_NOT_LINKED` — the customer has no linked address.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '422':
-          description: '`INSUFFICIENT_BALANCE` (the balance dropped since the quote).'
+          description: '`INSUFFICIENT_BALANCE` (the balance dropped since the quote), or `WALLET_TYPE_MISMATCH` (a `partner_wallet` customer).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '500':
+          description: '`INTERNAL_ERROR` — the balance or the forwarder nonce could not be read. Retry shortly.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
     get:
       tags:
         - Customer Wallets
@@ -1531,6 +1578,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
 
   /api/v1/partner/users/{user_uuid}/withdrawals/{withdrawal_id}:
     get:
@@ -1562,6 +1621,18 @@ paths:
                         $ref: '#/components/schemas/CustomerWithdrawal'
         '404':
           description: '`CUSTOMER_NOT_FOUND` or `WITHDRAWAL_NOT_FOUND`. A quote that was never submitted is not a withdrawal.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
           content:
             application/json:
               schema:
@@ -2790,7 +2861,8 @@ paths:
         sized up beforehand so the requested amount still arrives net of the withheld fee). The withheld
         markup stays in your partner wallet: a fee wallet set in the partner dashboard (see the off-ramp
         quote) does not move it. For a non-custodial (external_wallet) customer nothing is withheld at
-        send-out: the markup is paid at release, to your fee wallet. What the end
+        send-out: the markup is paid at release, to your fee wallet (or your partner wallet if none is
+        set). What the end
         user receives: `crypto_amount − fee_breakdown.platform_fee − fee_breakdown.partner_fee` for a
         fiat-anchored order, or exactly the `crypto_amount` you requested for a crypto-anchored order.
 
@@ -2944,8 +3016,8 @@ paths:
         `awaiting_fiat_transfer` when the crypto is locked in escrow.
 
         For an `external_wallet` customer the crypto is released to the customer's own address on
-        completion, and your `partner_fee` is paid to your partner wallet in the same release
-        transaction.
+        completion, and your `partner_fee` is paid to your fee wallet (or your partner wallet if none is
+        set) in the same release transaction.
 
         At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order —
         unless the order's `fiat_funding_source` is `own_account`. Then `next_action` is
@@ -3027,7 +3099,7 @@ paths:
                   code: QUOTE_NOT_FOUND
                   message: "Quote not found"
         '409':
-          description: Quote expired or already used. Also `WALLET_NOT_LINKED` (an `external_wallet` customer with no linked address) and `OPERATION_NOT_ALLOWED` (a partner fee on an `external_wallet` customer's order while your partner account has no partner wallet to receive it).
+          description: Quote expired or already used. Also `WALLET_NOT_LINKED` (an `external_wallet` customer with no linked address) and `OPERATION_NOT_ALLOWED` (a partner fee on an `external_wallet` customer's order while your partner account has neither a fee wallet nor a partner wallet to receive it).
           content:
             application/json:
               schema:
@@ -3440,7 +3512,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '422':
-          description: '`AMOUNT_TOO_LOW` — the order amount is too small to bridge to that chain (the bridge fee would exceed 2%); `error.details.estimated_minimum_amount` when known.'
+          description: |
+            - `WALLET_TYPE_MISMATCH` — the order belongs to an `external_wallet` customer.
+            - `AMOUNT_TOO_LOW` — the order amount is too small to bridge to that chain: the bridge refused it (`error.details.reason`), or its fee would exceed 2% (`error.details.bridge_fee`, `estimated_minimum_amount`, `max_fee_pct`).
           content:
             application/json:
               schema:
@@ -3459,7 +3533,9 @@ paths:
       summary: Authorize send-out (cross-chain transfer)
       description: |
         Submit the signed EIP-712 ForwardRequest to initiate a cross-chain send-out.
-        The signature is verified on-chain via the XAI forwarder contract.
+        Unigox recovers the signer before relaying: a signature not made by `from`, a `deadline` in the
+        past, or a `nonce` that is not your current forwarder nonce is refused with `400 INVALID_REQUEST`,
+        and nothing is relayed.
 
         Call `GET bridge-authorization-parameters` first to get the parameters to sign.
 
@@ -3572,7 +3648,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: Order is not in `completed` status or send-out already in progress. (`422 WALLET_TYPE_MISMATCH` for an `external_wallet` customer's order.)
+          description: Order is not in `completed` status or send-out already in progress.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`WALLET_TYPE_MISMATCH` — the order belongs to an `external_wallet` customer.'
           content:
             application/json:
               schema:
@@ -4108,7 +4190,8 @@ paths:
         partner dashboard, or your partner wallet if you have not set one. It can only be changed from the
         dashboard (or by Unigox), never with the API key. A change applies to orders created after it; an
         order keeps the fee wallet it was created with. The fee wallet only receives the markup: funding,
-        refunds and the balance check still use your partner wallet. An order that does not settle is
+        refunds and the balance check still use your partner wallet (for an `external_wallet` customer,
+        the customer's address). An order that does not settle is
         never charged the markup, and the refund
         returns the full funded amount with the markup in it. Note that the refund is not automatic once
         the escrow has been funded: the crypto stays there until you sign for it — see
@@ -5004,9 +5087,13 @@ paths:
         **Non-custodial customers** (`wallet_type: external_wallet`): the request must be signed by the
         customer's linked address (`sender_address`), in your app, where the customer's key is. A request
         whose `from` is not that address, or that does not move exactly this order's amount to this
-        order's escrow, is refused with `400 INVALID_REQUEST` naming the field. The signature itself is
-        checked on chain by the forwarder: one not made by `from` fails with `502 TRANSACTOR_ERROR`. A
-        short balance answers `422 INSUFFICIENT_BALANCE` and nothing is relayed.
+        order's escrow, is refused with `400 INVALID_REQUEST` naming the field. A short balance answers
+        `422 INSUFFICIENT_BALANCE` and nothing is relayed.
+
+        **Signature check.** Unigox recovers the signer before relaying. A signature not made by `from`,
+        a `deadline` in the past, or a `nonce` that is not the signer's current forwarder nonce is refused
+        with `400 INVALID_REQUEST`, and nothing is relayed. Fetch new parameters and sign again. If an
+        earlier request for this order failed without moving funds, a new signed request is accepted.
       operationId: authorizeCryptoTransfer
       security:
         - ApiKeyAuth: []
@@ -5049,7 +5136,10 @@ paths:
         '200':
           description: Crypto authorization accepted
         '400':
-          description: Bad Request
+          description: |
+            `INVALID_REQUEST` — the request does not match the order (`from`, token, amount, escrow), the
+            signature does not recover to `from`, the `deadline` has passed, or the `nonce` is not the
+            current forwarder nonce. Nothing is relayed; fetch new parameters and sign again.
         '401':
           description: Unauthorized
         '404':
@@ -5071,7 +5161,7 @@ paths:
                   code: INSUFFICIENT_BALANCE
                   message: "insufficient USDC balance: wallet 0x... has 1928961 but 3000000 is required"
         '502':
-          description: Transactor service error (e.g. on-chain simulation failed)
+          description: '`TRANSACTOR_ERROR` — the relay did not accept a request that passed every check. Retry.'
 
   /api/v1/partner/orders/{order_id}/refund-authorization-parameters:
     get:
@@ -7488,7 +7578,7 @@ components:
           example: "660279"
         balances:
           type: array
-          description: Balance at the linked address on XAI for USDT and USDC. Empty until linked, or when the balance could not be read. Amounts drop trailing zeros.
+          description: Balance at the linked address on XAI for USDT and USDC. Empty until linked. On `POST …/wallet` also empty when the balance could not be read at that moment; `GET …/wallet` answers `502 BALANCE_UNAVAILABLE` instead. Amounts drop trailing zeros. Compare token addresses case-insensitively.
           items:
             type: object
             properties:
@@ -7497,7 +7587,7 @@ components:
                 example: USDC
               token_address:
                 type: string
-                example: "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43"
+                example: "0x37BF70ee0dC89a408De31B79cCCC3152F0C8AF43"
               amount_human:
                 type: string
                 example: "25"
@@ -7564,13 +7654,14 @@ components:
             to:
               type: string
               description: Token contract on XAI
-              example: "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43"
+              example: "0x37BF70ee0dC89a408De31B79cCCC3152F0C8AF43"
             value:
               type: string
               example: "0"
             gas:
               type: string
-              example: "150000"
+              description: Always `"500000"`
+              example: "500000"
             nonce:
               type: string
               example: "3"
@@ -7597,7 +7688,7 @@ components:
             verifyingContract:
               type: string
               description: The XAI forwarder
-              example: "0x6ffcf38bec8c733b096958fcd2a8e31a00530edc"
+              example: "0x6fFCF38bEc8c733b096958fcd2a8E31A00530EDC"
 
     CustomerWithdrawal:
       type: object
@@ -7616,8 +7707,8 @@ components:
           enum: [submitted, bridging, completed, failed, needs_review]
           description: |
             `submitted` — accepted for relay; `bridging` — executed on XAI, on its way to the destination chain;
-            `completed` — arrived; `failed` — did not execute on XAI before the quote's deadline, the funds are still
-            on the customer's address; `needs_review` — could not be settled automatically (for example the bridge
+            `completed` — arrived; `failed` — did not take effect on XAI (reverted, or not executed before the quote's
+            deadline), the funds are still on the customer's address; `needs_review` — could not be settled automatically (for example the bridge
             failed after the funds left XAI, or still open after 24 hours), Unigox reconciles it.
           example: bridging
         crypto_currency:
@@ -10085,16 +10176,13 @@ components:
         payout_base_rate:
           type: string
           description: >-
-            Optional on payout estimates and quotes. The verified conversion rate before the
-            payout provider's charges and the licensed partner's margin, in fiat per crypto. To itemise
-            the amount payable, divide fiat_amount by this rate and round half up to the crypto's
-            precision; the remainder of crypto_amount is the combined fee. Do not add that
-            remainder to crypto_amount again. A separate partner markup remains separate.
-            Omitted when this conversion basis is not known;
-            absence does not mean zero margin. This is not the all-in rate; that is `rate`.
-            Supported Lightnet offers can publish this basis for either instant or delayed settlement,
-            with fixed or market pricing. It is omitted when provider ownership, route or pricing
-            terms cannot be verified; market observations expire after a bounded lifetime based on the provider refresh interval (legacy observations: five minutes).
+            Optional on payout estimates and quotes. The conversion rate before the licensed
+            partner's costs and margin, in fiat per crypto, when that licensed partner publishes it,
+            for instant and T+1 offers. It lets you show the recipient amount and one combined fee
+            without charging the fee twice: divide `fiat_amount` by this rate and round half up to the
+            crypto's precision; the rest of `crypto_amount` is the combined fee. A separate partner
+            markup stays separate. Omitted when the rate is not known or is out of date; its absence
+            does not mean there is no margin. This is not the all-in rate; that is `rate`.
           example: "7.25"
 
     PartnerOrderStatus:
@@ -11079,19 +11167,20 @@ components:
                 - `UNAUTHORIZED` — authentication failed
                 - `INTERNAL_ERROR` — unexpected server error
                 - `INVALID_STATUS` — order is not in the correct status for the requested action
-                - `TRANSACTOR_ERROR` — on-chain transaction relay failed (e.g. simulation reverted)
+                - `TRANSACTOR_ERROR` — (502) the relay did not accept a signed request that passed every check, or a refund could not be executed; retry
                 - `INSUFFICIENT_BALANCE` — the funding wallet (your partner wallet, or the `external_wallet` customer's address) lacks tokens for the escrow or withdrawal
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
                 - `FEATURE_NOT_ENABLED` — non-custodial mode is not switched on for your partner account
                 - `WALLET_NOT_LINKED` — the `external_wallet` customer has no linked address yet
-                - `WALLET_ALREADY_LINKED` — the customer is already linked, the address is linked to another of your customers, or it belongs to Unigox or to you
+                - `WALLET_ALREADY_LINKED` — the customer is already linked, the address is linked to another of your customers, or Unigox holds it for an account (a Unigox app wallet, your partner wallet, an escrow) or uses it itself
                 - `WALLET_TYPE_MISMATCH` — the call does not apply to this customer's `wallet_type`
                 - `INVALID_SIGNATURE` — a wallet challenge signature does not recover to the address, or the message was altered
                 - `CHALLENGE_EXPIRED` — no wallet challenge was issued, it is older than 10 minutes, already used, or replaced by a newer one
                 - `CUSTOMER_NOT_FOUND` / `WITHDRAWAL_NOT_FOUND` — unknown customer or withdrawal on the customer wallet routes
                 - `ADDRESS_CAP_REACHED` — allocating would take the customer past the deposit-address limit for that chain type
                 - `BALANCE_UNAVAILABLE` / `DEPOSIT_ADDRESSES_UNAVAILABLE` — a dependency did not answer; safe to retry
+                - `AMOUNT_TOO_LOW` — (422) too small to bridge to the destination chain: the bridge refused it (`error.details.reason`), or its fee would exceed 2% (`error.details.bridge_fee`, `estimated_minimum_amount`, `max_fee_pct`)
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
                 - `RECIPIENT_NOT_FOUND` — (404) the recipient endpoints, and an estimate naming such a recipient or destination: no recipient (or destination) with that id belongs to your partner account, or it was archived. A quote answers the same case `422 THIRD_PARTY_CONTEXT_INVALID`
                 - `RECIPIENT_SERVICE_UNAVAILABLE` — (503) the recipient endpoints: the recipient directory could not be reached; retry with backoff

@@ -253,7 +253,7 @@ test("the repository's pages carry the notices its Unreleased entry needs, and n
 test("both publish workflows run the check before publishing", () => {
   const workflows = [
     [".github/workflows/publish-openapi.yml", "gitbook openapi publish"],
-    [".github/workflows/publish-changelog.yml", "node scripts/publish-changelog.mjs"],
+    [".github/workflows/publish-changelog.yml", "node scripts/publish-page.mjs"],
   ];
   for (const [file, publishCommand] of workflows) {
     const text = readFileSync(join(root, file), "utf8");
