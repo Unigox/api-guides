@@ -14,13 +14,16 @@ Unigox can switch on, per partner, paying an off-ramp through the customer's own
 order is an off-ramp in EUR to the customer's own bank (`payment_details`, not a Recipient), and the
 customer holds an active fiat account in that currency, the provider pays the customer's account and Unigox
 sends the money on to the bank you named. Both transfers are in the customer's name, so their bank shows the
-customer as the sender. Any other order is paid exactly as before, and you still call
-`confirm-fiat-received`. Such an order carries `payout_via_own_account: true` on `initiate`, on the order
-and on `order.status.changed`, and the order also carries `own_account_payout_status` and
-`fiat_account_id`. `completed` means the customer's account was paid; `own_account_payout_status` says
-whether the money reached the bank. The new event `order.own_account_payout.updated` reports when it was
-sent on or stopped. See
-[Paying an off-ramp through the account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
+customer as the sender. Any other order, including one whose bank details fail Unigox's checks (same
+currency and rail, holder name matches the customer), is paid exactly as before, and you still call
+`confirm-fiat-received`. While it is on, a quote naming the customer's own fiat account as
+`payment_details_id` answers `400 INVALID_PAYMENT_DETAILS`; name their outside bank. The payment into the
+customer's account does not send `fiat_account.deposit.received`. Such an order carries
+`payout_via_own_account: true` on `initiate`, on the order and on `order.status.changed`, and the order also
+carries `own_account_payout_status` and `fiat_account_id`. `completed` means the customer's account was
+paid; `own_account_payout_status` says whether the money reached the bank. The new event
+`order.own_account_payout.updated` reports when it was sent on or stopped. See [Paying an off-ramp through
+the account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
 
 ### Delayed settlement (T+1)
 

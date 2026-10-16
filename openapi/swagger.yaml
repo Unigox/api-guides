@@ -124,7 +124,7 @@ tags:
       | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
-      | `fiat_account.deposit.received` | Money arrived on an issued fiat account |
+      | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for the proceeds of an off-ramp paid through that account, which `order.own_account_payout.updated` covers |
       | `order.own_account_payout.updated` | An off-ramp paid through the customer's own fiat account was sent on to the bank, or stopped on the account |
 
       **Payload shape — the fiat account events**
@@ -146,6 +146,9 @@ tags:
       ```
 
       `order_id` is the on-ramp this deposit funded, or `null` when it matched no order.
+      The event is not sent when the credit is the proceeds of an off-ramp paid through the
+      customer's own fiat account (`payout_via_own_account: true`); `order.own_account_payout.updated`
+      reports that money instead.
       `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`.
 
       **Payload shape — `order.own_account_payout.updated`**
@@ -153,7 +156,8 @@ tags:
       Sent only on an off-ramp paid through the customer's own fiat account
       (`payout_via_own_account: true`), when the onward payment to the bank you named reaches
       `sent_to_bank`, `held`, `under_review` or `left_on_account`, once per change of state. It does
-      not change the order's `status`.
+      not change the order's `status`. The provider's payment into the customer's account does not
+      send `fiat_account.deposit.received`.
 
       ```json
       {
@@ -4411,11 +4415,24 @@ paths:
             destination is read; a currency only T+1 offers serve reads so until delayed settlement is
             enabled for you), a relationship or purpose the corridor cannot declare, and a USD payout to
             China, Hong Kong or Singapore (`provider_confirmation_pending`).
+
+
+            Where Unigox has switched on off-ramps paid through the customer's own fiat account for you,
+            a `payment_details_id` that is the payment details of the customer's own fiat account answers
+            `INVALID_PAYMENT_DETAILS`. Name the customer's outside bank instead; the payout goes through
+            their account on its own.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
               examples:
+                own_account_details_named:
+                  summary: payment_details_id is the customer's own fiat account (own-account payouts on)
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_PAYMENT_DETAILS
+                      message: "payment_details_id names the customer's own issued account; name the customer's bank instead — the payout is routed through their own account automatically"
                 rail_route_mismatch:
                   summary: Self-payout rail does not match the payment details
                   value:
@@ -9916,8 +9933,12 @@ components:
             the provider pays the customer's account and Unigox then pays the money on to the bank you
             named, both in the customer's name. Applies only where Unigox has switched it on for you, to
             a supported currency (EUR), a payout to the customer's own `payment_details` (not a
-            Recipient) and a customer with an `active` fiat account in that currency. Omitted on every
-            other order, never `false`. You still call `confirm-fiat-received`.
+            Recipient) and a customer with an `active` fiat account in that currency, and only when the
+            bank details you named pass Unigox's checks (same currency and rail, holder name matches the
+            customer, not the fiat account itself); otherwise the order is paid straight to your bank
+            details as before. Omitted on every other order, never `false`. You still call
+            `confirm-fiat-received`. The provider's payment into the customer's account does not send
+            `fiat_account.deposit.received`.
           example: true
         own_account_payout_status:
           type: string
@@ -10979,7 +11000,7 @@ components:
             payout_via_own_account:
               type: boolean
               description: >-
-                `true` on an off-ramp paid through the customer's own fiat account:
+                `true` on a partner API off-ramp paid through the customer's own fiat account:
                 the provider pays the customer's account and Unigox sends the money on to the bank you
                 named. Omitted on every other order, never `false`.
               example: true
