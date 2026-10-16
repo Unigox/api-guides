@@ -15,15 +15,17 @@ order is an off-ramp in EUR to the customer's own bank (`payment_details`, not a
 customer holds an active fiat account in that currency, the provider pays the customer's account and Unigox
 sends the money on to the bank you named. Both transfers are in the customer's name, so their bank shows the
 customer as the sender. Any other order, including one whose bank details fail Unigox's checks (same
-currency and rail, holder name matches the customer), is paid exactly as before, and you still call
-`confirm-fiat-received`. While it is on, a quote naming the customer's own fiat account as
-`payment_details_id` answers `400 INVALID_PAYMENT_DETAILS`; name their outside bank. The payment into the
-customer's account does not send `fiat_account.deposit.received`. Such an order carries
-`payout_via_own_account: true` on `initiate`, on the order and on `order.status.changed`, and the order also
-carries `own_account_payout_status` and `fiat_account_id`. `completed` means the customer's account was
-paid; `own_account_payout_status` says whether the money reached the bank. The new event
-`order.own_account_payout.updated` reports when it was sent on or stopped. See [Paying an off-ramp through
-the account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
+currency and rail, holder name matches the customer) or with no liquidity provider able to pay the
+customer's account directly on its route, is paid exactly as before, and you still call
+`confirm-fiat-received`. A quote naming a fiat account you opened for the customer as `payment_details_id`
+answers `400 INVALID_PAYMENT_DETAILS`, switch on or not; name their outside bank. The payment into the
+customer's account, once matched to exactly one such order, does not send `fiat_account.deposit.received`;
+every other deposit still does. Such an order carries `payout_via_own_account: true` on `initiate`, on the
+order and on `order.status.changed`, and the order also carries `own_account_payout_status` and
+`fiat_account_id`. `completed` means the customer's account was paid; `own_account_payout_status` says
+whether the money reached the bank. The new event `order.own_account_payout.updated` reports when it was
+sent on or stopped. See [Paying an off-ramp through the
+account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
 
 ### Delayed settlement (T+1)
 

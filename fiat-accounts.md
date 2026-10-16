@@ -278,7 +278,7 @@ These events come in the same envelope and with the same signature as
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
 | `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency` |
-| `fiat_account.deposit.received` | Money arrived on the account. Not sent for the proceeds of an off-ramp paid through the account (see `order.own_account_payout.updated`). | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
+| `fiat_account.deposit.received` | Money arrived on the account. Not sent for a credit matched to exactly one off-ramp paid through the account (see `order.own_account_payout.updated`). | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
 | `order.own_account_payout.updated` | **Not available yet.** An off-ramp paid through the account was sent on to the bank, or stopped on the account. See [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account). | `order_id`, `user_uuid`, `own_account_payout_status`, `fiat_account_id` (omitted when none), `amount`, `currency` |
 
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
@@ -325,22 +325,29 @@ the customer's own account instead. It is not self-service; ask Unigox.
 
 The bank details you named must also pass Unigox's checks: the same currency and
 rail as the order, a holder name that matches the customer, and not the
-customer's fiat account itself. If any of this does not hold, the order is paid
-straight to the bank you named, exactly as today.
+customer's fiat account itself. And a liquidity provider that can pay the
+customer's account directly must be available for the order's route. If any of
+this does not hold, the order is paid straight to the bank you named, exactly as
+today.
 
-**Name the customer's outside bank, not the account.** While this is switched
-on for you, an off-ramp quote whose `payment_details_id` is the payment details
-of the customer's own fiat account is refused with `400 INVALID_PAYMENT_DETAILS`
+**Name the customer's outside bank, not the account.** An off-ramp quote whose
+`payment_details_id` is the payment details of a fiat account you opened for
+the customer is refused with `400 INVALID_PAYMENT_DETAILS`
 (`payment_details_id names the customer's own issued account; name the
-customer's bank instead`). Name the customer's outside bank; the payout goes
-through their account on its own.
+customer's bank instead`), whether or not this is switched on for you at the
+time. While it is switched on, the same applies to the payment details of any
+other account Unigox issued to the customer. Name the customer's outside bank;
+the payout goes through their account on its own.
 
 **What happens.** Two transfers, both in the customer's own name:
 
-1. The provider pays the fiat into the customer's own account. This credit is
-   the order paying out, not a deposit, so `fiat_account.deposit.received` is
-   not sent for it; `order.own_account_payout.updated` tells you what happens
-   to the money. Other deposits on the account send it as before.
+1. The provider pays the fiat into the customer's own account. When this
+   credit is matched to exactly one such order, it is that order paying out,
+   not a deposit: `fiat_account.deposit.received` is not sent for it, and
+   `order.own_account_payout.updated` tells you what happens to the money. Any
+   other credit on the account sends `fiat_account.deposit.received` as before,
+   including one Unigox holds for review because it cannot be tied to a single
+   order.
 2. Unigox pays it on from that account to the bank you named. The customer's
    bank shows the customer as the sender, not Unigox.
 

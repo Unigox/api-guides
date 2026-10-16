@@ -124,7 +124,7 @@ tags:
       | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
-      | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for the proceeds of an off-ramp paid through that account, which `order.own_account_payout.updated` covers |
+      | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for a credit matched to exactly one off-ramp paid through that account, which `order.own_account_payout.updated` covers |
       | `order.own_account_payout.updated` | An off-ramp paid through the customer's own fiat account was sent on to the bank, or stopped on the account |
 
       **Payload shape — the fiat account events**
@@ -146,9 +146,10 @@ tags:
       ```
 
       `order_id` is the on-ramp this deposit funded, or `null` when it matched no order.
-      The event is not sent when the credit is the proceeds of an off-ramp paid through the
-      customer's own fiat account (`payout_via_own_account: true`); `order.own_account_payout.updated`
-      reports that money instead.
+      The event is not sent for a credit matched to exactly one off-ramp paid through the customer's
+      own fiat account (`payout_via_own_account: true`); `order.own_account_payout.updated` reports
+      that money instead. Any other credit still sends it, including one held for review because it
+      cannot be tied to a single order.
       `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`.
 
       **Payload shape — `order.own_account_payout.updated`**
@@ -156,8 +157,8 @@ tags:
       Sent only on an off-ramp paid through the customer's own fiat account
       (`payout_via_own_account: true`), when the onward payment to the bank you named reaches
       `sent_to_bank`, `held`, `under_review` or `left_on_account`, once per change of state. It does
-      not change the order's `status`. The provider's payment into the customer's account does not
-      send `fiat_account.deposit.received`.
+      not change the order's `status`. The provider's payment into the customer's account, once
+      matched to the order, does not send `fiat_account.deposit.received`.
 
       ```json
       {
@@ -4417,10 +4418,11 @@ paths:
             China, Hong Kong or Singapore (`provider_confirmation_pending`).
 
 
-            Where Unigox has switched on off-ramps paid through the customer's own fiat account for you,
-            a `payment_details_id` that is the payment details of the customer's own fiat account answers
-            `INVALID_PAYMENT_DETAILS`. Name the customer's outside bank instead; the payout goes through
-            their account on its own.
+            `INVALID_PAYMENT_DETAILS` also answers a `payment_details_id` that is the payment details of
+            a fiat account you opened for the customer, whether or not off-ramps paid through the
+            customer's own fiat account are switched on for you; while they are, also the payment details
+            of any other account Unigox issued to the customer. Name the customer's outside bank instead;
+            the payout goes through their account on its own.
           content:
             application/json:
               schema:
@@ -9935,10 +9937,11 @@ components:
             a supported currency (EUR), a payout to the customer's own `payment_details` (not a
             Recipient) and a customer with an `active` fiat account in that currency, and only when the
             bank details you named pass Unigox's checks (same currency and rail, holder name matches the
-            customer, not the fiat account itself); otherwise the order is paid straight to your bank
-            details as before. Omitted on every other order, never `false`. You still call
-            `confirm-fiat-received`. The provider's payment into the customer's account does not send
-            `fiat_account.deposit.received`.
+            customer, not the fiat account itself) and a liquidity provider that can pay the customer's
+            account directly is available for the route; otherwise the order is paid straight to your
+            bank details as before. Omitted on every other order, never `false`. You still call
+            `confirm-fiat-received`. The provider's payment into the customer's account, once matched to
+            the order, does not send `fiat_account.deposit.received`.
           example: true
         own_account_payout_status:
           type: string
