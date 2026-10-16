@@ -150,6 +150,10 @@ These describe how the API already behaves; the API does not change.
 - KYC runs per account. A person already verified at Unigox is approved by matching that verification instead of being declined as a repeat.
 - `POST /api/v1/partner/users` answers `200` on success, for a new customer and for a repeated `user_ref` alike. The reference previously listed `201` for a new one.
 
+## 2026-10-15
+
+**You can choose the wallet your markup is paid to.** Set **Fee wallet** in the partner dashboard to any EVM address you control on XAI; the `partner_fee` of an off-ramp order, and of an on-ramp order of a non-custodial (`external_wallet`) customer, is then paid there at release instead of to your partner wallet. Leave it empty to keep the current behaviour. It cannot be set with the API key, so a leaked key cannot redirect your fees, and every change is recorded. A change applies to orders created after it; an order keeps the fee wallet it was created with. Only the markup moves: your partner wallet still funds off-ramp orders and receives their refunds, and the markup of other on-ramp orders, which is withheld at send-out, stays in your partner wallet.
+
 ## 2026-10-09
 
 **Unused fiat accounts are closed automatically.** An account with no transactions for a period set by Unigox (30 days by default) is closed, and you receive `fiat_account.updated` with `status: closed`, as for any close. To serve the customer again, open a new account with the usual request; it comes with new pay-in details. See [Unused accounts are closed](./fiat-accounts.md#unused-accounts-are-closed).
