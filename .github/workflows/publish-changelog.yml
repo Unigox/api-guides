@@ -43,4 +43,4 @@ jobs:
             echo "::error::Missing GITBOOK_TOKEN secret or GITBOOK_SPACE variable. See the comment at the top of this workflow."
             exit 1
           fi
-          node scripts/publish-changelog.mjs
+          node scripts/publish-page.mjs
