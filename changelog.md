@@ -26,12 +26,6 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   reports `source_of_funds_required`, always, and `source_of_funds_threshold_usd` when it priced a T+1
   offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a
   liquidity provider accepts it; before acceptance every order, T+1 included, reads `false`.
-- **Payout base rate.** A payout estimate or quote priced on a supported Lightnet offer, instant or T+1, may include
-  `fee_breakdown.payout_base_rate`, the verified conversion before provider costs and the licensed partner's margin. It allows
-  the quoted total to be split into the recipient amount and one combined fee without charging the fee again.
-  It is omitted when the conversion basis is unavailable or does not match the selected offer.
-  Fixed and market tariffs are supported; market observations expire after a bounded lifetime based on the provider refresh interval (legacy observations: five minutes).
-  Existing amounts and the meaning of `fiat_rail_fee` are unchanged.
 - **Order fields.** Every order carries `delayed_settlement`, `settlement_hours`, `consent_deadline_at`,
   `payout_deadline_at`, six `delayed_settlement_*_at` timestamps, `source_of_funds_required` and
   `source_of_funds_threshold_usd`. A delayed order that ended without a payment also carries
@@ -65,7 +59,25 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail, not `409 NO_OFFERS_AVAILABLE`. A retry does not change
   either. See [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
 
-### Other changes
+## 2026-10-16
+
+**You can choose the wallet your markup is paid to.** Set **Fee wallet** in the partner dashboard to any EVM address you control on XAI. The `partner_fee` of an off-ramp order, and of an on-ramp order of a non-custodial (`external_wallet`) customer, is then paid there at release instead of to your partner wallet. Leave it empty to keep the current behaviour.
+
+- It cannot be set with the API key, so a leaked key cannot redirect your fees. Every change is recorded.
+- A change applies to orders created after it; an order keeps the fee wallet it was created with.
+- Only the markup moves. Off-ramp orders are still funded from, and refunded to, your partner wallet (for an `external_wallet` customer, the customer's address). The markup of other on-ramp orders is withheld at send-out and stays in your partner wallet.
+
+**Bridge refusals are 4xx.** A withdrawal quote, or an on-ramp send-out, to an address the destination chain cannot pay answers `400 INVALID_REQUEST` with `error.details.reason`. An amount too small to bridge answers `422 AMOUNT_TOO_LOW`: either the bridge refused it (`error.details.reason`), or the bridge fee would exceed 2% of the amount (`error.details.bridge_fee`, `estimated_minimum_amount`, `max_fee_pct`). Both answered `500` before.
+
+**Funding your wallet has its own page.** [Funding your wallet](./api-reference/funding-your-wallet.md) describes the deposit addresses Unigox keeps for your partner wallet on other chains, the tokens each chain accepts, and how a deposit is credited on XAI. It was previously covered only under third-party payouts.
+
+## 2026-10-15
+
+**`authorize-crypto-transfer` checks the signature before relaying.** A `forward_request` not signed by `forward_request.from`, with a `deadline` in the past, or with a `nonce` that is not the signer's current forwarder nonce, answers `400 INVALID_REQUEST` and nothing is relayed. Such a request was relayed before and failed as `502 TRANSACTOR_ERROR`. If a relayed request failed without moving funds, a new signed request for the same order is accepted.
+
+**Payout base rate.** A payout estimate or quote may include `fee_breakdown.payout_base_rate`: the conversion rate before the licensed partner's costs and margin, when that licensed partner publishes it, for instant and T+1 offers. It lets you show the recipient amount and one combined fee without charging the fee twice. It is omitted when the rate is not known or is out of date; its absence does not mean there is no margin. Existing amounts and the meaning of `fiat_rail_fee` do not change.
+
+**Other changes to estimates, quotes and orders.**
 
 - `POST /api/v1/partner/offramp/estimate` takes four new optional fields. `recipient_payout: true` prices
   only on the licensed partners a recipient payout can be matched to, and `exclude_delayed_settlement: true`
@@ -109,7 +121,7 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   empty page, and `cancelled` includes orders cancelled before acceptance. An off-ramp order whose payout
   failed is listed under `failed`, the status it reports, and no longer under `cancelled`.
 
-### Corrected in the documentation
+**Corrected in the documentation.**
 
 These describe how the API already behaves; the API does not change.
 
@@ -141,18 +153,13 @@ These describe how the API already behaves; the API does not change.
 - **Deposit addresses of their own** on EVM chains, Solana, Tron and TON, credited to the customer's address on XAI. `GET /users/{user_uuid}/wallet` shows the balance; `wallet.deposit.received` fires on each credit.
 - **Orders.** On an off-ramp the customer signs the escrow funding and any refund, and refunds land on their own address. On an on-ramp the crypto is released to the customer's address and your partner fee to your partner wallet, in the same transaction.
 - **Withdrawals** to any supported chain, signed by the customer, gas paid by Unigox: `POST /users/{user_uuid}/withdrawals/quote`, then `POST /users/{user_uuid}/withdrawals`. `wallet.withdrawal.status.changed` follows each one. Deposits and withdrawals need no KYC; orders do.
-- **Bridge refusals are 4xx.** A withdrawal quote or send-out to an address the destination chain cannot pay answers `400 INVALID_REQUEST` with `error.details.reason`; an amount too small to bridge (the bridge fee would exceed 2%) answers `422 AMOUNT_TOO_LOW`, previously both `500`.
-- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`, `AMOUNT_TOO_LOW`.
+- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`.
 
 **Every new customer gets their own Unigox account.** A customer created with `POST /api/v1/partner/users` from today has their own account, separate from a Unigox app user or another partner's customer with the same email. Customers you already have are unchanged.
 
-- Within your partner account one email is still one account: a second `user_ref` with the same email shares it.
+- Among your customers created from this date, one email is one account: a second `user_ref` with the same email shares it.
 - KYC runs per account. A person already verified at Unigox is approved by matching that verification instead of being declined as a repeat.
 - `POST /api/v1/partner/users` answers `200` on success, for a new customer and for a repeated `user_ref` alike. The reference previously listed `201` for a new one.
-
-## 2026-10-15
-
-**You can choose the wallet your markup is paid to.** Set **Fee wallet** in the partner dashboard to any EVM address you control on XAI; the `partner_fee` of an off-ramp order, and of an on-ramp order of a non-custodial (`external_wallet`) customer, is then paid there at release instead of to your partner wallet. Leave it empty to keep the current behaviour. It cannot be set with the API key, so a leaked key cannot redirect your fees, and every change is recorded. A change applies to orders created after it; an order keeps the fee wallet it was created with. Only the markup moves: your partner wallet still funds off-ramp orders and receives their refunds, and the markup of other on-ramp orders, which is withheld at send-out, stays in your partner wallet.
 
 ## 2026-10-09
 
@@ -215,13 +222,6 @@ A reminder, since it came up: the markup you set in the partner dashboard applie
 - Gone with the removed routes: `INVALID_HOLDER_TYPE` and `LEDGER_NOT_ATTRIBUTABLE`.
 
 ## 2026-09-09
-
-**You can fund your wallet from another chain, and read the deposit addresses we monitor for you.** Getting USDC onto XAI is no longer your problem. We provision a deposit address for your account on each supported chain and watch it: a deposit is bridged to your XAI wallet automatically, credited 1:1 with no bridge fee, normally within a minute. `GET /api/v1/partner/deposit-addresses` returns the set, with the tokens each chain accepts.
-
-- Funding was previously described only under third-party payouts, which understated it. The same wallet funds on-ramp and off-ramp orders as well, so it now has its own page: [Funding your wallet](./api-reference/funding-your-wallet.md).
-- **The accepted tokens differ per chain, and a mismatch is unrecoverable.** Solana takes USDC only; Tron and TON take USDT only; Base and Avalanche take USDC only; the remaining EVM chains take both. Read the list off the endpoint rather than assuming a chain behaves like its neighbours.
-- **A deposit address is not your XAI wallet address.** They are never interchangeable, and a send to the wrong one is unrecoverable in either direction. The previous wording — "a transfer on another chain cannot fund an order and is not recoverable" — remains true of your *XAI wallet address* specifically, and is now stated that way.
-- Nothing changes about signing. You still hold the key and still authorize every movement with an EIP-712 signature; this only changes how crypto reaches the wallet.
 
 **Retail accounts are now Fiat accounts, on the standard envelope, scoped to the customer you already have. This replaces the `/api/v1/partner/retail/*` endpoints, which are removed.** The product is unchanged — you still issue dedicated IBANs for your own customers and read their balances, ledger and payments. What changes is the shape, and every part of it was a departure from the rest of this API that should not have shipped.
 
