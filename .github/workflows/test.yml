@@ -1,0 +1,29 @@
+name: Test the docs guards
+
+# Why this exists:
+# scripts/ holds the tests that keep the docs consistent: the release guard (check-release.mjs, which
+# both publish jobs run) and the check that no markdown table row falls out of its table. A test only
+# guards anything if a pull request cannot merge while it fails, so this job runs them all on every
+# pull request and on every push to main. Make it a required status check of main (Settings ->
+# Branches) so a red run blocks the merge.
+#
+# It does not run scripts/check-release.mjs itself: that one fails on purpose while changelog.md holds
+# an "Unreleased" entry, which is exactly when docs written ahead of a release are reviewed.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run the tests in scripts
+        run: node --test scripts/*.test.mjs

@@ -43,9 +43,12 @@ through KYB onboarding is not on this API.
 
 ## What you can and cannot do
 
-You can open accounts and read them. v1 is **receive-only**: moving money off an
-account is not on this API, and converting what arrives is an order, not a
-transfer.
+You can open accounts and read them. v1 is **receive-only** for you: neither you
+nor the customer can move money off an account through this API, and converting
+what arrives is an order, not a transfer. **Not available yet.** Where Unigox has
+switched it on for you, Unigox itself pays an off-ramp on from the account to
+the bank you named; see
+[Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account).
 
 ## Conventions
 
@@ -254,7 +257,7 @@ X-API-Key: <api-key>
 }
 ```
 
-v1 is receive-only, so every row is a `credit`. `order_id` names the on-ramp
+Only money coming in is listed, so every row is a `credit`. `order_id` names the on-ramp
 this deposit funded, and is `null` when it funded none: that money simply stays
 on the customer's account.
 
@@ -269,13 +272,14 @@ To serve the customer again, open a new account with the usual request
 
 ## Webhooks
 
-Two events, in the same envelope and with the same signature as
+These events come in the same envelope and with the same signature as
 `order.status.changed`.
 
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
 | `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency` |
-| `fiat_account.deposit.received` | Money arrived on the account. | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
+| `fiat_account.deposit.received` | Money arrived on the account. Not sent for a credit matched to exactly one off-ramp paid through the account (see `order.own_account_payout.updated`). | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
+| `order.own_account_payout.updated` | **Not available yet.** An off-ramp paid through the account was sent on to the bank, or stopped on the account. See [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account). | `order_id`, `user_uuid`, `own_account_payout_status`, `fiat_account_id` (omitted when none), `amount`, `currency` |
 
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
 no per-event subscription.
@@ -297,8 +301,112 @@ Open the order first, then have the customer transfer. A deposit is matched to
 an open order of the same customer by amount, to the cent; two open orders for
 the same amount are held for review rather than guessed between.
 
-Off-ramp does not pay out of this account in v1. The customer's outside bank
-stays `payment_details`, and a third party stays a Recipient.
+## Paying an off-ramp through the account
+
+> **Not available yet.** Off-ramps are not paid through the customer's account
+> yet: every off-ramp is paid straight to the bank you named, and none of the
+> fields or the event below are sent.
+
+Normally an off-ramp is paid by the liquidity provider straight to the bank you
+named. The customer's bank then shows someone other than the customer as the
+sender. Unigox can switch on, for your partner, paying such an off-ramp through
+the customer's own account instead. It is not self-service; ask Unigox.
+
+**When it applies.** All of these must hold:
+
+- the order is an off-ramp (crypto to fiat);
+- its currency is one this works for (EUR for now);
+- it pays the customer's own bank, named by `payment_details`, not a third
+  party (a Recipient);
+- the customer holds an `active` fiat account in that currency, opened with
+  `POST /api/v1/partner/fiat-accounts`;
+- the bank you named can be paid from the account. A Wise username or a Revolut
+  tag, for example, cannot.
+
+The bank details you named must also pass Unigox's checks: the same currency and
+rail as the order, a holder name that matches the customer, and not the
+customer's fiat account itself. And a liquidity provider that can pay the
+customer's account directly must be available for the order's route. If any of
+this does not hold, the order is paid straight to the bank you named, exactly as
+today.
+
+**Name the customer's outside bank, not the account.** An off-ramp quote whose
+`payment_details_id` is the payment details of a fiat account you opened for
+the customer is refused with `400 INVALID_PAYMENT_DETAILS`
+(`payment_details_id names the customer's own issued account; name the
+customer's bank instead`), whether or not this is switched on for you at the
+time. While it is switched on, the same applies to the payment details of any
+other account Unigox issued to the customer. Name the customer's outside bank;
+the payout goes through their account on its own.
+
+**What happens.** Two transfers, both in the customer's own name:
+
+1. The provider pays the fiat into the customer's own account. When this
+   credit is matched to exactly one such order, it is that order paying out,
+   not a deposit: `fiat_account.deposit.received` is not sent for it, and
+   `order.own_account_payout.updated` tells you what happens to the money. Any
+   other credit on the account sends `fiat_account.deposit.received` as before,
+   including one Unigox holds for review because it cannot be tied to a single
+   order.
+2. Unigox pays it on from that account to the bank you named. The customer's
+   bank shows the customer as the sender, not Unigox.
+
+You still call `confirm-fiat-received` as today. The transactions list shows
+only money coming in, so the onward payment is not a row there; follow it with
+`own_account_payout_status`.
+
+**What you see.** Only on such an order, these fields are added. Every other
+order looks exactly as before.
+
+- `POST /api/v1/partner/offramp/initiate` answers `payout_via_own_account: true`.
+- `GET /api/v1/partner/orders/{order_id}`, and each item of
+  `GET /api/v1/partner/orders`, carry `payout_via_own_account: true`,
+  `own_account_payout_status` and the `fiat_account_id` the money goes through.
+- `order.status.changed` for such an order carries `payout_via_own_account: true`,
+  and its `payment_details_id` is the payment details you named, not the
+  account's.
+
+`status: completed` means the provider paid the customer's own account. Whether
+the money has reached the bank is `own_account_payout_status`:
+
+| `own_account_payout_status` | What it means |
+| --- | --- |
+| `awaiting_credit` | Nothing has landed on the customer's account for this order yet. |
+| `in_progress` | The money landed; the onward payment is queued, being sent, or being retried. |
+| `sent_to_bank` | The money was sent on to the bank you named. |
+| `under_review` | The onward payment ended without a clear result. Unigox checks it; nothing retries it on its own. |
+| `held` | The money is on the customer's account and is not moving on by itself. Contact Unigox. |
+| `left_on_account` | Unigox decided the money stays on the customer's account. |
+
+The field is omitted when the state cannot be read at that moment; read the
+order again.
+
+**The event.** `order.own_account_payout.updated` is sent when the onward
+payment reaches `sent_to_bank`, `held`, `under_review` or `left_on_account`,
+once per change of state. `in_progress` and `awaiting_credit` are not sent; read
+the order for them. It does not change the order's `status`.
+
+```json
+{
+  "event_id": "evt_own_account_payout_8412_sent_to_bank_3f9a1c0b7d2e4a55",
+  "event_type": "order.own_account_payout.updated",
+  "created_at": "2026-10-16T12:00:00Z",
+  "data": {
+    "order_id": "9f1c6b7e-0000-4000-8000-000000000042",
+    "user_uuid": "c0ffee00-0000-4000-8000-000000000001",
+    "own_account_payout_status": "sent_to_bank",
+    "fiat_account_id": "6b1d2c3e-0000-4000-8000-000000000007",
+    "amount": "250.00",
+    "currency": "EUR"
+  }
+}
+```
+
+`amount` is a decimal string with at least two decimals. `fiat_account_id` is
+omitted when the account is not one you can address by id. Deduplicate by
+`event_id`.
+
+A third party is still paid through a Recipient, never through this account.
 
 ## Errors
 
