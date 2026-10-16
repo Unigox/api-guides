@@ -126,9 +126,14 @@ client-facing payment guide.
 
 The payout minimum and confirmed-amount additions describe the coordinated cost-slippage release contract.
 The Quote projection and quote policy were checked against lane commit
-`bf2592deec3896e71290fb4ca88a6e24638de525` on 2026-10-16. The matching Relay/KMS enforcement,
-Core immutability, and Account wallet projection must be verified in the integrated release before publication.
-These edits do not establish that the behavior is deployed or that a funded payout has exercised it.
+`bf2592deec3896e71290fb4ca88a6e24638de525` on 2026-10-16. The Core, KMS, Relay, Account,
+frontend, Quote and documentation lanes have been reviewed and tested. A funded adjusted-payout canary
+is still required before enabling the policy or publishing these additions; historical receipts and
+unfunded previews do not establish that this flow works on chain.
+
+Deploy Core immutability first, then KMS/Relay enforcement, then Account/frontend projections.
+Enable Quote policy emission after those dependencies are ready. Publish the documentation last,
+after the funded canary and user preview. These edits do not establish that the behavior is deployed.
 
 The Partner API OpenAPI spec also documents customer deposit-address allocation
 and listing, including saved addresses returned with pending monitoring and the
