@@ -79,7 +79,7 @@ published at developers.unigox.com.
 `changelog.md` is the source of truth for the public changelog page. Like the
 OpenAPI spec, the GitBook space is **not** git-synced, so the file is pushed into
 the GitBook **Changelog** page by CI (`.github/workflows/publish-changelog.yml` →
-`scripts/publish-changelog.mjs`) on every change to `changelog.md`. The script
+`scripts/publish-page.mjs`) on every change to `changelog.md`. The script
 replaces the whole page via a change request (create → update → merge), so the
 live page always equals `changelog.md` — **edit `changelog.md`, never the GitBook
 page directly** (direct edits are overwritten on the next publish).
@@ -97,4 +97,51 @@ One-time setup (Settings → Secrets and variables → Actions):
 - The **Changelog** page must already exist in the space (create it once).
 
 Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
-scripts/publish-changelog.mjs` resolves the page read-only and makes no changes.
+scripts/publish-page.mjs` resolves the page read-only and makes no changes.
+
+## Bridge crypto payment guide (integration preview)
+
+- `crypto-payments.md`: merchant checkout and settlement walkthrough.
+- `api-reference/bridge-payments.md`: signed address requests, responses, callback
+  verification and transaction reconciliation.
+
+These pages describe the memo-address release contract, initially checked against Quote
+`653080043c2a23bc68316e58daac7c3de1f7cd02`. Deadline metadata, address projections,
+webhook environment guidance and route-specific error responses were checked against Quote
+`4de61c51b7b025d6993c27091259e7f3237e6af9` on 2026-10-15. Collection-network and token
+selection rules were also checked against that Quote head, Agent
+`7a2bc0d871aa26d49b3bf0628a6db56ea2ecf5c2` and Solana Monitor
+`c5bc893465c6166b201680f4541114ea6a7b501d` on 2026-10-15. They do not claim deployment
+or a live merchant canary. The wallet UI's Privy path does not accept merchant callback URLs;
+these examples use direct EVM wallet signing.
+
+Publication requires adding the two Markdown pages to the GitBook space and
+linking them under Tutorials and API Reference. The current CI publishes
+`openapi/swagger.yaml`, `changelog.md` and `fiat-accounts.md`; merging a new guide
+file alone does not publish it. These drafts are submitted for wording and integration review. Publish only
+after that approval, deployment of the matching memo services, confirmation of
+the merchant bridge base URL, and a real payment with callback verification and
+settlement reconciliation. Release readiness notes belong here, not in the
+client-facing payment guide.
+
+The payout minimum and confirmed-amount additions describe the coordinated cost-slippage release contract.
+The Quote projection and quote policy were checked against lane commit
+`bf2592deec3896e71290fb4ca88a6e24638de525` on 2026-10-16. The Core, KMS, Relay, Account,
+frontend, Quote and documentation lanes have been reviewed and tested. A funded adjusted-payout canary
+is still required before enabling the policy or publishing these additions; historical receipts and
+unfunded previews do not establish that this flow works on chain.
+
+Deploy Core immutability first, then KMS/Relay enforcement, then Account/frontend projections.
+Enable Quote policy emission after those dependencies are ready. Publish the documentation last,
+after the funded canary and user preview. These edits do not establish that the behavior is deployed.
+
+The Partner API OpenAPI spec also documents customer deposit-address allocation
+and listing, including saved addresses returned with pending monitoring and the
+per-network confirmations used before accepting payments. Those routes use the
+Partner API base URL, API key and customer ownership checks. Their matching
+Account/Quote readiness changes must be deployed before publishing this contract.
+
+The wallet-signed Bridge paths use another base URL and authorization contract.
+They remain in the separate Bridge payment reference; do not put them under the
+Partner API's global server/API-key contract without per-operation overrides or
+a dedicated bridge spec.

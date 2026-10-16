@@ -969,6 +969,220 @@ paths:
         '404':
           description: User not found
 
+  /api/v1/partner/users/{user_uuid}/deposit-addresses:
+    get:
+      tags:
+        - User Management
+      summary: List customer deposit addresses and monitoring status
+      description: |
+        Returns the saved deposit addresses for a customer with a linked external wallet.
+        The customer must belong to the authenticated partner. This request checks monitoring
+        status for existing addresses; it never allocates another address.
+
+        After an allocation returns `503 DEPOSIT_ADDRESS_NOT_WATCHED`, repeat this GET to check
+        the saved addresses. Do not repeat the allocation POST to check readiness.
+
+        For EVM and Tron, accept payments only on networks whose `monitoring.chains` entry has
+        `confirmed: true`. A missing network is unconfirmed. `monitoring.watched` is the
+        aggregate result, so one network can be ready while another is still pending.
+        For Solana and TON, use `monitoring.watched`; their `chains` array is empty.
+        Monitoring confirmation does not establish which tokens are supported.
+      operationId: listPartnerCustomerDepositAddresses
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: user_uuid
+          in: path
+          required: true
+          description: The customer user_uuid belonging to the authenticated partner.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Saved addresses with current monitoring results; an empty list is valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerDepositAddressesResponse'
+              examples:
+                partiallyConfirmed:
+                  summary: The saved EVM address is ready on Ethereum; Base is pending.
+                  value:
+                    success: true
+                    data:
+                      deposit_addresses:
+                        - chain_type: evm
+                          address: "0x1111111111111111111111111111111111111111"
+                          monitoring:
+                            watched: false
+                            chains:
+                              - chainId: 1
+                                confirmed: true
+                              - chainId: 8453
+                                confirmed: false
+                confirmed:
+                  summary: Both networks are now confirmed for the same saved address.
+                  value:
+                    success: true
+                    data:
+                      deposit_addresses:
+                        - chain_type: evm
+                          address: "0x1111111111111111111111111111111111111111"
+                          monitoring:
+                            watched: true
+                            chains:
+                              - chainId: 1
+                                confirmed: true
+                              - chainId: 8453
+                                confirmed: true
+        '401':
+          description: Missing or invalid X-API-Key.
+        '404':
+          description: Customer not found or not owned by this partner.
+        '409':
+          description: Customer has no linked wallet.
+        '422':
+          description: Customer is not an external-wallet customer.
+        '502':
+          description: Saved addresses could not be retrieved; no address was allocated by this GET.
+        '503':
+          description: External-wallet customer services are unavailable.
+
+  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chainType}/allocate:
+    post:
+      tags:
+        - User Management
+      summary: Allocate customer deposit addresses
+      description: |
+        Creates additional deposit addresses for a customer with a linked external wallet.
+        The customer must belong to the authenticated partner. Supported address families are
+        `evm`, `svm` (Solana), `tvm` (Tron) and `ton`. The configured address cap also applies.
+
+        `201` confirms allocation; use each address's `monitoring` fields to select a confirmed
+        payment network. `503 DEPOSIT_ADDRESS_NOT_WATCHED` means allocation may already have
+        completed, but monitoring is not confirmed. Its `data.deposit_addresses` preserves
+        the addresses returned by the allocation. Keep those addresses and check them with
+        GET `/api/v1/partner/users/{user_uuid}/deposit-addresses`; do not repeat this POST.
+        An empty saved-address list in a 503 response does not prove that nothing was allocated.
+
+        `502 DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN` means the allocation outcome could not be
+        confirmed after sending the request. Check saved addresses with the same GET; do not
+        automatically repeat this allocation. An immediate empty list does not prove failure,
+        because the original request may still complete. The allocation POST is not idempotent:
+        repeating it can create additional addresses. Treat a lost HTTP response as uncertain too.
+
+        These partner endpoints do not attach a memo. Wallet-signed memo-address requests
+        use the separate Bridge payment API.
+      operationId: allocatePartnerCustomerDepositAddresses
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: user_uuid
+          in: path
+          required: true
+          description: The customer user_uuid belonging to the authenticated partner.
+          schema:
+            type: string
+            format: uuid
+        - name: chainType
+          in: path
+          required: true
+          description: Address family; EVM addresses can support multiple configured networks.
+          schema:
+            type: string
+            enum: [evm, svm, tvm, ton]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  minimum: 0
+                  maximum: 50
+                  default: 1
+                  description: Number of additional addresses. Omitted or zero requests one address.
+            example:
+              count: 1
+      responses:
+        '201':
+          description: Addresses allocated; monitoring is reported for each saved address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerDepositAddressesResponse'
+              example:
+                success: true
+                data:
+                  deposit_addresses:
+                    - chain_type: evm
+                      address: "0x1111111111111111111111111111111111111111"
+                      monitoring:
+                        watched: true
+                        chains:
+                          - chainId: 1
+                            confirmed: true
+                          - chainId: 8453
+                            confirmed: true
+        '400':
+          description: Invalid request body.
+        '401':
+          description: Missing or invalid X-API-Key.
+        '404':
+          description: Customer not found or not owned by this partner.
+        '409':
+          description: Customer has no linked wallet.
+        '422':
+          description: Customer is not an external-wallet customer, the address family is unsupported, or count is invalid.
+        '429':
+          description: ADDRESS_CAP_REACHED; the configured address cap prevents this allocation.
+        '502':
+          description: |
+            DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN means the allocation may have committed.
+            Check saved addresses; do not automatically repeat the allocation.
+            DEPOSIT_ADDRESSES_UNAVAILABLE covers other failures, including a failed address
+            count before allocation was attempted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                allocationUnknown:
+                  summary: The request was sent, but its outcome is unknown.
+                  value:
+                    success: false
+                    error:
+                      code: DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN
+                      message: "allocation outcome is unknown; check saved deposit addresses and do not automatically repeat this allocation"
+        '503':
+          description: |
+            DEPOSIT_ADDRESS_NOT_WATCHED preserves any returned allocation while monitoring is
+            unconfirmed. FEATURE_NOT_ENABLED means the external-wallet service is unavailable.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PartnerDepositAddressPendingResponse'
+                  - $ref: '#/components/schemas/PartnerErrorResponse'
+              examples:
+                monitoringPending:
+                  summary: The address is saved; retrieve its monitoring status before showing it for payment.
+                  value:
+                    success: false
+                    error:
+                      code: DEPOSIT_ADDRESS_NOT_WATCHED
+                      message: "address monitoring is pending; check readiness with GET deposit-addresses, without another allocation"
+                    data:
+                      deposit_addresses:
+                        - chain_type: evm
+                          address: "0x1111111111111111111111111111111111111111"
+                          monitoring:
+                            watched: false
+                            chains: []
+
   # ============================================
   # 7. PARTNER KYC VERIFICATION FLOW
   # ============================================
@@ -5070,6 +5284,108 @@ paths:
 
 components:
   schemas:
+    PartnerDepositAddressMonitoring:
+      type: object
+      required: [watched, chains]
+      description: |
+        Monitoring result for this saved address. A false or missing confirmation means
+        unconfirmed, not proof that monitoring is absent. Older responses without monitoring
+        metadata are returned as `watched: false` and `chains: []`.
+
+        EVM and Tron report each network independently. Solana confirms address registration
+        with Helius. TON monitors saved addresses without an external registration step;
+        its confirmation is not a live service-health check. Solana and TON return `chains: []`.
+      properties:
+        watched:
+          type: boolean
+          description: |
+            Whether monitoring is confirmed for all required networks of this address.
+            For EVM and Tron, use the per-network confirmations when selecting a payment network.
+          example: false
+        chains:
+          type: array
+          description: Per-network confirmations for EVM and Tron. Missing networks are unconfirmed.
+          items:
+            type: object
+            required: [chainId, confirmed]
+            properties:
+              chainId:
+                type: integer
+                format: int64
+                minimum: 1
+                description: Numeric chain identifier of the network being checked.
+                example: 1
+              confirmed:
+                type: boolean
+                description: Whether this address's monitoring is confirmed on that network.
+                example: true
+
+    PartnerDepositAddress:
+      type: object
+      required: [chain_type, address, monitoring]
+      description: One saved customer deposit address with its monitoring result.
+      properties:
+        chain_type:
+          type: string
+          enum: [evm, svm, tvm, ton]
+          description: Address family; svm is Solana and tvm is Tron.
+          example: evm
+        address:
+          type: string
+          description: The saved collection address. Allocation and subsequent lists retain this address.
+          example: "0x1111111111111111111111111111111111111111"
+        monitoring:
+          $ref: '#/components/schemas/PartnerDepositAddressMonitoring'
+
+    PartnerDepositAddressesResponse:
+      type: object
+      required: [success, data]
+      description: Successful address allocation or retrieval; readiness is separate from HTTP success.
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+          description: The allocation or list request completed successfully.
+        data:
+          type: object
+          required: [deposit_addresses]
+          properties:
+            deposit_addresses:
+              type: array
+              description: Saved addresses for the requested customer; listing may return an empty array.
+              items:
+                $ref: '#/components/schemas/PartnerDepositAddress'
+
+    PartnerDepositAddressPendingResponse:
+      type: object
+      required: [success, error, data]
+      description: Monitoring is unconfirmed; returned addresses remain saved and must not be reallocated.
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+          description: Monitoring confirmation did not complete.
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [DEPOSIT_ADDRESS_NOT_WATCHED]
+              description: Allocation may have completed, but monitoring was not confirmed.
+            message:
+              type: string
+              description: Explanation of the pending monitoring result.
+        data:
+          type: object
+          required: [deposit_addresses]
+          properties:
+            deposit_addresses:
+              type: array
+              description: Saved addresses returned by the allocation. An empty array does not prove no allocation occurred.
+              items:
+                $ref: '#/components/schemas/PartnerDepositAddress'
+
     KycDocumentType:
       type: string
       description: >-
