@@ -133,6 +133,23 @@ These describe how the API already behaves; the API does not change.
   names both `country` and `currency`.
 - `payment_details_id` is `""` on third-party payout events.
 
+## 2026-10-12
+
+**Non-custodial customers.** A customer created with `wallet_type: external_wallet` holds their crypto at their own EVM address and signs every movement of it; your partner wallet does not hold or sign for it. Ask Unigox to switch the mode on for your partner account. See [Non-custodial customers](./non-custodial-customers.md).
+
+- **Link once.** `POST /users/{user_uuid}/wallet/challenge` returns a Sign-In with Ethereum message; the customer signs it with `personal_sign` and you submit it to `POST /users/{user_uuid}/wallet`. The address is fixed from then on.
+- **Deposit addresses of their own** on EVM chains, Solana, Tron and TON, credited to the customer's address on XAI. `GET /users/{user_uuid}/wallet` shows the balance; `wallet.deposit.received` fires on each credit.
+- **Orders.** On an off-ramp the customer signs the escrow funding and any refund, and refunds land on their own address. On an on-ramp the crypto is released to the customer's address and your partner fee to your partner wallet, in the same transaction.
+- **Withdrawals** to any supported chain, signed by the customer, gas paid by Unigox: `POST /users/{user_uuid}/withdrawals/quote`, then `POST /users/{user_uuid}/withdrawals`. `wallet.withdrawal.status.changed` follows each one. Deposits and withdrawals need no KYC; orders do.
+- **Bridge refusals are 4xx.** A withdrawal quote or send-out to an address the destination chain cannot pay answers `400 INVALID_REQUEST` with `error.details.reason`; an amount too small to bridge (the bridge fee would exceed 2%) answers `422 AMOUNT_TOO_LOW`, previously both `500`.
+- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`, `AMOUNT_TOO_LOW`.
+
+**Every new customer gets their own Unigox account.** A customer created with `POST /api/v1/partner/users` from today has their own account, separate from a Unigox app user or another partner's customer with the same email. Customers you already have are unchanged.
+
+- Within your partner account one email is still one account: a second `user_ref` with the same email shares it.
+- KYC runs per account. A person already verified at Unigox is approved by matching that verification instead of being declined as a repeat.
+- `POST /api/v1/partner/users` answers `200` on success, for a new customer and for a repeated `user_ref` alike. The reference previously listed `201` for a new one.
+
 ## 2026-10-09
 
 **Unused fiat accounts are closed automatically.** An account with no transactions for a period set by Unigox (30 days by default) is closed, and you receive `fiat_account.updated` with `status: closed`, as for any close. To serve the customer again, open a new account with the usual request; it comes with new pay-in details. See [Unused accounts are closed](./fiat-accounts.md#unused-accounts-are-closed).
