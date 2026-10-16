@@ -98,8 +98,10 @@ tags:
 
       A fiat account belongs to a customer you created with `POST /api/v1/partner/users` and put
       through KYC, and it is addressed by its own `fiat_account_id`. Open one, show the customer
-      where to pay in, and read what lands on it. In v1 an account only receives: moving money off
-      it is not on this API, and converting it is an order.
+      where to pay in, and read what lands on it. In v1 neither you nor the customer can move money
+      off an account through this API, and converting it is an order. Where Unigox has switched it on
+      for you, Unigox itself pays an off-ramp on from the customer's account to the
+      bank you named: see `payout_via_own_account` on the order.
 
       An optional product Unigox activates per partner. `GET /api/v1/partner/fiat-accounts/config`
       answers whether it is on for you, before any customer is in scope.
@@ -123,6 +125,7 @@ tags:
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
       | `fiat_account.deposit.received` | Money arrived on an issued fiat account |
+      | `order.own_account_payout.updated` | An off-ramp paid through the customer's own fiat account was sent on to the bank, or stopped on the account |
 
       **Payload shape — the fiat account events**
 
@@ -144,6 +147,32 @@ tags:
 
       `order_id` is the on-ramp this deposit funded, or `null` when it matched no order.
       `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`.
+
+      **Payload shape — `order.own_account_payout.updated`**
+
+      Sent only on an off-ramp paid through the customer's own fiat account
+      (`payout_via_own_account: true`), when the onward payment to the bank you named reaches
+      `sent_to_bank`, `held`, `under_review` or `left_on_account`, once per change of state. It does
+      not change the order's `status`.
+
+      ```json
+      {
+        "event_id": "evt_own_account_payout_8412_sent_to_bank_3f9a1c0b7d2e4a55",
+        "event_type": "order.own_account_payout.updated",
+        "created_at": "2026-10-16T12:00:00Z",
+        "data": {
+          "order_id": "9f1c6b7e-0000-4000-8000-000000000042",
+          "user_uuid": "c0ffee00-0000-4000-8000-000000000001",
+          "own_account_payout_status": "sent_to_bank",
+          "fiat_account_id": "6b1d2c3e-0000-4000-8000-000000000007",
+          "amount": "250.00",
+          "currency": "EUR"
+        }
+      }
+      ```
+
+      `fiat_account_id` is omitted when the account is not one you can address by id. `amount` is a
+      decimal string with at least two decimals.
 
       All events share the same envelope (`event_id`, `event_type`, `created_at`, `data`)
       and the same signature scheme. The structure of the `data` object differs per event type.
@@ -9682,6 +9711,13 @@ components:
             - $ref: '#/components/schemas/PartnerComplianceCase'
           nullable: true
           description: Durable case shown in Compliance admin for third-party payout.
+        payout_via_own_account:
+          type: boolean
+          description: |
+            `true` when this off-ramp will be paid through the customer's own fiat
+            account and then on to the bank you named. Omitted otherwise, never `false`. Read
+            `own_account_payout_status` on the order to follow it.
+          example: true
 
     PartnerStatsResponse:
       type: object
@@ -9870,7 +9906,36 @@ components:
             On an `own_account` order: the fiat account the customer transfers into. The same id the
             Fiat Accounts endpoints take, so the deposit that funds this order can be found on that
             account's transactions carrying this order's id.
+            On an off-ramp with `payout_via_own_account: true`: the customer's fiat account the money
+            goes through, when it is one you can address by id; omitted otherwise.
           example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        payout_via_own_account:
+          type: boolean
+          description: |
+            `true` on an off-ramp paid through the customer's own fiat account:
+            the provider pays the customer's account and Unigox then pays the money on to the bank you
+            named, both in the customer's name. Applies only where Unigox has switched it on for you, to
+            a supported currency (EUR), a payout to the customer's own `payment_details` (not a
+            Recipient) and a customer with an `active` fiat account in that currency. Omitted on every
+            other order, never `false`. You still call `confirm-fiat-received`.
+          example: true
+        own_account_payout_status:
+          type: string
+          enum: [awaiting_credit, in_progress, sent_to_bank, under_review, held, left_on_account]
+          description: |
+            Off-ramp paid through the customer's own fiat account only (`payout_via_own_account: true`):
+            where the onward payment, from that account to the bank you named, stands. `status` describes
+            the provider's payment into the customer's account, so an order can be `completed` while this
+            still says the money has not reached the bank.
+            - `awaiting_credit` — nothing has landed on the customer's account for this order yet.
+            - `in_progress` — the money landed; the onward payment is queued, being sent, or being retried.
+            - `sent_to_bank` — the money was sent on to the bank you named.
+            - `under_review` — the onward payment ended without a clear result; Unigox checks it.
+            - `held` — the money is on the customer's account and is not moving on by itself; contact Unigox.
+            - `left_on_account` — Unigox decided the money stays on the customer's account.
+
+            Omitted on other orders, and when the state cannot be read at that moment.
+          example: sent_to_bank
         crypto_transfer_authorization_seconds_left:
           type: integer
           format: int64
@@ -10838,8 +10903,10 @@ components:
           type: string
           description: |
             Event type. `order.status.changed` for a status transition, `order.refund.required` for an
-            order whose crypto is stuck in escrow awaiting your signature (see the Webhooks section).
-          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.deposit.received, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
+            order whose crypto is stuck in escrow awaiting your signature, `order.own_account_payout.updated`
+            for the onward payment of an off-ramp paid through the customer's own fiat account (see the
+            Webhooks section).
+          enum: [order.status.changed, order.refund.required, order.own_account_payout.updated, fiat_account.updated, fiat_account.deposit.received, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
           example: "order.status.changed"
         created_at:
           type: string
@@ -10906,8 +10973,49 @@ components:
               description: >-
                 Payment details ID used for the order, as a string. An empty string (`""`) when the
                 order has none: on a third-party payout, which is routed by `recipient_destination_id`,
-                it is always `""`.
+                it is always `""`. On an order with `payout_via_own_account: true` it is the payment
+                details you named, the bank the money is sent on to.
               example: "987"
+            payout_via_own_account:
+              type: boolean
+              description: >-
+                `true` on an off-ramp paid through the customer's own fiat account:
+                the provider pays the customer's account and Unigox sends the money on to the bank you
+                named. Omitted on every other order, never `false`.
+              example: true
+            own_account_payout_status:
+              type: string
+              enum: [awaiting_credit, in_progress, sent_to_bank, under_review, held, left_on_account]
+              description: >-
+                `order.own_account_payout.updated` only: the state the onward payment reached
+                (`sent_to_bank`, `held`, `under_review` or `left_on_account`).
+              example: sent_to_bank
+            user_uuid:
+              type: string
+              format: uuid
+              description: >-
+                The customer's public UUID, on `order.own_account_payout.updated` and the fiat account
+                events.
+              example: "c0ffee00-0000-4000-8000-000000000001"
+            fiat_account_id:
+              type: string
+              format: uuid
+              description: >-
+                `order.own_account_payout.updated` and the fiat account events: the customer's fiat
+                account. On `order.own_account_payout.updated` omitted when the account is not one you
+                can address by id.
+              example: "6b1d2c3e-0000-4000-8000-000000000007"
+            amount:
+              type: string
+              description: >-
+                `order.own_account_payout.updated` and `fiat_account.deposit.received`: the fiat amount,
+                as a decimal string with at least two decimals.
+              example: "250.00"
+            currency:
+              type: string
+              description: >-
+                `order.own_account_payout.updated` and the fiat account events: the fiat currency code.
+              example: "EUR"
             delayed_settlement:
               type: boolean
               description: |

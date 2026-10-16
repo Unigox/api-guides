@@ -4,9 +4,23 @@ Notable changes to the Unigox partner API, newest first.
 
 ## Unreleased
 
-**Not available yet.** Everything in this entry goes live with the delayed settlement (T+1) release, and
-the entry will carry that release's date. Until then the API behaves as the entries below describe. No
-endpoint or field is removed.
+**Not available yet.** Nothing in this entry is live. Delayed settlement (T+1) goes live with its release,
+and paying an off-ramp through the customer's own account with its own; the entry will carry the release
+date. Until then the API behaves as the entries below describe. No endpoint or field is removed.
+
+### Off-ramps paid through the customer's own account
+
+Unigox can switch on, per partner, paying an off-ramp through the customer's own fiat account. When the
+order is an off-ramp in EUR to the customer's own bank (`payment_details`, not a Recipient), and the
+customer holds an active fiat account in that currency, the provider pays the customer's account and Unigox
+sends the money on to the bank you named. Both transfers are in the customer's name, so their bank shows the
+customer as the sender. Any other order is paid exactly as before, and you still call
+`confirm-fiat-received`. Such an order carries `payout_via_own_account: true` on `initiate`, on the order
+and on `order.status.changed`, and the order also carries `own_account_payout_status` and
+`fiat_account_id`. `completed` means the customer's account was paid; `own_account_payout_status` says
+whether the money reached the bank. The new event `order.own_account_payout.updated` reports when it was
+sent on or stopped. See
+[Paying an off-ramp through the account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
 
 ### Delayed settlement (T+1)
 
