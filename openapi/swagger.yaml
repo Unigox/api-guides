@@ -67,6 +67,19 @@ tags:
       record for banking — the person Unigox verified is the person the account belongs to.
 
     x-page-icon: user
+  - name: Customer Wallets
+    description: |
+      Non-custodial customers: a customer created with `wallet_type: external_wallet` holds funds at
+      their own EVM address and signs every movement of them. Link the address once with a signed
+      challenge, hand out deposit addresses that credit it, read the balance, and withdraw to any
+      supported chain. Off-ramp and on-ramp orders use the usual order endpoints; for these customers
+      the customer signs where your partner wallet signs for a `partner_wallet` customer.
+
+      Creating such a customer requires the non-custodial mode to be switched on for your partner account
+      (ask Unigox; `403 FEATURE_NOT_ENABLED` otherwise). Switching it off later stops new customers only.
+      Webhook payloads (`wallet.linked`, `wallet.deposit.received`, `wallet.withdrawal.status.changed`) are
+      described in the Non-custodial customers guide.
+    x-page-icon: wallet
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
     x-page-icon: arrow-down-to-bracket
@@ -916,25 +929,39 @@ paths:
                 email:
                   type: string
                   format: email
-                  description: User's email address
+                  description: |
+                    User's email address. Within your partner account one email is one account: a
+                    second `user_ref` with the same email gets its own `user_uuid` but the same account
+                    (funds, orders, KYC, wallet). The same email at another partner or in the Unigox app
+                    is a separate account. This applies to customers created from 2026-10-12.
                   example: user@example.com
+                wallet_type:
+                  $ref: '#/components/schemas/WalletType'
       responses:
-        '201':
-          description: Successfully created user
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreateUserResponse'
         '200':
-          description: User already exists
+          description: Customer created, or the existing customer for this `user_ref`
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateUserResponse'
         '400':
-          description: Bad Request
+          description: Bad Request, for example an unknown `wallet_type` (`INVALID_REQUEST`)
         '401':
           description: Unauthorized (missing or invalid X-API-Key)
+        '403':
+          description: '`FEATURE_NOT_ENABLED` — `wallet_type: external_wallet` requested but non-custodial mode is not switched on for your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: |
+            `WALLET_TYPE_MISMATCH` — a customer with this `user_ref`, or your customer with this email,
+            already exists with a different `wallet_type`. A customer's type is fixed at creation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '500':
           description: Internal Server Error
 
@@ -968,6 +995,551 @@ paths:
           description: Unauthorized
         '404':
           description: User not found
+
+  # ============================================
+  # CUSTOMER WALLETS (non-custodial customers)
+  # ============================================
+  /api/v1/partner/users/{user_uuid}/wallet/challenge:
+    post:
+      tags:
+        - Customer Wallets
+      summary: Request a wallet ownership challenge
+      description: |
+        Returns a Sign-In with Ethereum (EIP-4361) message that proves the customer controls `address`.
+        Show it to the customer unchanged and have them sign it with `personal_sign`, then submit it to
+        `POST /api/v1/partner/users/{user_uuid}/wallet`.
+
+        The message names your partner account, the customer and the address, is valid for 10 minutes
+        and can be used once. Requesting a new challenge invalidates the previous one.
+
+        Only an externally owned account can be linked: linking needs a plain `personal_sign`
+        signature, and the same key later signs EIP-712 requests that the XAI forwarder verifies with
+        `ecrecover`. A smart-contract wallet cannot produce either, so linking one fails with
+        `400 INVALID_SIGNATURE`.
+      operationId: createWalletChallenge
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+                  pattern: '^0x[0-9a-fA-F]{40}$'
+                  description: The customer's EVM address
+                  example: "0x8ba1f109551bD432803012645Ac136ddd64DBA72"
+      responses:
+        '201':
+          description: Challenge issued
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WalletChallenge'
+        '400':
+          description: '`INVALID_REQUEST` — `address` is not a valid EVM address.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`WALLET_ALREADY_LINKED` — the customer is already linked, or the address is linked to another of your customers or belongs to Unigox or to you.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/users/{user_uuid}/wallet:
+    post:
+      tags:
+        - Customer Wallets
+      summary: Link the customer's address
+      description: |
+        Submit the challenge message and the customer's `personal_sign` signature. The signer is
+        recovered on the server and must equal `address`; the message must be the one issued, unchanged
+        and unexpired.
+
+        On success the address is the customer's address at Unigox for good: deposits credit it,
+        off-ramp orders are funded from it, on-ramp orders and refunds are paid to it. It cannot be
+        changed or unlinked. A `wallet.linked` webhook is sent once, without retries.
+
+        `balances` in the response is empty when the XAI balance could not be read at that moment;
+        that is not a zero balance. Read `GET .../wallet` again for it.
+      operationId: linkCustomerWallet
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, message, signature]
+              properties:
+                address:
+                  type: string
+                  pattern: '^0x[0-9a-fA-F]{40}$'
+                  example: "0x8ba1f109551bD432803012645Ac136ddd64DBA72"
+                message:
+                  type: string
+                  description: The `message` from the challenge, byte for byte
+                signature:
+                  type: string
+                  description: 65-byte `personal_sign` signature, hex with 0x prefix
+                  example: "0x5f1c…1b"
+      responses:
+        '200':
+          description: Address linked
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CustomerWallet'
+        '400':
+          description: '`INVALID_SIGNATURE` — the signature does not recover to `address`, the message was altered, or `address` differs from the challenged one. `INVALID_REQUEST` — a malformed address or body.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`WALLET_ALREADY_LINKED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '410':
+          description: '`CHALLENGE_EXPIRED` — no challenge was issued, it is older than 10 minutes, already used, or superseded by a newer challenge.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+    get:
+      tags:
+        - Customer Wallets
+      summary: Customer wallet and balance
+      description: |
+        The customer's linked address, its status, and the balance held at that address on the XAI
+        chain in each supported token. Deposits appear here once credited on XAI.
+      operationId: getCustomerWallet
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+      responses:
+        '200':
+          description: Wallet returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CustomerWallet'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/users/{user_uuid}/deposit-addresses:
+    get:
+      tags:
+        - Customer Wallets
+      summary: List the customer's deposit addresses
+      description: |
+        Every deposit address allocated to this customer, on every chain type. Each one is tied to the
+        customer's linked address; whatever arrives is bridged to that address on XAI.
+      operationId: listCustomerDepositAddresses
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+      responses:
+        '200':
+          description: Deposit addresses
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          deposit_addresses:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/CustomerDepositAddress'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chain_type}/allocate:
+    post:
+      tags:
+        - Customer Wallets
+      summary: Allocate deposit addresses
+      description: |
+        Allocates `count` new deposit addresses of `chain_type` for this customer. One `evm` address
+        serves every supported EVM chain. A per-customer cap applies per chain type; a request whose
+        `count` would take the customer past it is refused whole with `429`.
+      operationId: allocateCustomerDepositAddresses
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+        - name: chain_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/DepositChainType'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 50
+                  default: 1
+      responses:
+        '201':
+          description: Addresses allocated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          deposit_addresses:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/CustomerDepositAddress'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`INVALID_REQUEST` — unknown `chain_type`, or `count` outside 1 to 50.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '429':
+          description: '`ADDRESS_CAP_REACHED` — allocating would take the customer past the limit for this chain type; `error.message` states the limit.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/users/{user_uuid}/withdrawals/quote:
+    post:
+      tags:
+        - Customer Wallets
+      summary: Quote a withdrawal
+      description: |
+        Prices a withdrawal of `amount` of `crypto_currency` from the customer's XAI address to
+        `destination_address` on `destination_chain`, and returns the EIP-712 `ForwardRequest` that
+        authorizes it. Have the customer sign `forward_request` unchanged with their linked key, then
+        submit it to `POST /api/v1/partner/users/{user_uuid}/withdrawals` before `expires_at`.
+
+        The token arriving is the same `crypto_currency`. Destination chains for a token:
+        `GET /api/v1/partner/send-out/routes?crypto=<crypto_currency>`. `destination_chain: xai` sends
+        on XAI itself with no bridge.
+
+        The quote is valid for 10 minutes; the signed request's `deadline` equals `expires_at`.
+        Withdrawals need no KYC.
+      operationId: quoteCustomerWithdrawal
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [crypto_currency, amount, destination_chain, destination_address]
+              properties:
+                crypto_currency:
+                  type: string
+                  example: USDC
+                amount:
+                  type: string
+                  description: Amount to debit from the customer's XAI balance, decimal string with no more decimals than the token has
+                  example: "25.00"
+                destination_chain:
+                  type: string
+                  description: Chain name as `GET /api/v1/partner/send-out/routes` lists it (case-insensitive), its `chain_id`, or `xai`
+                  example: Arbitrum One
+                destination_address:
+                  type: string
+                  description: Address on the destination chain, in that chain's format
+                  example: "0x1111111111111111111111111111111111111111"
+      responses:
+        '201':
+          description: Withdrawal quoted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WithdrawalQuote'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '400':
+          description: '`INVALID_REQUEST` — a missing field, an unsupported chain or token, a malformed destination address, a destination the chain cannot pay (`error.details.reason`), or an amount with too many decimals.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`INSUFFICIENT_BALANCE`, `WALLET_TYPE_MISMATCH`, or `AMOUNT_TOO_LOW` — too small to bridge to that chain (the bridge fee would exceed 2%); `error.details.estimated_minimum_amount` when known.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/users/{user_uuid}/withdrawals:
+    post:
+      tags:
+        - Customer Wallets
+      summary: Submit a signed withdrawal
+      description: |
+        Submit the quoted `forward_request` and the customer's signature. Unigox checks that the request
+        is exactly the one quoted (sender, token, calldata, gas, nonce, deadline), that it was signed by
+        the customer's linked address, re-checks the balance, and relays it; the customer pays no gas.
+        The withdrawal keeps the quote's id: `withdrawal_id` equals `withdrawal_quote_id`.
+
+        Safe to retry with the same `withdrawal_quote_id`: a quote is executed at most once, and a
+        repeat returns the existing withdrawal.
+
+        Off-ramp funding and withdrawals share the customer's forwarder nonce. Once one of them executes,
+        a request signed with the same nonce can no longer execute and answers `409 QUOTE_EXPIRED`;
+        request a new quote.
+      operationId: createCustomerWithdrawal
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [withdrawal_quote_id, forward_request, signature]
+              properties:
+                withdrawal_quote_id:
+                  type: string
+                  format: uuid
+                forward_request:
+                  type: object
+                  description: The `forward_request` from the quote, unchanged
+                signature:
+                  type: string
+                  description: EIP-712 signature by the customer's linked address, hex with 0x prefix
+      responses:
+        '202':
+          description: 'Withdrawal accepted for relay (`status: submitted`)'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CustomerWithdrawal'
+        '400':
+          description: '`INVALID_REQUEST` — the request differs from the quote or is not signed by the customer; `error.message` names the field.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` or `WITHDRAWAL_NOT_FOUND` (unknown `withdrawal_quote_id`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: '`QUOTE_EXPIRED` — the quote expired, the forwarder nonce moved, or another withdrawal has not executed on XAI yet.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`INSUFFICIENT_BALANCE` (the balance dropped since the quote).'
+    get:
+      tags:
+        - Customer Wallets
+      summary: List the customer's withdrawals
+      operationId: listCustomerWithdrawals
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Withdrawals, newest first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          withdrawals:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/CustomerWithdrawal'
+                          total:
+                            type: integer
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` — no customer with this `user_uuid` belongs to your partner account.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/users/{user_uuid}/withdrawals/{withdrawal_id}:
+    get:
+      tags:
+        - Customer Wallets
+      summary: Withdrawal by ID
+      operationId: getCustomerWithdrawal
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserUUIDPath'
+        - name: withdrawal_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Withdrawal returned
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CustomerWithdrawal'
+        '404':
+          description: '`CUSTOMER_NOT_FOUND` or `WITHDRAWAL_NOT_FOUND`. A quote that was never submitted is not a withdrawal.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
 
   # ============================================
   # 7. PARTNER KYC VERIFICATION FLOW
@@ -2315,6 +2887,10 @@ paths:
         Once a vendor accepts, the order moves to `awaiting_vendor_escrow_funding`, then
         `awaiting_fiat_transfer` when the crypto is locked in escrow.
 
+        For an `external_wallet` customer the crypto is released to the customer's own address on
+        completion, and your `partner_fee` is paid to your partner wallet in the same release
+        transaction.
+
         At `awaiting_fiat_transfer` the partner must call `confirm-payment-sent` to advance the order —
         unless the order's `fiat_funding_source` is `own_account`. Then `next_action` is
         `deposit_to_user_account`: the customer transfers the order's fiat amount into the fiat account
@@ -2394,7 +2970,7 @@ paths:
                   code: QUOTE_NOT_FOUND
                   message: "Quote not found"
         '409':
-          description: Quote expired or already used
+          description: Quote expired or already used. Also `WALLET_NOT_LINKED` (an `external_wallet` customer with no linked address) and `OPERATION_NOT_ALLOWED` (a partner fee on an `external_wallet` customer's order while your partner account has no partner wallet to receive it).
           content:
             application/json:
               schema:
@@ -2702,9 +3278,14 @@ paths:
         - On-Ramp
       summary: Get send-out authorization parameters
       description: |
-        After an on-ramp order reaches `completed` status (crypto on master wallet), the partner
+        After an on-ramp order reaches `completed` status (crypto on your partner wallet), the partner
         can optionally initiate a cross-chain send-out to transfer the USDT to an external network
         (e.g. Arbitrum).
+
+        `partner_wallet` customers only. For an `external_wallet` customer the crypto is released to
+        the customer's own address, and they move it onward with
+        `POST /api/v1/partner/users/{user_uuid}/withdrawals/quote`; this endpoint answers
+        `422 WALLET_TYPE_MISMATCH`.
 
         This endpoint returns the EIP-712 `ForwardRequest` parameters required to authorize the
         transfer. The partner must sign the request locally and submit the signature to
@@ -2721,7 +3302,7 @@ paths:
         - `eip712_domain` — domain parameters for EIP-712 signing
         - `quote_id` — Relay quote ID embedded in the transfer calldata
         - `to_amount` — estimated USDT amount to be received on the destination chain (atomic units)
-        - `forwarder_nonce` — current on-chain nonce for the master wallet
+        - `forwarder_nonce` — current on-chain nonce for your partner wallet
       operationId: getBridgeAuthorizationParameters
       security:
         - ApiKeyAuth: []
@@ -2778,7 +3359,7 @@ paths:
                   expires_at: "2026-04-03T17:13:12Z"
                   authorization_path: "/api/v1/partner/orders/ce3cfd6a-1234-5678-abcd-ef1234567890/authorize-bridge"
         '400':
-          description: Invalid destination_chain or destination_address
+          description: '`INVALID_REQUEST` — invalid destination_chain or destination_address, or a destination the chain cannot pay (`error.details.reason`)'
           content:
             application/json:
               schema:
@@ -2797,6 +3378,12 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
           description: Order is not in `completed` status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: '`AMOUNT_TOO_LOW` — the order amount is too small to bridge to that chain (the bridge fee would exceed 2%); `error.details.estimated_minimum_amount` when known.'
           content:
             application/json:
               schema:
@@ -2928,7 +3515,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: Order is not in `completed` status or send-out already in progress
+          description: Order is not in `completed` status or send-out already in progress. (`422 WALLET_TYPE_MISMATCH` for an `external_wallet` customer's order.)
           content:
             application/json:
               schema:
@@ -3669,7 +4256,8 @@ paths:
           description: >-
             Quote expired, already used, slippage exceeded, or — for a third-party payout — the
             payout agent has not confirmed recipient-context support, in which case no order is
-            created and the quote is left untouched.
+            created and the quote is left untouched. `WALLET_NOT_LINKED` — an `external_wallet` customer with no
+            linked address.
           content:
             application/json:
               schema:
@@ -3977,7 +4565,9 @@ paths:
                             description: Escrow address to receive the crypto
                           sender_address:
                             type: string
-                            description: Partner wallet address (must match the signing private key)
+                            description: |
+                              Address that must sign the request: your partner wallet for a `partner_wallet`
+                              customer, the customer's linked address for an `external_wallet` customer.
                           amount_atomic:
                             type: string
                           amount_human:
@@ -4048,6 +4638,13 @@ paths:
 
         Manual implementation: call `GET /transfer-authorization-parameters` first, then build
         the EIP-712 typed data and sign with your partner wallet private key locally.
+
+        **Non-custodial customers** (`wallet_type: external_wallet`): the request must be signed by the
+        customer's linked address (`sender_address`), in your app, where the customer's key is. A request
+        whose `from` is not that address, or that does not move exactly this order's amount to this
+        order's escrow, is refused with `400 INVALID_REQUEST` naming the field. The signature itself is
+        checked on chain by the forwarder: one not made by `from` fails with `502 TRANSACTOR_ERROR`. A
+        short balance answers `422 INSUFFICIENT_BALANCE` and nothing is relayed.
       operationId: authorizeCryptoTransfer
       security:
         - ApiKeyAuth: []
@@ -4099,8 +4696,9 @@ paths:
           description: Order is not in the correct status for crypto authorization
         '422':
           description: |
-            Insufficient token balance — the partner wallet does not hold enough
-            tokens to fund the escrow. Top up the wallet and retry.
+            Insufficient token balance — the funding address (your partner wallet, or the
+            `external_wallet` customer's linked address) does not hold enough tokens to fund the
+            escrow. Nothing is relayed.
           content:
             application/json:
               schema:
@@ -4131,9 +4729,11 @@ paths:
         `/api/v1/partner/orders/{order_id}/authorize-refund`.
 
         **Who signs.** The escrow is a 2-of-3 Safe whose owners are the buyer side, the seller side
-        and Unigox. On an order you opened for your own end customer, the seller-side owner is *your*
-        wallet — the customer never holds a key. `signer_address` names it explicitly; sign with that
-        key and no other, or the Safe rejects the transaction.
+        and Unigox. For a `partner_wallet` customer the seller-side owner is *your* wallet — the
+        customer never holds a key. For an `external_wallet` customer it is the customer's linked
+        address, and the customer signs; the refund then lands on the customer's own address.
+        `signer_address` names the key either way; sign with that key and no other, or the Safe
+        rejects the transaction.
 
         **Where the money goes is not yours to choose.** The recipient is read from the escrow's
         seller address on the server. `recipient_address` is returned so you can verify it before
@@ -5070,6 +5670,250 @@ paths:
 
 components:
   schemas:
+    WalletType:
+      type: string
+      enum: [partner_wallet, external_wallet]
+      default: partner_wallet
+      description: |
+        Whose address holds this customer's funds, fixed at creation.
+        - `partner_wallet` — your partner wallet holds them and you sign (default, and every customer created before this field existed).
+        - `external_wallet` — the customer's own EVM address holds them and the customer signs. Requires non-custodial mode.
+      example: external_wallet
+
+    CustomerWalletSummary:
+      type: object
+      nullable: true
+      description: Present for `external_wallet` customers, `null` for `partner_wallet` ones.
+      properties:
+        address:
+          type: string
+          nullable: true
+          description: The linked address in lower case, `null` until linked
+          example: "0x8ba1f109551bd432803012645ac136ddd64dba72"
+        status:
+          type: string
+          enum: [unlinked, linked]
+          example: unlinked
+
+    WalletChallenge:
+      type: object
+      properties:
+        message:
+          type: string
+          description: EIP-4361 message to sign with `personal_sign`, unchanged
+          example: |
+            unigox.com wants you to link your Ethereum account:
+            0x8ba1f109551bD432803012645Ac136ddd64DBA72
+
+            Link this address to customer 550e8400-e29b-41d4-a716-446655440000 of Acme on Unigox. Funds you deposit are held at this address and move only with your signature.
+
+            URI: https://unigox.com
+            Version: 1
+            Chain ID: 660279
+            Nonce: 8f3a2c9b1d4e7f60
+            Issued At: 2026-10-12T10:00:00Z
+            Expiration Time: 2026-10-12T10:10:00Z
+        nonce:
+          type: string
+          example: 8f3a2c9b1d4e7f60
+        expires_at:
+          type: string
+          format: date-time
+          example: "2026-10-12T10:10:00Z"
+
+    CustomerWallet:
+      type: object
+      properties:
+        address:
+          type: string
+          nullable: true
+          description: The linked address in lower case
+          example: "0x8ba1f109551bd432803012645ac136ddd64dba72"
+        status:
+          type: string
+          enum: [unlinked, linked]
+          example: linked
+        linked_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-10-12T10:01:12Z"
+        chain_id:
+          type: string
+          description: Chain where the balance is held (XAI)
+          example: "660279"
+        balances:
+          type: array
+          description: Balance at the linked address on XAI for USDT and USDC. Empty until linked, or when the balance could not be read. Amounts drop trailing zeros.
+          items:
+            type: object
+            properties:
+              crypto_currency:
+                type: string
+                example: USDC
+              token_address:
+                type: string
+                example: "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43"
+              amount_human:
+                type: string
+                example: "25"
+              decimals:
+                type: integer
+                example: 6
+
+    DepositChainType:
+      type: string
+      enum: [evm, svm, tvm, ton]
+      description: |
+        `evm` — one address for every supported EVM chain; `svm` — Solana; `tvm` — Tron; `ton` — TON.
+      example: evm
+
+    CustomerDepositAddress:
+      type: object
+      properties:
+        chain_type:
+          $ref: '#/components/schemas/DepositChainType'
+        address:
+          type: string
+          example: "0x7d2b1a59c06f3a2f2e0c5f0e2d1b8a3c4e5f6a7b"
+
+    WithdrawalQuote:
+      type: object
+      properties:
+        withdrawal_quote_id:
+          type: string
+          format: uuid
+          example: "0b8e6c1e-3f0a-4c2e-9d55-6a1f4c3b2e10"
+        expires_at:
+          type: string
+          format: date-time
+          example: "2026-10-12T10:20:00Z"
+        crypto_currency:
+          type: string
+          example: USDC
+        amount:
+          type: string
+          description: Debited from the customer's XAI balance, with the token's full precision
+          example: "25.000000"
+        to_amount:
+          type: string
+          description: Estimated amount arriving, in the destination token's decimals
+          example: "24.910000"
+        fee:
+          type: string
+          description: Bridge and network cost, in `crypto_currency`; `"0.000000"` for `xai`
+          example: "0.090000"
+        destination_chain:
+          type: string
+          example: Arbitrum One
+        destination_address:
+          type: string
+          example: "0x1111111111111111111111111111111111111111"
+        forward_request:
+          type: object
+          description: EIP-712 `ForwardRequest` to sign unchanged
+          properties:
+            from:
+              type: string
+              description: The customer's linked address
+              example: "0x8ba1f109551bd432803012645ac136ddd64dba72"
+            to:
+              type: string
+              description: Token contract on XAI
+              example: "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43"
+            value:
+              type: string
+              example: "0"
+            gas:
+              type: string
+              example: "150000"
+            nonce:
+              type: string
+              example: "3"
+            deadline:
+              type: string
+              description: Unix seconds; equals `expires_at`
+              example: "1791800400"
+            data:
+              type: string
+              description: ERC-20 `transfer` calldata
+              example: "0xa9059cbb…"
+        eip712_domain:
+          type: object
+          properties:
+            name:
+              type: string
+              example: SyntheticAssetForwarder
+            version:
+              type: string
+              example: "1"
+            chainId:
+              type: string
+              example: "660279"
+            verifyingContract:
+              type: string
+              description: The XAI forwarder
+              example: "0x6ffcf38bec8c733b096958fcd2a8e31a00530edc"
+
+    CustomerWithdrawal:
+      type: object
+      properties:
+        withdrawal_id:
+          type: string
+          format: uuid
+          description: Equals `withdrawal_quote_id`
+          example: "0b8e6c1e-3f0a-4c2e-9d55-6a1f4c3b2e10"
+        withdrawal_quote_id:
+          type: string
+          format: uuid
+          example: "0b8e6c1e-3f0a-4c2e-9d55-6a1f4c3b2e10"
+        status:
+          type: string
+          enum: [submitted, bridging, completed, failed, needs_review]
+          description: |
+            `submitted` — accepted for relay; `bridging` — executed on XAI, on its way to the destination chain;
+            `completed` — arrived; `failed` — did not execute on XAI before the quote's deadline, the funds are still
+            on the customer's address; `needs_review` — could not be settled automatically (for example the bridge
+            failed after the funds left XAI, or still open after 24 hours), Unigox reconciles it.
+          example: bridging
+        crypto_currency:
+          type: string
+          example: USDC
+        amount:
+          type: string
+          example: "25.000000"
+        to_amount:
+          type: string
+          example: "24.910000"
+        destination_chain:
+          type: string
+          example: Arbitrum One
+        destination_address:
+          type: string
+          example: "0x1111111111111111111111111111111111111111"
+        source_tx_hash:
+          type: string
+          nullable: true
+          description: Transaction on XAI
+          example: "0x5c1e…9a02"
+        destination_tx_hash:
+          type: string
+          nullable: true
+          description: Transaction on the destination chain, once known
+          example: null
+        failure_reason:
+          type: string
+          nullable: true
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-10-12T10:11:04Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-10-12T10:11:40Z"
+
     KycDocumentType:
       type: string
       description: >-
@@ -5696,6 +6540,10 @@ components:
                   type: string
                   enum: [NOT_INITIATED, IN_PROGRESS, UNDER_REVIEW, VERIFIED, VERIFICATION_REJECTED]
                   example: NOT_INITIATED
+                wallet_type:
+                  $ref: '#/components/schemas/WalletType'
+                wallet:
+                  $ref: '#/components/schemas/CustomerWalletSummary'
                 created_at:
                   type: string
                   format: date-time
@@ -5718,6 +6566,10 @@ components:
                   type: string
                   format: email
                   example: user@example.com
+                wallet_type:
+                  $ref: '#/components/schemas/WalletType'
+                wallet:
+                  $ref: '#/components/schemas/CustomerWalletSummary'
                 created_at:
                   type: string
                   format: date-time
@@ -7213,7 +8065,7 @@ components:
           description: |
             Event type. `order.status.changed` for a status transition, `order.refund.required` for an
             order whose crypto is stuck in escrow awaiting your signature (see the Webhooks section).
-          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.deposit.received]
+          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.deposit.received, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
           example: "order.status.changed"
         created_at:
           type: string
@@ -7453,7 +8305,7 @@ components:
               type: string
               description: |
                 Machine-readable error code. Possible values:
-                - `QUOTE_EXPIRED` — quote TTL has passed
+                - `QUOTE_EXPIRED` — quote TTL has passed; for a customer withdrawal, also the customer's forwarder nonce moved or another withdrawal has not executed yet (request a new quote)
                 - `QUOTE_NOT_FOUND` — quote ID does not exist
                 - `QUOTE_ALREADY_USED` — quote was already consumed by initiate
                 - `PRICE_CHANGED_REQUOTE` — price changed beyond slippage tolerance, partner should request a new quote
@@ -7466,9 +8318,18 @@ components:
                 - `INTERNAL_ERROR` — unexpected server error
                 - `INVALID_STATUS` — order is not in the correct status for the requested action
                 - `TRANSACTOR_ERROR` — on-chain transaction relay failed (e.g. simulation reverted)
-                - `INSUFFICIENT_BALANCE` — partner wallet lacks tokens to fund escrow
+                - `INSUFFICIENT_BALANCE` — the funding wallet (your partner wallet, or the `external_wallet` customer's address) lacks tokens for the escrow or withdrawal
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
+                - `FEATURE_NOT_ENABLED` — non-custodial mode is not switched on for your partner account
+                - `WALLET_NOT_LINKED` — the `external_wallet` customer has no linked address yet
+                - `WALLET_ALREADY_LINKED` — the customer is already linked, the address is linked to another of your customers, or it belongs to Unigox or to you
+                - `WALLET_TYPE_MISMATCH` — the call does not apply to this customer's `wallet_type`
+                - `INVALID_SIGNATURE` — a wallet challenge signature does not recover to the address, or the message was altered
+                - `CHALLENGE_EXPIRED` — no wallet challenge was issued, it is older than 10 minutes, already used, or replaced by a newer one
+                - `CUSTOMER_NOT_FOUND` / `WITHDRAWAL_NOT_FOUND` — unknown customer or withdrawal on the customer wallet routes
+                - `ADDRESS_CAP_REACHED` — allocating would take the customer past the deposit-address limit for that chain type
+                - `BALANCE_UNAVAILABLE` / `DEPOSIT_ADDRESSES_UNAVAILABLE` — a dependency did not answer; safe to retry
                 - `SENDER_IDENTITY_REQUIRED` — the payout corridor settles consumer-to-consumer and the customer's record cannot name them as the remitter; `error.details.kyc_fields` lists what to send to `PATCH /partner/users/{user_uuid}/kyc`, and `error.details.field_limits` carries the rail's length ceiling on any listed field that has one
 
                 Fiat account endpoints (`/partner/fiat-accounts/config` and the `/partner/users/{user_uuid}`
@@ -7735,6 +8596,15 @@ components:
               example: false
 
   parameters:
+    UserUUIDPath:
+      name: user_uuid
+      in: path
+      required: true
+      description: The `user_uuid` returned by `POST /api/v1/partner/users`. Partners can only access their own customers.
+      schema:
+        type: string
+        format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
     FiatAccountId:
       name: fiat_account_id
       in: path
