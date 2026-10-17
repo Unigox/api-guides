@@ -177,7 +177,7 @@ networks are ready. Assets on each ready network must also pass the [supported p
 
 `POST /memo-locks/list` returns fresh `monitoring` on each active lock. The existing read authorization can be reused
 until it expires. Checking readiness does not create another address or change the memo. A 202 response requires no
-new write or signature. TON and Solana use `monitoring.watched` for their single-network readiness.
+new write or signature. TON and Solana use `monitoring.watched` for their single-network readiness. Readiness belongs to each address: a pending address in the same response does not make another confirmed address pending. Missing monitoring information does not establish readiness.
 
 ### Supported payment assets
 
