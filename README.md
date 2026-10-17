@@ -141,6 +141,14 @@ per-network confirmations used before accepting payments. Those routes use the
 Partner API base URL, API key and customer ownership checks. Their matching
 Account/Quote readiness changes must be deployed before publishing this contract.
 
+The partner wallet setup reference was checked against Account #690 at
+`42ad9228cec0524aa628bf85221d907a8f2904ae`. It documents external-wallet enablement,
+customer creation, challenge/sign/link, wallet state, XAI credits and partner wallet
+webhooks. The three wallet operations are additions to the OpenAPI operation list;
+follow the new-endpoint GitBook checks above when publishing. Pushes to this PR
+branch do not publish the spec; merging its OpenAPI changes to `main` does. Publish
+after the matching Account routes and deposit notifier are deployed and reviewed.
+
 The wallet-signed Bridge paths use another base URL and authorization contract.
 They remain in the separate Bridge payment reference; do not put them under the
 Partner API's global server/API-key contract without per-operation overrides or

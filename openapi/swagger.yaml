@@ -66,6 +66,26 @@ tags:
       opened for that same person. There is no second identity to register and no separate customer
       record for banking — the person Unigox verified is the person the account belongs to.
 
+      **Customer-owned wallets and crypto deposits**
+
+      1. Ask Unigox to enable external-wallet customers for your partner account.
+      2. Create the customer with `wallet_type: external_wallet`. Omitting it creates a
+         `partner_wallet` customer. The type is fixed at creation; use the same type when
+         repeating a request for an existing `user_ref`.
+      3. Request `POST /api/v1/partner/users/{user_uuid}/wallet/challenge` for the customer's
+         EVM address. Have that wallet sign the returned `message` unchanged with `personal_sign`
+         or its equivalent `signMessage` operation.
+      4. Submit `address`, `message` and `signature` to `POST /api/v1/partner/users/{user_uuid}/wallet`.
+         `GET` on that path returns the link status and XAI balances.
+      5. Allocate deposit addresses and check their monitoring status before accepting payments.
+         Supported deposits are credited to the linked wallet on UNIGOX, on XAI (chain ID 660279).
+         Register your partner webhook to receive `wallet.deposit.received` after a bridge credit.
+
+      Enabling external-wallet customers controls new customer creation. Existing external-wallet
+      customers can still link their wallet, read it and deposit if that permission is later disabled.
+      These routes use `X-API-Key` and your customer UUID. Wallet-signed Bridge memo addresses use
+      the separate Bridge payment API; the partner deposit-address routes do not attach memos.
+
     x-page-icon: user
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
@@ -110,6 +130,47 @@ tags:
       | `user.kyc.updated` | A user's KYC verification is approved or declined |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
       | `fiat_account.deposit.received` | Money arrived on an issued fiat account |
+      | `wallet.linked` | An external-wallet customer linked their address |
+      | `wallet.deposit.received` | A bridge payment was credited to a linked customer wallet on XAI |
+
+      **Customer wallet events**
+
+      `wallet.linked` carries `user_uuid`, `address` and `linked_at`. The link response and
+      `GET /api/v1/partner/users/{user_uuid}/wallet` confirm the link even if that notification
+      is not delivered. This event has no automatic delivery retry.
+
+      `wallet.deposit.received` reports the credited XAI token and amount, with the source
+      transaction and XAI settlement transaction. It reports supported bridge credits to linked
+      wallets, not every transfer into that wallet. It does not include a memo or memo-lock ID.
+
+      ```json
+      {
+        "event_id": "evt_dep_42_12345",
+        "event_type": "wallet.deposit.received",
+        "created_at": "2026-10-18T10:01:00Z",
+        "data": {
+          "deposit_id": "intent:12345",
+          "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
+          "address": "0x1111111111111111111111111111111111111111",
+          "chain_id": "660279",
+          "crypto_currency": "USDC",
+          "token_address": "0x37bf70ee0dc89a408de31b79cccc3152f0c8af43",
+          "amount": "1",
+          "amount_atomic": "1000000",
+          "source_chain_id": "8453",
+          "source_tx_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tx_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "credited_at": "2026-10-18T10:00:00Z"
+        }
+      }
+      ```
+
+      Register and enable your webhook before accepting deposits. Deposit notifications retry
+      failed delivery with the same `event_id`; `data.deposit_id` identifies the credited payment.
+      Process each deposit once within your partner account and environment. Return a 2xx after
+      accepting the event. Delivery is bounded; disabling a webhook does not queue a later replay.
+      Both wallet events use the partner signature scheme described below. `created_at` and the
+      delivery signature can change on retry; `credited_at` is the settlement time.
 
       **Payload shape — the fiat account events**
 
@@ -893,7 +954,13 @@ paths:
         - User Management
       summary: Create or get partner user
       description: |
-        Creates a new user relation or returns existing if already created. Returns user_ref (same as input) for subsequent API calls. Partners can only access their own users.
+        Creates a customer or returns the existing customer for `user_ref`. Use the returned
+        `user_uuid` in subsequent paths. Partners can only access their own users.
+
+        For customer-owned wallets and deposit-address allocation, set `wallet_type: external_wallet`
+        and complete the wallet challenge/link steps in User Management. This option must be enabled
+        by Unigox before creating a new external-wallet customer. The default is `partner_wallet`.
+        A customer's wallet type cannot be changed by repeating this request.
 
         Each partner user must represent one actual payout beneficiary/end customer. Create a separate partner user for each beneficiary. Do not attach payment details for unrelated people to the same `user_uuid`.
 
@@ -918,15 +985,18 @@ paths:
                   format: email
                   description: User's email address
                   example: user@example.com
+                wallet_type:
+                  type: string
+                  enum: [partner_wallet, external_wallet]
+                  default: partner_wallet
+                  description: Who holds the customer's funds. External wallets require customer ownership verification before deposit allocation.
+            example:
+              user_ref: "customer_123"
+              email: "customer@example.com"
+              wallet_type: external_wallet
       responses:
-        '201':
-          description: Successfully created user
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreateUserResponse'
         '200':
-          description: User already exists
+          description: Customer created or retrieved. Read wallet_type and wallet to determine the next setup step.
           content:
             application/json:
               schema:
@@ -935,6 +1005,16 @@ paths:
           description: Bad Request
         '401':
           description: Unauthorized (missing or invalid X-API-Key)
+        '403':
+          description: FEATURE_NOT_ENABLED; contact Unigox to enable creation of external-wallet customers for your partner account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '409':
+          description: WALLET_TYPE_MISMATCH; this user_ref already belongs to a customer with another wallet_type. Reuse the original type.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
         '500':
           description: Internal Server Error
 
@@ -969,6 +1049,209 @@ paths:
         '404':
           description: User not found
 
+  /api/v1/partner/users/{user_uuid}/wallet/challenge:
+    parameters:
+      - name: user_uuid
+        in: path
+        required: true
+        description: The external-wallet customer's user_uuid returned at creation, belonging to this partner.
+        schema: { type: string, format: uuid }
+    post:
+      tags: [User Management]
+      summary: Request a customer wallet-link challenge
+      operationId: createPartnerCustomerWalletChallenge
+      security:
+        - ApiKeyAuth: []
+      description: |
+        Request a challenge for the customer's own EVM address. The customer must have been
+        created with `wallet_type: external_wallet`. The address will receive bridge credits
+        on UNIGOX, on XAI (chain ID 660279).
+
+        Have the customer sign the returned `data.message` unchanged with `personal_sign`
+        or `signMessage`, then submit it to POST `/api/v1/partner/users/{user_uuid}/wallet`.
+        This signature authorizes linking the address; it does not send a payment.
+        The verifier supports 65-byte personal-message signatures from a secp256k1 wallet,
+        not contract-wallet signature validation. Do not use a typed-data signature.
+
+        The challenge expires at `expires_at` (10 minutes after issue), is single-use and
+        is replaced by a new challenge for this customer. The message binds the address,
+        customer and partner. Use the server's message rather than constructing one locally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+                  pattern: '^0x[0-9a-fA-F]{40}$'
+                  description: Customer-controlled EVM address to link.
+            example: { address: '0x1111111111111111111111111111111111111111' }
+      responses:
+        '201':
+          description: Challenge issued. Sign data.message exactly as returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerWalletChallengeResponse' }
+        '400':
+          description: INVALID_REQUEST; missing or invalid address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '401':
+          description: Missing or invalid X-API-Key.
+        '404':
+          description: CUSTOMER_NOT_FOUND; the customer does not exist or belongs to another partner.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '409':
+          description: WALLET_ALREADY_LINKED; the customer is already linked, or this address is unavailable (a platform address or another customer's address within this partner).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '422':
+          description: WALLET_TYPE_MISMATCH; wallet operations require an external_wallet customer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '503':
+          description: FEATURE_NOT_ENABLED; wallet services are unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+
+  /api/v1/partner/users/{user_uuid}/wallet:
+    parameters:
+      - name: user_uuid
+        in: path
+        required: true
+        description: The external-wallet customer's user_uuid belonging to this partner.
+        schema: { type: string, format: uuid }
+    post:
+      tags: [User Management]
+      summary: Link the customer's wallet
+      operationId: linkPartnerCustomerWallet
+      security:
+        - ApiKeyAuth: []
+      description: |
+        Verify the customer's signature over the latest wallet challenge and link that address.
+        Send the exact returned message and the same address used to request it. There is no
+        wallet replacement or unlink operation. A successful link can emit `wallet.linked` to
+        your registered partner webhook.
+
+        If the response is lost, GET this wallet to check whether the link succeeded.
+        A repeated POST after a successful link returns `409 WALLET_ALREADY_LINKED`.
+        A successful response may have empty balances if the balance lookup was unavailable;
+        the address is still linked. GET the wallet to read balances again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, message, signature]
+              properties:
+                address:
+                  type: string
+                  pattern: '^0x[0-9a-fA-F]{40}$'
+                  description: Address used for the challenge and recovered from the signature.
+                message:
+                  type: string
+                  description: The complete data.message from the latest challenge, unchanged.
+                signature:
+                  type: string
+                  description: Hex-encoded 65-byte personal-message signature produced by the customer's wallet.
+      responses:
+        '200':
+          description: Address linked. Balances may be empty if their lookup was unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerWalletResponse' }
+              example:
+                success: true
+                data:
+                  address: '0x1111111111111111111111111111111111111111'
+                  status: linked
+                  linked_at: '2026-10-18T10:00:00Z'
+                  chain_id: '660279'
+                  balances: []
+        '400':
+          description: INVALID_REQUEST for missing fields or an invalid address; INVALID_SIGNATURE if the signature or challenge contents do not match, including a message superseded by a newer challenge.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '401':
+          description: Missing or invalid X-API-Key.
+        '404':
+          description: CUSTOMER_NOT_FOUND; the customer does not exist or belongs to another partner.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '409':
+          description: WALLET_ALREADY_LINKED; read the wallet to check an uncertain previous link. Platform addresses and addresses already linked to another customer within this partner are also refused.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '410':
+          description: CHALLENGE_EXPIRED; the challenge is missing, expired or already used. Request a fresh challenge and signature.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '422':
+          description: WALLET_TYPE_MISMATCH; wallet operations require an external_wallet customer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '503':
+          description: FEATURE_NOT_ENABLED; wallet services are unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+    get:
+      tags: [User Management]
+      summary: Get the customer's wallet and XAI balances
+      operationId: getPartnerCustomerWallet
+      security:
+        - ApiKeyAuth: []
+      description: |
+        Returns the linked address and supported token balances on XAI. Before linking,
+        status is `unlinked`, address and linked_at are null, and balances is empty.
+        This is a wallet balance view, not a transaction history or proof of a particular deposit.
+      responses:
+        '200':
+          description: Wallet state and balances.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerWalletResponse' }
+              example:
+                success: true
+                data: { address: null, status: unlinked, linked_at: null, chain_id: '660279', balances: [] }
+        '401':
+          description: Missing or invalid X-API-Key.
+        '404':
+          description: CUSTOMER_NOT_FOUND; the customer does not exist or belongs to another partner.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '422':
+          description: WALLET_TYPE_MISMATCH; wallet operations require an external_wallet customer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '502':
+          description: BALANCE_UNAVAILABLE; XAI balances could not be read. No partial balance list is returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+        '503':
+          description: FEATURE_NOT_ENABLED; wallet services are unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerErrorResponse' }
+
   /api/v1/partner/users/{user_uuid}/deposit-addresses:
     get:
       tags:
@@ -978,6 +1261,9 @@ paths:
         Returns the saved deposit addresses for a customer with a linked external wallet.
         The customer must belong to the authenticated partner. This request checks monitoring
         status for existing addresses; it never allocates another address.
+        Complete the external-wallet customer creation and wallet-link steps in User Management first.
+        Deposits credit that linked wallet on UNIGOX, on XAI (chain ID 660279), and are reported
+        by the `wallet.deposit.received` partner webhook.
 
         After an allocation returns `503 DEPOSIT_ADDRESS_NOT_WATCHED`, repeat this GET to check
         the saved addresses. Do not repeat the allocation POST to check readiness.
@@ -1058,6 +1344,9 @@ paths:
         Creates additional deposit addresses for a customer with a linked external wallet.
         The customer must belong to the authenticated partner. Supported address families are
         `evm`, `svm` (Solana), `tvm` (Tron) and `ton`. The configured address cap also applies.
+        First create an `external_wallet` customer and complete the wallet challenge/link flow.
+        The linked address receives the supported settlement token on UNIGOX, on XAI (chain ID 660279).
+        `wallet.deposit.received` reports the amount and token actually credited.
 
         `201` confirms allocation; use each address's `monitoring` fields to select a confirmed
         payment network. `503 DEPOSIT_ADDRESS_NOT_WATCHED` means allocation may already have
@@ -5284,6 +5573,155 @@ paths:
 
 components:
   schemas:
+    PartnerCustomerWalletSummary:
+      type: object
+      nullable: true
+      required: [address, status]
+      description: Wallet link state on customer records; null for partner_wallet customers.
+      properties:
+        address:
+          type: string
+          nullable: true
+          description: Linked EVM address; null before linking.
+        status:
+          type: string
+          enum: [unlinked, linked]
+          description: Whether the customer has linked an address.
+
+    PartnerWalletChallengeResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [message, nonce, expires_at]
+          properties:
+            message:
+              type: string
+              description: Complete message for the customer's wallet to sign unchanged. Binds address, customer, partner, nonce and expiry.
+            nonce:
+              type: string
+              description: Challenge nonce already included in message; do not append it or reconstruct the message.
+            expires_at:
+              type: string
+              format: date-time
+              description: UTC expiration time of this challenge.
+
+    PartnerWalletResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [address, status, linked_at, chain_id, balances]
+          properties:
+            address:
+              type: string
+              nullable: true
+              description: Linked EVM address; null before linking.
+            status:
+              type: string
+              enum: [unlinked, linked]
+              description: Whether ownership verification and linking completed.
+            linked_at:
+              type: string
+              format: date-time
+              nullable: true
+              description: Link time in UTC; null before linking.
+            chain_id:
+              type: string
+              enum: ['660279']
+              description: XAI settlement chain ID, returned as a decimal string.
+            balances:
+              type: array
+              description: Supported XAI token balances; empty before linking. The link POST can also return an empty list if balance reading was unavailable.
+              items:
+                type: object
+                required: [crypto_currency, token_address, amount_human, decimals]
+                properties:
+                  crypto_currency:
+                    type: string
+                    description: Token symbol.
+                  token_address:
+                    type: string
+                    description: XAI token contract address.
+                  amount_human:
+                    type: string
+                    description: Token balance as a decimal string in whole-token units.
+                  decimals:
+                    type: integer
+                    description: Number of decimal places used by the token.
+
+    PartnerWalletLinkedData:
+      type: object
+      required: [user_uuid, address, linked_at]
+      description: Data for wallet.linked, delivered in the signed partner webhook envelope.
+      properties:
+        user_uuid:
+          type: string
+          format: uuid
+          description: Customer belonging to the receiving partner.
+        address:
+          type: string
+          description: Linked EVM address.
+        linked_at:
+          type: string
+          format: date-time
+          description: UTC time at which the address was linked.
+
+    PartnerWalletDepositData:
+      type: object
+      required: [deposit_id, user_uuid, address, chain_id, crypto_currency, token_address, amount, amount_atomic, source_chain_id, source_tx_hash, tx_hash, credited_at]
+      description: |
+        Data for wallet.deposit.received in the signed partner webhook envelope. Identifies a
+        completed bridge credit to the customer's linked XAI wallet. Does not include a memo,
+        memo-lock ID or collection address. Amounts are strings and describe the XAI credit.
+      properties:
+        deposit_id:
+          type: string
+          description: Stable credited-payment identifier. Treat as opaque; deduplicate within your partner account and environment.
+          example: 'intent:12345'
+        user_uuid:
+          type: string
+          format: uuid
+          description: Customer belonging to the receiving partner.
+        address:
+          type: string
+          description: Linked customer wallet credited on XAI.
+        chain_id:
+          type: string
+          enum: ['660279']
+          description: XAI settlement chain ID as a decimal string.
+        crypto_currency:
+          type: string
+          description: Credited token symbol.
+        token_address:
+          type: string
+          description: Credited token's contract address on XAI.
+        amount:
+          type: string
+          description: Credited amount in whole-token units as a decimal string.
+          example: '1'
+        amount_atomic:
+          type: string
+          description: Same credited amount in the token's smallest units, as an integer string.
+          example: '1000000'
+        source_chain_id:
+          type: string
+          description: Source chain ID as a decimal string; empty if absent from the payment record.
+        source_tx_hash:
+          type: string
+          description: Source transaction identifier; empty if absent from the payment record.
+        tx_hash:
+          type: string
+          description: XAI settlement transaction hash; empty if absent from the payment record.
+        credited_at:
+          type: string
+          format: date-time
+          description: UTC time the XAI settlement transaction was mined.
+
     PartnerDepositAddressMonitoring:
       type: object
       required: [watched, chains]
@@ -6004,6 +6442,12 @@ components:
                     The same value as `user_uuid`, kept for integrations written before that name
                     existed. Either can be read; they never differ.
                   example: "550e8400-e29b-41d4-a716-446655440000"
+                wallet_type:
+                  type: string
+                  enum: [partner_wallet, external_wallet]
+                  description: Customer wallet type, fixed at creation.
+                wallet:
+                  $ref: '#/components/schemas/PartnerCustomerWalletSummary'
                 email:
                   type: string
                   format: email
@@ -6030,6 +6474,12 @@ components:
                   format: uuid
                   description: Public UUID of the user. Use this value in all subsequent API calls.
                   example: "550e8400-e29b-41d4-a716-446655440000"
+                wallet_type:
+                  type: string
+                  enum: [partner_wallet, external_wallet]
+                  description: Customer wallet type, fixed at creation.
+                wallet:
+                  $ref: '#/components/schemas/PartnerCustomerWalletSummary'
                 email:
                   type: string
                   format: email
@@ -7518,7 +7968,7 @@ components:
 
     WebhookEventPayload:
       type: object
-      description: Payload shape delivered to your webhook URL on each order status change
+      description: Signed partner webhook envelope. The data shape depends on event_type.
       properties:
         event_id:
           type: string
@@ -7529,7 +7979,7 @@ components:
           description: |
             Event type. `order.status.changed` for a status transition, `order.refund.required` for an
             order whose crypto is stuck in escrow awaiting your signature (see the Webhooks section).
-          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.deposit.received]
+          enum: [order.status.changed, order.refund.required, fiat_account.updated, fiat_account.deposit.received, wallet.linked, wallet.deposit.received]
           example: "order.status.changed"
         created_at:
           type: string
@@ -7537,64 +7987,67 @@ components:
           description: Timestamp when the event was created
           example: "2026-02-01T12:00:05Z"
         data:
-          type: object
-          properties:
-            order_id:
-              type: string
-              format: uuid
-              description: Partner order UUID
-              example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
-            status:
-              $ref: '#/components/schemas/PartnerOrderStatus'
-            user_id:
-              type: string
-              format: uuid
-              description: Public UUID of the end-user (from user creation)
-              example: "550e8400-e29b-41d4-a716-446655440000"
-            crypto_amount:
-              type: string
-              description: |
-                Total crypto amount including the platform fee. Partner-fee-exclusive, except for a
-                crypto-anchored onramp order: there the amount was sized up so the delivered amount
-                stays exact after the partner fee is withheld, so this field includes the markup.
-                Every other case keeps the markup out — it's reported separately in `partner_fee`.
-                Formatted with the shortest round-tripping representation (e.g. `"101.5"`, not
-                `"101.500000"`) — parse it as a decimal, don't compare strings.
-              example: "101.5"
-            crypto_currency:
-              type: string
-              description: Cryptocurrency code
-              example: "USDT"
-            partner_fee:
-              type: string
-              description: |
-                Partner markup in crypto for this order (`"0"` when none was declared). Unlike
-                `fee_breakdown.partner_fee` in the REST responses (which is padded to the token's
-                decimals), this field is formatted with the shortest round-tripping representation —
-                `1.0` reports as `"1"`, not `"1.00"`. Parse it as a decimal, don't compare strings.
-              example: "1"
-            partner_fee_pct:
-              type: number
-              format: double
-              description: Partner markup percentage declared for this order (`1` means 1%; 0 when none)
-              example: 1
-            fiat_amount:
-              type: string
-              description: Fiat amount
-              example: "152880.00"
-            fiat_currency:
-              type: string
-              description: Fiat currency code
-              example: "NGN"
-            provider:
-              type: string
-              description: Liquidity provider type
-              enum: [p2p, licensed]
-              example: "p2p"
-            payment_details_id:
-              type: string
-              description: Payment details ID used for the order
-              example: "987"
+          anyOf:
+            - $ref: '#/components/schemas/PartnerWalletLinkedData'
+            - $ref: '#/components/schemas/PartnerWalletDepositData'
+            - type: object
+              properties:
+                order_id:
+                  type: string
+                  format: uuid
+                  description: Partner order UUID
+                  example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                status:
+                  $ref: '#/components/schemas/PartnerOrderStatus'
+                user_id:
+                  type: string
+                  format: uuid
+                  description: Public UUID of the end-user (from user creation)
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                crypto_amount:
+                  type: string
+                  description: |
+                    Total crypto amount including the platform fee. Partner-fee-exclusive, except for a
+                    crypto-anchored onramp order: there the amount was sized up so the delivered amount
+                    stays exact after the partner fee is withheld, so this field includes the markup.
+                    Every other case keeps the markup out — it's reported separately in `partner_fee`.
+                    Formatted with the shortest round-tripping representation (e.g. `"101.5"`, not
+                    `"101.500000"`) — parse it as a decimal, don't compare strings.
+                  example: "101.5"
+                crypto_currency:
+                  type: string
+                  description: Cryptocurrency code
+                  example: "USDT"
+                partner_fee:
+                  type: string
+                  description: |
+                    Partner markup in crypto for this order (`"0"` when none was declared). Unlike
+                    `fee_breakdown.partner_fee` in the REST responses (which is padded to the token's
+                    decimals), this field is formatted with the shortest round-tripping representation —
+                    `1.0` reports as `"1"`, not `"1.00"`. Parse it as a decimal, don't compare strings.
+                  example: "1"
+                partner_fee_pct:
+                  type: number
+                  format: double
+                  description: Partner markup percentage declared for this order (`1` means 1%; 0 when none)
+                  example: 1
+                fiat_amount:
+                  type: string
+                  description: Fiat amount
+                  example: "152880.00"
+                fiat_currency:
+                  type: string
+                  description: Fiat currency code
+                  example: "NGN"
+                provider:
+                  type: string
+                  description: Liquidity provider type
+                  enum: [p2p, licensed]
+                  example: "p2p"
+                payment_details_id:
+                  type: string
+                  description: Payment details ID used for the order
+                  example: "987"
 
     PartnerOnRampQuoteRequest:
       type: object
