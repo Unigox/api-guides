@@ -2,6 +2,20 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## Unreleased
+
+**Not available yet.** Nothing in this entry is live; it will carry its release date.
+
+**EUR and GBP off-ramps are always paid through the customer's own account.** Where customer fiat accounts are active for your partner in that currency, an EUR or GBP off-ramp to the customer's own bank is paid into the customer's account and on to their bank, in their name. There is nothing to switch on.
+
+- If the customer has no active account in that currency, the quote opens one and answers `409 FIAT_ACCOUNT_OPENING` with `error.details.fiat_account_id`; quote again once `fiat_account.updated` reports it `active`.
+- If the order cannot be paid through the account, the quote answers `409 FIAT_ACCOUNT_REQUIRED` with `error.details.reason`; where customer fiat accounts are not active for you in that currency, `409 FIAT_ACCOUNTS_NOT_ENABLED`; if the route cannot be checked, `503 FIAT_ACCOUNT_CHECK_UNAVAILABLE`. The initiate answers the same. Before, such an order was paid straight to the bank.
+- GBP is covered too: the bank you name is paid by Faster Payments from the customer's GBP account.
+- A `payment_details_id` naming any EUR or GBP account Unigox issued to the customer answers `400 INVALID_PAYMENT_DETAILS`.
+- If you do not call `confirm-fiat-received`, such an order is confirmed once Unigox has matched the money on the customer's account, and released after the offer's release time.
+
+See [Paying an off-ramp through the account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
+
 ## 2026-10-19
 
 **Off-ramps paid through the customer's own account.** Unigox can switch on, per partner, paying an off-ramp through the customer's own fiat account. When the

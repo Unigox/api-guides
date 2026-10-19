@@ -45,9 +45,8 @@ through KYB onboarding is not on this API.
 
 You can open accounts and read them. v1 is **receive-only** for you: neither you
 nor the customer can move money off an account through this API, and converting
-what arrives is an order, not a transfer. Where Unigox has
-switched it on for you, Unigox itself pays an off-ramp on from the account to
-the bank you named; see
+what arrives is an order, not a transfer. EUR and GBP off-ramps are paid
+through the customer's account by Unigox itself, on to the bank you named; see
 [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account).
 
 ## Conventions
@@ -303,37 +302,66 @@ the same amount are held for review rather than guessed between.
 
 ## Paying an off-ramp through the account
 
-Normally an off-ramp is paid by the liquidity provider straight to the bank you
-named. The customer's bank then shows someone other than the customer as the
-sender. Unigox can switch on, for your partner, paying such an off-ramp through
-the customer's own account instead. It is not self-service; ask Unigox.
+> **Not available yet.** Until this release is live, EUR and GBP off-ramps are
+> paid as the previous version of this page describes.
 
-**When it applies.** All of these must hold:
+EUR and GBP off-ramps are paid through the customer's own fiat account in that
+currency: into the account first, then on to the bank you named, both in the
+customer's name. Their bank shows the customer as the sender, not Unigox. There
+is nothing to switch on. It applies once customer fiat accounts are active for
+your partner in that currency (`GET /api/v1/partner/fiat-accounts/config`).
 
-- the order is an off-ramp (crypto to fiat);
-- its currency is one this works for (EUR for now);
-- it pays the customer's own bank, named by `payment_details`, not a third
-  party (a Recipient);
-- the customer holds an `active` fiat account in that currency, opened with
-  `POST /api/v1/partner/fiat-accounts`;
-- the bank you named can be paid from the account. A Wise username or a Revolut
-  tag, for example, cannot.
+**When it applies.** An off-ramp (crypto to fiat) in EUR or GBP that pays the
+customer's own bank, named by `payment_details` (a third party is still paid
+through a Recipient). If a liquidity provider that pays banks directly can take
+the order, it may still be paid straight to the bank, as before.
 
-The bank details you named must also pass Unigox's checks: the same currency and
-rail as the order, a holder name that matches the customer, and not the
-customer's fiat account itself. And a liquidity provider that can pay the
-customer's account directly must be available for the order's route. If any of
-this does not hold, the order is paid straight to the bank you named, exactly as
-today.
+**The customer needs an active account.** If they have none in the order's
+currency, the quote opens one for them, as `POST /api/v1/partner/fiat-accounts`
+would, and answers `409 FIAT_ACCOUNT_OPENING` with `error.details.fiat_account_id`.
+Wait for `fiat_account.updated` to report it `active`, then quote again. Opening
+needs the customer's verified KYC with an address. Opening it yourself in
+advance avoids the wait.
+
+**The bank you name must be payable from the account.** Same currency, the
+account's rail (SEPA to an IBAN for EUR, Faster Payments for GBP), and a holder
+name that matches the customer. A Wise username or a Revolut tag, for example,
+cannot be paid from the account.
+
+**When it cannot be paid this way, the quote is refused.** It is never paid
+from another source instead:
+
+| `error.code` | Status | What it means |
+| --- | --- | --- |
+| `FIAT_ACCOUNT_OPENING` | 409 | The customer's account in this currency is being opened. `details.fiat_account_id`, `details.fiat_account_status`. Quote again once it is `active`. |
+| `FIAT_ACCOUNT_REQUIRED` | 409 | The order cannot be paid through the customer's account. `details.reason` says why (below); `details.missing_fields` lists KYC fields to complete. |
+| `FIAT_ACCOUNTS_NOT_ENABLED` | 409 | Customer fiat accounts are not active for your partner in this currency. Ask Unigox to enable them. |
+| `FIAT_ACCOUNT_CHECK_UNAVAILABLE` | 503 | The payout route could not be checked. Nothing was created; retry shortly. |
+
+`details.reason` on `FIAT_ACCOUNT_REQUIRED`:
+
+| `reason` | What to do |
+| --- | --- |
+| `kyc_not_verified` | The customer completes KYC. |
+| `kyc_details_missing` | Complete the fields in `details.missing_fields` (for example the address). |
+| `currency_not_supported`, `country_not_supported` | An account cannot be opened for this customer in this currency. |
+| `issuance_not_available`, `issuance_failed`, `issuance_needs_support`, `bank_refused` | The bank did not open the account. Contact Unigox. |
+| `identity_linked_to_another_customer` | This person already holds an account under another of your customers. Contact Unigox. |
+| `customer_not_found` | No such customer, or not yours. |
+| `account_not_payable` | The customer's account cannot send this payment. Contact Unigox. |
+| `onward_rail_not_supported` | The bank you named is not on the account's rail (see above). Name another bank. |
+| `onward_name_mismatch` | The holder name of the bank you named does not match the customer. |
+| `onward_destination_is_source` | You named the customer's fiat account itself. Name their outside bank. |
+| `onward_destination_unusable`, `onward_destination_not_found` | The bank details you named cannot be used. Check or re-create them. |
 
 **Name the customer's outside bank, not the account.** An off-ramp quote whose
-`payment_details_id` is the payment details of a fiat account you opened for
-the customer is refused with `400 INVALID_PAYMENT_DETAILS`
-(`payment_details_id names the customer's own issued account; name the
-customer's bank instead`), whether or not this is switched on for you at the
-time. While it is switched on, the same applies to the payment details of any
-other account Unigox issued to the customer. Name the customer's outside bank;
-the payout goes through their account on its own.
+`payment_details_id` is the payment details of a fiat account Unigox issued to
+the customer, in EUR or GBP, is refused with `400 INVALID_PAYMENT_DETAILS`.
+Name the customer's outside bank; the payout goes through their account on its
+own.
+
+The initiate checks the same again, and answers the same codes if something
+changed since the quote.
 
 **What happens.** Two transfers, both in the customer's own name:
 
@@ -347,7 +375,9 @@ the payout goes through their account on its own.
 2. Unigox pays it on from that account to the bank you named. The customer's
    bank shows the customer as the sender, not Unigox.
 
-You still call `confirm-fiat-received` as today. The transactions list shows
+You may call `confirm-fiat-received` as today. If you do not, the order is
+confirmed once Unigox has matched the money on the customer's account, and the
+escrow is released after the offer's release time. The transactions list shows
 only money coming in, so the onward payment is not a row there; follow it with
 `own_account_payout_status`.
 
