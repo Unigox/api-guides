@@ -12,6 +12,7 @@ Reference groups:
 - [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp)
 - [Funding your wallet](./funding-your-wallet.md)
 - [Third-party payouts](./third-party-payouts.md)
+- [Business customers](./business-customers.md)
 - [Bridge payment addresses and credited webhooks](./bridge-payments.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
 - [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)

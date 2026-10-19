@@ -113,6 +113,14 @@ tags:
       An optional product Unigox activates per partner. `GET /api/v1/partner/fiat-accounts/config`
       answers whether it is on for you, before any customer is in scope.
     x-page-icon: building-columns
+  - name: Business Customers
+    description: |
+      Companies you onboard through KYB, and the accounts Unigox issues in their name once the KYB is
+      approved. Start KYB, send the representative the onboarding link, watch the status, issue
+      accounts, read what moved on them, and move balances between them and your own operating account.
+
+      Enabled per partner. Closing an account and crypto withdrawals stay in the B2B console.
+    x-page-icon: briefcase
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
     x-page-icon: receipt
@@ -6528,6 +6536,393 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
+  /api/v1/partner/business-customers:
+    get:
+      tags:
+        - Business Customers
+      summary: List your business customers
+      operationId: listBusinessCustomers
+      description: |
+        Companies you onboarded through KYB to issue accounts to, newest first, with their KYB status.
+        `can_open_accounts` is `true` once the KYB is approved.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Only cases in this KYB status, one of `not_started`, `in_progress`, `submitted`, `automated_review`, `manual_review`, `additional_information_required`, `resubmitted`, `approved`, `rejected`.
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          description: Matches the company name, the case reference or your `external_ref`.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: One page of business customers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCustomerListResponse'
+        '403':
+          description: Not enabled for you (`CAPABILITY_NOT_GRANTED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+    post:
+      tags:
+        - Business Customers
+      summary: Start KYB for a business customer
+      operationId: createBusinessCustomer
+      description: |
+        Opens a KYB case for a company and answers with the onboarding link its representative fills
+        the questionnaire in at. Every field is optional: whatever you send is pre-filled, and the
+        representative completes the rest. With `representative_email`, the link is also emailed and
+        only that person can open it.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCustomerCreateRequest'
+      responses:
+        '201':
+          description: Case opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCustomerCreateResponse'
+        '400':
+          description: Invalid body (`INVALID_REQUEST`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '403':
+          description: Not enabled for you (`CAPABILITY_NOT_GRANTED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}:
+    get:
+      tags:
+        - Business Customers
+      summary: One business customer and its KYB status
+      operationId: getBusinessCustomer
+      description: |
+        The case, with what is still asked of the company (`information_requests`) and each person's
+        identity check (`identity_verifications`, each with the link to resend if they lost it).
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+      responses:
+        '200':
+          description: The business customer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCustomerResponse'
+        '404':
+          description: No such business customer, or not yours (`BUSINESS_CUSTOMER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/onboarding-link:
+    get:
+      tags:
+        - Business Customers
+      summary: The current onboarding link
+      operationId: getBusinessCustomerOnboardingLink
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+      responses:
+        '200':
+          description: The link and when it expires
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessOnboardingLinkResponse'
+        '404':
+          description: No such business customer, or not yours (`BUSINESS_CUSTOMER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/resend-invitation:
+    post:
+      tags:
+        - Business Customers
+      summary: Issue a fresh onboarding link
+      operationId: resendBusinessCustomerInvitation
+      description: The previous link stops working. The new one is emailed to the representative when one is on file.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+      responses:
+        '200':
+          description: The new link
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessOnboardingLinkResponse'
+        '404':
+          description: No such business customer, or not yours (`BUSINESS_CUSTOMER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts:
+    get:
+      tags:
+        - Business Customers
+      summary: A business customer's accounts
+      operationId: listBusinessFiatAccounts
+      description: Every account issued to this company, closed ones included, with live bank details and balances.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+      responses:
+        '200':
+          description: The accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessFiatAccountListResponse'
+        '404':
+          description: No such business customer, or not yours (`BUSINESS_CUSTOMER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+    post:
+      tags:
+        - Business Customers
+      summary: Issue an account to a business customer
+      operationId: issueBusinessFiatAccount
+      description: |
+        Opens an account in the company's name. Refused until the KYB is approved
+        (`KYB_NOT_APPROVED`). A second account in a currency the company already holds needs
+        `allow_duplicate: true`.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessFiatAccountCreateRequest'
+      responses:
+        '201':
+          description: Account opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessFiatAccountResponse'
+        '403':
+          description: Not enabled for you (`CAPABILITY_NOT_GRANTED`, `PRODUCT_DOES_NOT_ISSUE_ACCOUNTS`, `ISSUANCE_DISABLED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: KYB not approved yet (`KYB_NOT_APPROVED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}:
+    get:
+      tags:
+        - Business Customers
+      summary: One business account
+      operationId: getBusinessFiatAccount
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+        - $ref: '#/components/parameters/BusinessFiatAccountId'
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessFiatAccountResponse'
+        '404':
+          description: No such account under this customer (`FIAT_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/ledger:
+    get:
+      tags:
+        - Business Customers
+      summary: Every entry on the account's book
+      operationId: getBusinessFiatAccountLedger
+      description: Credits, debits, conversions, internal transfers and fees, newest first, with the balance after each.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+        - $ref: '#/components/parameters/BusinessFiatAccountId'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: One page of entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessLedgerResponse'
+        '404':
+          description: No such account under this customer (`FIAT_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/payments:
+    get:
+      tags:
+        - Business Customers
+      summary: Bank transfers in and out of the account
+      operationId: getBusinessFiatAccountPayments
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+        - $ref: '#/components/parameters/BusinessFiatAccountId'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: One page of payments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessPaymentsResponse'
+        '404':
+          description: No such account under this customer (`FIAT_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/transfer-to-partner:
+    post:
+      tags:
+        - Business Customers
+      summary: Move the account's balance to your operating account
+      operationId: transferBusinessFiatAccountToPartner
+      description: |
+        Moves `amount` of `currency` (the whole available balance when `amount` is omitted) from the
+        company's account to your own operating account. Requires an `Idempotency-Key` header; a
+        retry with the same key answers from the first attempt (`replayed: true`) and moves nothing.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+        - $ref: '#/components/parameters/BusinessFiatAccountId'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessTransferRequest'
+      responses:
+        '200':
+          description: Moved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessTransferResponse'
+        '400':
+          description: No idempotency key (`IDEMPOTENCY_KEY_REQUIRED`) or a bad amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: The key was used for a different transfer, or is still running (`IDEMPOTENCY_KEY_CONFLICT`, `TRANSFER_IN_PROGRESS`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/fund:
+    post:
+      tags:
+        - Business Customers
+      summary: Fund the account from your operating account
+      operationId: fundBusinessFiatAccount
+      description: The mirror of transfer-to-partner. Enabled per partner. Requires an `Idempotency-Key` header.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+        - $ref: '#/components/parameters/BusinessFiatAccountId'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessTransferRequest'
+      responses:
+        '200':
+          description: Funded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessTransferResponse'
+        '400':
+          description: No idempotency key (`IDEMPOTENCY_KEY_REQUIRED`) or a bad amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '403':
+          description: Funding is not enabled for you (`CAPABILITY_NOT_GRANTED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+
 components:
   schemas:
     WalletType:
@@ -9934,6 +10329,446 @@ components:
                   description: Optional ISO 2-letter country code
                   example: KE
 
+    BusinessCustomer:
+      type: object
+      description: A company you onboarded through KYB, and where its KYB stands.
+      properties:
+        id:
+          type: string
+          description: The business customer id. Every route below takes it.
+          example: "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b"
+        reference:
+          type: string
+          example: "KYB-2026-0142"
+        status:
+          type: string
+          description: The KYB status. Accounts can be issued once it is `approved`.
+          enum: [not_started, in_progress, submitted, automated_review, manual_review, additional_information_required, resubmitted, approved, rejected]
+          example: approved
+        can_open_accounts:
+          type: boolean
+          description: "`true` when the KYB is approved."
+        kyb_type:
+          type: string
+          enum: [standard, extended]
+        action_owner:
+          type: string
+          description: Who the case is waiting on.
+        action_type:
+          type: string
+        action_reason:
+          type: string
+        external_ref:
+          type: string
+          description: Your own reference, as sent on create.
+        company:
+          type: object
+          properties:
+            legal_name:
+              type: string
+            trade_name:
+              type: string
+            country_of_incorporation:
+              type: string
+            registration_number:
+              type: string
+            email:
+              type: string
+        invitation_status:
+          type: string
+        invitation_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completeness_percent:
+          type: number
+          description: How much of the questionnaire is filled in. Present on the single read.
+        information_requests:
+          type: array
+          description: What the company still has to provide. Present on the single read.
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              category:
+                type: string
+              note:
+                type: string
+              deadline:
+                type: string
+                format: date-time
+                nullable: true
+              status:
+                type: string
+        identity_verifications:
+          type: array
+          description: Each person's identity check. Present on the single read.
+          items:
+            type: object
+            properties:
+              person_id:
+                type: string
+              full_name:
+                type: string
+              roles:
+                type: array
+                items:
+                  type: string
+              ownership_percent:
+                type: number
+                nullable: true
+              status:
+                type: string
+              verification_url:
+                type: string
+                description: The person's own identity-check link, to resend if they lost it.
+              initiated_at:
+                type: string
+                format: date-time
+                nullable: true
+              completed_at:
+                type: string
+                format: date-time
+                nullable: true
+    BusinessCustomerCreateRequest:
+      type: object
+      properties:
+        legal_name:
+          type: string
+          example: "HFWM LTD"
+        trade_name:
+          type: string
+        country_of_incorporation:
+          type: string
+          description: ISO 3166-1 alpha-2.
+          example: GB
+        registration_number:
+          type: string
+        incorporation_date:
+          type: string
+          format: date
+        representative_email:
+          type: string
+          format: email
+          description: The link is emailed here, and only this person can open it.
+        external_ref:
+          type: string
+          maxLength: 128
+          description: Your own reference for this company.
+        kyb_type:
+          type: string
+          enum: [standard, extended]
+        invitation_expiry_days:
+          type: integer
+          minimum: 1
+    BusinessOnboardingLink:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    BusinessCustomerListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            business_customers:
+              type: array
+              items:
+                $ref: '#/components/schemas/BusinessCustomer'
+            total:
+              type: integer
+            limit:
+              type: integer
+            offset:
+              type: integer
+            has_more:
+              type: boolean
+    BusinessCustomerResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            business_customer:
+              $ref: '#/components/schemas/BusinessCustomer'
+    BusinessCustomerCreateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            business_customer:
+              $ref: '#/components/schemas/BusinessCustomer'
+            onboarding_link:
+              $ref: '#/components/schemas/BusinessOnboardingLink'
+    BusinessOnboardingLinkResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            onboarding_link:
+              $ref: '#/components/schemas/BusinessOnboardingLink'
+    BusinessFiatAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The account id, `business_<n>`.
+          example: business_412
+        holder_type:
+          type: string
+          enum: [business]
+        business_customer_id:
+          type: string
+        currency:
+          type: string
+          example: GBP
+        status:
+          type: string
+          enum: [active, closed]
+        holder_name:
+          type: string
+          description: The company the account was issued for.
+        bank_holder_name:
+          type: string
+          description: The holder name the bank has on file, which payers see. Can differ from `holder_name`.
+        bank_name:
+          type: string
+        iban:
+          type: string
+        account_number:
+          type: string
+        sort_code:
+          type: string
+        bic:
+          type: string
+        balances:
+          type: array
+          items:
+            type: object
+            properties:
+              currency:
+                type: string
+              available:
+                type: string
+              pending:
+                type: string
+              total:
+                type: string
+        balance_known:
+          type: boolean
+          description: "`false` when the bank could not be read just now; `balances` is then empty, not zero."
+        details_live:
+          type: boolean
+          description: "`false` when the bank details could not be read just now and only stored fields are shown."
+        created_at:
+          type: string
+          format: date-time
+    BusinessFiatAccountCreateRequest:
+      type: object
+      required: [currency]
+      properties:
+        currency:
+          type: string
+          example: GBP
+        issuer_country:
+          type: string
+          description: ISO 3166-1 alpha-2 jurisdiction to issue in. Defaults per currency.
+          example: GB
+        allow_duplicate:
+          type: boolean
+          description: Open a second account in a currency the company already holds.
+    BusinessFiatAccountListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            fiat_accounts:
+              type: array
+              items:
+                $ref: '#/components/schemas/BusinessFiatAccount'
+    BusinessFiatAccountResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            fiat_account:
+              $ref: '#/components/schemas/BusinessFiatAccount'
+            currency_mismatch:
+              type: boolean
+              description: On issue only. The bank opened the account in a different currency than asked.
+    BusinessLedgerResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            entries:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  type:
+                    type: string
+                    enum: [bank_transfer, conversion, internal_transfer, crypto_transfer, fee, other]
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                  status:
+                    type: string
+                  description:
+                    type: string
+                  balance_after:
+                    type: string
+                  counterparty_name:
+                    type: string
+                  counterparty_iban:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+            page:
+              type: integer
+            has_more:
+              type: boolean
+    BusinessPaymentsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            payments:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  direction:
+                    type: string
+                    enum: [incoming, outgoing, other]
+                  amount:
+                    type: string
+                  currency:
+                    type: string
+                  status:
+                    type: string
+                  description:
+                    type: string
+                  rail:
+                    type: string
+                  counterparty_name:
+                    type: string
+                  counterparty_iban:
+                    type: string
+                  counterparty_bic:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+            page:
+              type: integer
+            has_more:
+              type: boolean
+    BusinessTransferRequest:
+      type: object
+      properties:
+        amount:
+          type: string
+          description: Decimal string. Optional on transfer-to-partner (defaults to the whole available balance), required on fund.
+          example: "1500.00"
+        currency:
+          type: string
+          example: GBP
+        description:
+          type: string
+          description: Fund only. The reference the bank records.
+        idempotency_key:
+          type: string
+          description: Accepted when the `Idempotency-Key` header is absent. The header wins.
+    BusinessTransferResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            transfer:
+              type: object
+              properties:
+                fiat_account_id:
+                  type: string
+                direction:
+                  type: string
+                  enum: [to_partner, from_partner]
+                amount:
+                  type: string
+                currency:
+                  type: string
+                status:
+                  type: string
+                  enum: [completed]
+                replayed:
+                  type: boolean
+                  description: "`true` when this answer came from an earlier request with the same key."
+                idempotency_key:
+                  type: string
+
     PartnerErrorResponse:
       type: object
       required: [success, error]
@@ -10259,6 +11094,29 @@ components:
         type: string
         format: uuid
       example: "550e8400-e29b-41d4-a716-446655440000"
+    BusinessCustomerId:
+      name: business_customer_id
+      in: path
+      required: true
+      description: The business customer's `id`. One that is not yours answers `404`.
+      schema:
+        type: string
+    BusinessFiatAccountId:
+      name: fiat_account_id
+      in: path
+      required: true
+      description: A business account id, `business_<n>`, as returned in `id`. It is only found under the customer that holds it.
+      schema:
+        type: string
+      example: business_412
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Your key for this money movement. Send the same key when retrying.
+      schema:
+        type: string
+        maxLength: 255
     FiatAccountId:
       name: fiat_account_id
       in: path
