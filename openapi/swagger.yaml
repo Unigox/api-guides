@@ -7689,7 +7689,7 @@ components:
                   description: >-
                     Government identity/registry number. Enables the **NIN/BVN + selfie** verification
                     option: instead of uploading an ID-document image, the customer proves identity with
-                    this number plus a live selfie (no ID photo). Unigox validates the number against the
+                    this number plus a live selfie (no ID photo). AiPrise validates the number against the
                     national registry (NIN->NIMC, BVN->NIBSS) and face-matches the selfie against the
                     registry photo. After this submission, upload only a `selfie` (document_type=selfie)
                     to the documents endpoint - verification starts automatically. Supported for the
