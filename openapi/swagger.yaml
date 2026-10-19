@@ -5169,7 +5169,9 @@ paths:
                   description: Signed EIP-712 ForwardRequest payload
                 signature:
                   type: string
-                  description: Hex-encoded signature from partner wallet
+                  description: >-
+                    65-byte EIP-712 signature of `forward_request` by `forward_request.from`, hex-encoded.
+                    `0x` prefix recommended; a signature without it is accepted.
             example:
               forward_request:
                 from: "0x674b16054290b4f06D7Ba8e3Ac379E3B0a359a16"

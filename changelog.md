@@ -78,6 +78,10 @@ the bank payment, and the payment follows, expected within `settlement_hours` of
   `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail, not `409 NO_OFFERS_AVAILABLE`. A retry does not change
   either. See [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
 
+## 2026-10-19
+
+**`authorize-crypto-transfer` accepts a `signature` without the `0x` prefix again.** The signature check added on 2026-10-15 refused a bare hex signature with `400 INVALID_REQUEST` (`invalid signature: malformed signature`), although it was accepted before. Both forms are accepted now; we recommend sending `0x`. The signature is still 65 bytes (`r`, `s`, `v`), with `v` as 27/28 or 0/1 and a low `s`.
+
 ## 2026-10-16
 
 **You can choose the wallet your markup is paid to.** Set **Fee wallet** in the partner dashboard to any EVM address you control on XAI. The `partner_fee` of an off-ramp order, and of an on-ramp order of a non-custodial (`external_wallet`) customer, is then paid there at release instead of to your partner wallet. Leave it empty to keep the current behaviour.
