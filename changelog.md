@@ -13,6 +13,8 @@ See [Paying from money already on the account](./fiat-accounts.md#paying-from-mo
 
 ## 2026-10-19
 
+**Business customers are on the Partner API.** Companies you onboard through KYB, and the accounts Unigox issues in their name, were reachable only in the B2B console. They are now on `/api/v1/partner/business-customers`: start KYB and get the onboarding link, follow the KYB status, issue accounts once it is approved, read balances, the ledger and bank transfers, and move balances between a company's account and your operating account (`transfer-to-partner`, `fund`, both with an `Idempotency-Key`). Accounts are addressed as `business_<n>` under the customer that holds them. Closing an account and crypto withdrawals stay in the console. Enabled per partner. See [Business customers](./api-reference/business-customers.md).
+
 **EUR and GBP off-ramps are always paid through the customer's own account.** Where customer fiat accounts are active for your partner in that currency, an EUR or GBP off-ramp to the customer's own bank is paid into the customer's account and on to their bank, in their name. There is nothing to switch on.
 
 - If the customer has no active account in that currency, the quote opens one and answers `409 FIAT_ACCOUNT_OPENING` with `error.details.fiat_account_id`; quote again once `fiat_account.updated` reports it `active`.
