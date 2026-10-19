@@ -11,7 +11,7 @@ Notable changes to the Unigox partner API, newest first.
 - If the customer has no active account in that currency, the quote opens one and answers `409 FIAT_ACCOUNT_OPENING` with `error.details.fiat_account_id`; quote again once `fiat_account.updated` reports it `active`.
 - If the order cannot be paid through the account, the quote answers `409 FIAT_ACCOUNT_REQUIRED` with `error.details.reason`; where customer fiat accounts are not active for you in that currency, `409 FIAT_ACCOUNTS_NOT_ENABLED`; if the route cannot be checked, `503 FIAT_ACCOUNT_CHECK_UNAVAILABLE`. The initiate answers the same. Before, such an order was paid straight to the bank.
 - GBP is covered too: the bank you name is paid by Faster Payments from the customer's GBP account.
-- A `payment_details_id` naming any EUR or GBP account Unigox issued to the customer answers `400 INVALID_PAYMENT_DETAILS`.
+- A `payment_details_id` naming the customer's own fiat account answers `400 INVALID_PAYMENT_DETAILS`: always for an account you opened through this API, and in EUR and GBP for any account Unigox issued to the customer.
 - If you do not call `confirm-fiat-received`, such an order is confirmed once Unigox has matched the money on the customer's account, and released after the offer's release time.
 
 See [Paying an off-ramp through the account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).

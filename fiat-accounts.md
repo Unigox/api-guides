@@ -302,8 +302,8 @@ the same amount are held for review rather than guessed between.
 
 ## Paying an off-ramp through the account
 
-> **Not available yet.** Until this release is live, EUR and GBP off-ramps are
-> paid as the previous version of this page describes.
+> **Not available yet.** Until this release is live, the quote does not open
+> accounts or answer the codes below.
 
 EUR and GBP off-ramps are paid through the customer's own fiat account in that
 currency: into the account first, then on to the bank you named, both in the
@@ -328,8 +328,8 @@ account's rail (SEPA to an IBAN for EUR, Faster Payments for GBP), and a holder
 name that matches the customer. A Wise username or a Revolut tag, for example,
 cannot be paid from the account.
 
-**When it cannot be paid this way, the quote is refused.** It is never paid
-from another source instead:
+**When it cannot be paid this way, the quote is refused,** unless a liquidity
+provider that pays banks directly takes the order:
 
 | `error.code` | Status | What it means |
 | --- | --- | --- |
@@ -355,10 +355,11 @@ from another source instead:
 | `onward_destination_unusable`, `onward_destination_not_found` | The bank details you named cannot be used. Check or re-create them. |
 
 **Name the customer's outside bank, not the account.** An off-ramp quote whose
-`payment_details_id` is the payment details of a fiat account Unigox issued to
-the customer, in EUR or GBP, is refused with `400 INVALID_PAYMENT_DETAILS`.
-Name the customer's outside bank; the payout goes through their account on its
-own.
+`payment_details_id` is the payment details of the customer's fiat account is
+refused with `400 INVALID_PAYMENT_DETAILS`: always for an account you opened
+through this API, and in EUR and GBP for any account Unigox issued to the
+customer. Name the customer's outside bank; the payout goes through their
+account on its own.
 
 The initiate checks the same again, and answers the same codes if something
 changed since the quote.
