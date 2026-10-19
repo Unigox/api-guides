@@ -2,9 +2,7 @@
 
 Notable changes to the Unigox partner API, newest first.
 
-## Unreleased
-
-**Not available yet.** Nothing in this entry is live; it will carry its release date.
+## 2026-10-19
 
 **EUR and GBP off-ramps are always paid through the customer's own account.** Where customer fiat accounts are active for your partner in that currency, an EUR or GBP off-ramp to the customer's own bank is paid into the customer's account and on to their bank, in their name. There is nothing to switch on.
 
@@ -15,8 +13,6 @@ Notable changes to the Unigox partner API, newest first.
 - If you do not call `confirm-fiat-received`, such an order is confirmed once Unigox has matched the money on the customer's account, and released after the offer's release time.
 
 See [Paying an off-ramp through the account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
-
-## 2026-10-19
 
 **Off-ramps paid through the customer's own account.** Unigox can switch on, per partner, paying an off-ramp through the customer's own fiat account. When the
 order is an off-ramp in EUR to the customer's own bank (`payment_details`, not a Recipient), and the
