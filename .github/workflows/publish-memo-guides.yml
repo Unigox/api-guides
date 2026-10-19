@@ -22,7 +22,7 @@ permissions:
 
 # One publisher owns these pages; do not interrupt an in-flight GitBook change.
 concurrency:
-  group: memo-guides-${{ github.event_name }}
+  group: memo-guides
   cancel-in-progress: false
 
 jobs:

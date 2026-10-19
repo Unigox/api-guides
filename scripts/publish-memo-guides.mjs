@@ -45,15 +45,18 @@ export async function publishMemoGuides(api, space, dryRun, spec) {
     plan.push({ ...guide, parent: sibling.parent, id: existing?.page.id, markdown });
     console.log(`${existing ? "Update" : "Create"} ${guide.path} under existing parent ${sibling.parent}`);
   }
-  const reference = await api("GET", `${base}/content/path/api-reference%2Fuser-management?format=document`);
-  const referenceChange = addPartnerOperations(reference, spec);
-  console.log(`Add ${referenceChange.added} missing wallet/deposit operation blocks`);
-  if (dryRun) return guides.map(pagePath);
+  if (dryRun) {
+    const reference = await api("GET", `${base}/content/path/api-reference%2Fuser-management?format=document`);
+    console.log(`Add ${addPartnerOperations(reference, spec).added} missing wallet/deposit operation blocks`);
+    return guides.map(pagePath);
+  }
 
   const cr = await api("POST", `${base}/change-requests`, { subject: "Publish memo payment guides from api-guides" });
   if (!cr.id || !cr.revision) throw new Error("Change request has no ID/revision");
   const target = `${base}/change-requests/${encodeURIComponent(cr.id)}`;
   console.log(`Prepared GitBook change request ${cr.id}`);
+  const reference = await api("GET", `${target}/content/path/api-reference%2Fuser-management?format=document`);
+  const referenceChange = addPartnerOperations(reference, spec);
   const changes = [];
   for (const page of plan) {
     changes.push(page.id
