@@ -325,7 +325,8 @@ it again for the same order never takes the money twice.
 | Error | HTTP | Meaning |
 | --- | --- | --- |
 | `INSUFFICIENT_BALANCE` | 422 | The available balance does not cover the order's `fiat_amount`. Nothing was taken. |
-| `OPERATION_NOT_ALLOWED` | 409 | The order is not paid from the customer's own account (`fiat_funding_source` is not `own_account`), or part of the balance is under review and the rest does not cover the order. |
+| `OPERATION_NOT_ALLOWED` | 409 | The order is not paid from the customer's own account (`fiat_funding_source` is not `own_account`), a transfer already funds it, or part of the balance is under review and the rest does not cover the order. |
+| `FIAT_ACCOUNT_REQUIRED` | 409 | The customer has no open fiat account this order can be paid from. Nothing was taken. |
 | `INVALID_STATUS` | 409 | The order is not waiting for its fiat, or its payment window has closed. |
 | `KYC_NOT_CLEARED` | 422 | The customer is no longer cleared. |
 | `PAY_FROM_BALANCE_UNAVAILABLE` | 503 | Paying from the balance is not available right now. Nothing was taken; the customer can still transfer. |
