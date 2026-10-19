@@ -6,7 +6,7 @@ Notable changes to the Unigox partner API, newest first.
 
 **Off-ramps paid through the customer's own account.** Unigox can switch on, per partner, paying an off-ramp through the customer's own fiat account. When the
 order is an off-ramp in EUR to the customer's own bank (`payment_details`, not a Recipient), and the
-customer holds an active fiat account in that currency, the provider pays the customer's account and Unigox
+customer holds an active fiat account in that currency, the liquidity provider pays the customer's account and Unigox
 sends the money on to the bank you named. Both transfers are in the customer's name, so their bank shows the
 customer as the sender. Any other order, including one whose bank details fail Unigox's checks (same
 currency and rail, holder name matches the customer) or with no liquidity provider able to pay the

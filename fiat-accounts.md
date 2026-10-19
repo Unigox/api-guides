@@ -337,7 +337,7 @@ the payout goes through their account on its own.
 
 **What happens.** Two transfers, both in the customer's own name:
 
-1. The provider pays the fiat into the customer's own account. When this
+1. The liquidity provider pays the fiat into the customer's own account. When this
    credit is matched to exactly one such order, it is that order paying out,
    not a deposit: `fiat_account.deposit.received` is not sent for it, and
    `order.own_account_payout.updated` tells you what happens to the money. Any
@@ -362,7 +362,7 @@ order looks exactly as before.
   and its `payment_details_id` is the payment details you named, not the
   account's.
 
-`status: completed` means the provider paid the customer's own account. Whether
+`status: completed` means the liquidity provider paid the customer's own account. Whether
 the money has reached the bank is `own_account_payout_status`:
 
 | `own_account_payout_status` | What it means |

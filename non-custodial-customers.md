@@ -245,8 +245,8 @@ there the customer can withdraw to any supported chain (step 6); a refund is
 not sent back to the chain the deposit came from.
 
 `POST /orders/{order_id}/confirm-fiat-received` works with your API key alone,
-as for `partner_wallet` customers. It releases the escrow to the order's vendor
-and nowhere else; it cannot move the customer's other funds.
+as for `partner_wallet` customers. It releases the escrow to the liquidity provider
+that took the order and nowhere else; it cannot move the customer's other funds.
 
 ### 5. On-ramp
 
@@ -344,8 +344,8 @@ Content-Type: application/json
 
 Unigox checks the request is exactly the one quoted (sender, token, calldata,
 gas, nonce, deadline), recovers the signer and requires the customer's linked
-address, re-checks the balance, and relays it. The answer is `202` with
-`status: "submitted"`, meaning accepted for relay. Repeating the same submit is
+address, re-checks the balance, and sends it on chain. The answer is `202` with
+`status: "submitted"`, meaning accepted and being sent. Repeating the same submit is
 safe and returns the same withdrawal. The withdrawal keeps the quote's id:
 `withdrawal_id` equals `withdrawal_quote_id`.
 
@@ -360,7 +360,7 @@ Follow it with `GET /users/{user_uuid}/withdrawals/{withdrawal_id}` or the
 
 | `status` | Meaning |
 | --- | --- |
-| `submitted` | Accepted for relay. |
+| `submitted` | Accepted and being sent on chain. |
 | `bridging` | Executed on XAI, on its way to the destination chain. |
 | `completed` | Arrived. `destination_tx_hash` is set when the withdrawal crossed chains. |
 | `failed` | Did not take effect on XAI (reverted, or not executed before the quote's deadline). The funds are still on the customer's address. |
@@ -417,7 +417,7 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 | `KYC_NOT_CLEARED` | 422 | The customer is not KYC-cleared for an order. |
 | `ADDRESS_CAP_REACHED` | 429 | Allocating would take the customer past 1,000 addresses for that chain type. |
 | `INTERNAL_ERROR` | 500 | Something failed on our side. Safe to retry. |
-| `TRANSACTOR_ERROR` | 502 | The relay did not accept a request that passed every check, or a refund could not be executed. Retry. |
+| `TRANSACTOR_ERROR` | 502 | A request that passed every check could not be sent on chain, or a refund could not be executed. Retry. |
 | `BALANCE_UNAVAILABLE` | 502 | `GET /users/{user_uuid}/wallet` could not read the XAI balance. Safe to retry. (A withdrawal quote in the same case answers `500 INTERNAL_ERROR`.) |
 | `BRIDGE_UNAVAILABLE` | 503 | A withdrawal quote could not get a bridge quote for the destination. Safe to retry. |
 | `DEPOSIT_ADDRESSES_UNAVAILABLE` | 502 | Deposit addresses could not be read, or an allocation failed before it was sent. Safe to retry. |

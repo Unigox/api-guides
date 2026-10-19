@@ -1670,7 +1670,7 @@ paths:
                   description: EIP-712 signature by the customer's linked address, hex with 0x prefix
       responses:
         '202':
-          description: 'Withdrawal accepted for relay (`status: submitted`)'
+          description: 'Withdrawal accepted and being sent on chain (`status: submitted`)'
           content:
             application/json:
               schema:
