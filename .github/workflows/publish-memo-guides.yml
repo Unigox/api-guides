@@ -1,0 +1,50 @@
+name: Publish memo guides to GitBook
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - crypto-payments.md
+      - api-reference/bridge-payments.md
+      - scripts/publish-memo-guides.mjs
+      - .github/workflows/publish-memo-guides.yml
+  pull_request:
+    paths:
+      - crypto-payments.md
+      - api-reference/bridge-payments.md
+      - scripts/publish-memo-guides.mjs
+      - scripts/publish-memo-guides.test.mjs
+      - .github/workflows/publish-memo-guides.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# One publisher owns these pages; do not interrupt an in-flight GitBook change.
+concurrency:
+  group: memo-guides
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --test scripts/publish-memo-guides.test.mjs
+      - name: Check GitBook parents without publishing
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+          GITBOOK_SPACE: ${{ vars.GITBOOK_SPACE }}
+          GITBOOK_SPEC: ${{ vars.GITBOOK_SPEC }}
+        run: node scripts/publish-memo-guides.mjs --dry-run
+      - name: Publish the memo pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+          GITBOOK_SPACE: ${{ vars.GITBOOK_SPACE }}
+          GITBOOK_SPEC: ${{ vars.GITBOOK_SPEC }}
+        run: node scripts/publish-memo-guides.mjs

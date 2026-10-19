@@ -12,6 +12,8 @@ Start with the section that matches where you are in the integration process.
 
 ## Where to go next
 
+* [Accept crypto payments on EVM, TON, Solana and Tron](crypto-payments.md) using collection addresses, invoice references and payment webhooks.
+
 * Read [Basics](https://developers.unigox.com/basics/how-it-works) for webhook behavior, lifecycle, and production readiness.
 * Read [Off-Ramp Partner Playbook](https://developers.unigox.com/tutorials/off-ramp-playbook) for the full phased integration flow.
 * [Let customers hold their own crypto](non-custodial-customers.md): non-custodial customers who link their own EVM address, deposit, off-ramp, on-ramp and withdraw by signing in your app.

@@ -409,7 +409,7 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 | `WALLET_TYPE_MISMATCH` | 409 | Creating a customer whose `user_ref` or email already belongs to your customer of the other `wallet_type`. |
 | `QUOTE_EXPIRED` | 409 | The withdrawal quote expired, the customer's forwarder nonce moved, or another withdrawal has not executed yet. Request a new quote. |
 | `OPERATION_NOT_ALLOWED` | 409 | An on-ramp with a partner fee while your partner account has neither a fee wallet nor a partner wallet. |
-| `CHALLENGE_EXPIRED` | 410 | No challenge was issued, it is older than 10 minutes, it was already used, or a newer one replaced it. |
+| `CHALLENGE_EXPIRED` | 410 | No challenge was issued, it is older than 10 minutes, or it was already used. (A message from a challenge that a newer one replaced fails as `400 INVALID_SIGNATURE`.) |
 | `INVALID_REQUEST` | 422 | Deposit-address allocate with an unknown `chain_type` or a `count` outside 1 to 50. |
 | `WALLET_TYPE_MISMATCH` | 422 | A wallet call for a `partner_wallet` customer, or the order-bound send-out for an `external_wallet` one. |
 | `INSUFFICIENT_BALANCE` | 422 | The customer's XAI balance does not cover the order or withdrawal. |
@@ -419,7 +419,10 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 | `INTERNAL_ERROR` | 500 | Something failed on our side. Safe to retry. |
 | `TRANSACTOR_ERROR` | 502 | The relay did not accept a request that passed every check, or a refund could not be executed. Retry. |
 | `BALANCE_UNAVAILABLE` | 502 | `GET /users/{user_uuid}/wallet` could not read the XAI balance. Safe to retry. (A withdrawal quote in the same case answers `500 INTERNAL_ERROR`.) |
-| `DEPOSIT_ADDRESSES_UNAVAILABLE` | 502 | Deposit addresses could not be fetched or allocated. Safe to retry. |
+| `BRIDGE_UNAVAILABLE` | 503 | A withdrawal quote could not get a bridge quote for the destination. Safe to retry. |
+| `DEPOSIT_ADDRESSES_UNAVAILABLE` | 502 | Deposit addresses could not be read, or an allocation failed before it was sent. Safe to retry. |
+| `DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN` | 502 | An allocation was sent but its outcome is unknown. **Do not repeat it**: read `GET /users/{user_uuid}/deposit-addresses` first. |
+| `DEPOSIT_ADDRESS_NOT_WATCHED` | 503 | Addresses were allocated (returned in `data.deposit_addresses`) but monitoring is not confirmed yet. Do not allocate again; check `GET /users/{user_uuid}/deposit-addresses` before showing them for payment. |
 
 `INVALID_REQUEST` and `WALLET_TYPE_MISMATCH` come with two statuses depending
 on the call. Branch on `error.code` and the endpoint, not on the status alone.

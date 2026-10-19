@@ -13,6 +13,7 @@ Reference groups:
 - [Funding your wallet](./funding-your-wallet.md)
 - [Third-party payouts](./third-party-payouts.md)
 - [Delayed settlement (T+1)](./delayed-settlement.md) — **Not available yet.**
+- [Bridge payment addresses and credited webhooks](./bridge-payments.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
 - [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
 
