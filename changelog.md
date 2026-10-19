@@ -2,15 +2,9 @@
 
 Notable changes to the Unigox partner API, newest first.
 
-## Unreleased
+## 2026-10-19
 
-**Not available yet.** Nothing in this entry is live. Delayed settlement (T+1) goes live with its release,
-and paying an off-ramp through the customer's own account with its own; the entry will carry the release
-date. Until then the API behaves as the entries below describe. No endpoint or field is removed.
-
-### Off-ramps paid through the customer's own account
-
-Unigox can switch on, per partner, paying an off-ramp through the customer's own fiat account. When the
+**Off-ramps paid through the customer's own account.** Unigox can switch on, per partner, paying an off-ramp through the customer's own fiat account. When the
 order is an off-ramp in EUR to the customer's own bank (`payment_details`, not a Recipient), and the
 customer holds an active fiat account in that currency, the provider pays the customer's account and Unigox
 sends the money on to the bank you named. Both transfers are in the customer's name, so their bank shows the
@@ -26,59 +20,6 @@ order and on `order.status.changed`, and the order also carries `own_account_pay
 whether the money reached the bank. The new event `order.own_account_payout.updated` reports when it was
 sent on or stopped. See [Paying an off-ramp through the
 account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
-
-### Delayed settlement (T+1)
-
-An off-ramp order can settle T+1: once you sign its release, the crypto goes to the licensed partner before
-the bank payment, and the payment follows, expected within `settlement_hours` of the confirmed release. The
-[delayed settlement guide](./api-reference/delayed-settlement.md) describes the whole flow.
-
-- **When an order is delayed.** An instant offer that covers the amount always wins; a T+1 offer is matched
-  only when none does. Only orders whose crypto you hold can be delayed, and only once Unigox has enabled
-  delayed settlement for you, on request. Until then your quotes and orders match instant offers only, and so
-  does an estimate sent with your credentials; a quote that no instant offer covers answers
-  `409 NO_OFFERS_AVAILABLE`. Instant orders behave as before.
-- **Liquidity.** `GET /api/v1/partner/liquidity` counts a T+1 offer only when its licensed partner is
-  enabled for T+1, and takes `exclude_delayed_settlement=true` for instant-only bands: the ones a partner
-  without delayed settlement can match. Without it the bands still include T+1 offers.
-- **Quote and estimate.** Both report `delayed_settlement` and `settlement_hours`. The estimate also
-  reports `source_of_funds_required`, always, and `source_of_funds_threshold_usd` when it priced a T+1
-  offer. `has_fiat_settlement_notification` is `true` on a T+1 quote, and on a T+1 order from the moment a
-  liquidity provider accepts it; before acceptance every order, T+1 included, reads `false`.
-- **Order fields.** Every order carries `delayed_settlement`, `settlement_hours`, `consent_deadline_at`,
-  `payout_deadline_at`, six `delayed_settlement_*_at` timestamps, `source_of_funds_required` and
-  `source_of_funds_threshold_usd`. A delayed order that ended without a payment also carries
-  `settlement_refund_reason`: `refunded_after_release`, `dossier_rejected`, `consent_window_expired`,
-  `not_released_in_time`, `cancelled_by_customer` or `cancelled_by_licensed_partner`. The `initiate` and
-  `authorize-crypto-transfer` responses do not carry the T+1 fields; read them from the order. Before a
-  liquidity provider accepts an order quoted T+1, its `delayed_settlement` is provisional: it follows the
-  offer the order is currently offered to, and the order can still move to an instant offer.
-- **Signing the release.** `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters` returns
-  the EIP-712 payload to sign and `POST /api/v1/partner/orders/{order_id}/settlement-consent` takes the
-  signature. The release also waits for any required source of funds approval and for the licensed
-  partner's payment check. A funded delayed order stays `crypto_received`, with `next_action`
-  `sign_settlement_consent`, `submit_source_of_funds` or `await_review`. `confirm-fiat-received` is refused
-  on a delayed order. The licensed partner can decline a funded order until you sign, and not after.
-- **Source of funds.** An order worth USD 50,000 or more needs the customer's explanation and documents
-  approved before the release. Four endpoints under `/api/v1/partner/orders/{order_id}` collect them:
-  `GET source-of-funds`, `GET source-of-funds/requirements`, `POST source-of-funds/declaration` and
-  `POST source-of-funds/documents`.
-- **Statuses.** `settlement_in_progress` after the release, and `returned` when a payment attempt came back
-  and no new attempt is approved yet. On a delayed order `completed` means the bank payment arrived; the
-  `completed` filter of `GET /api/v1/partner/orders` and `GET /api/v1/partner/stats` count it only then.
-  The timeline adds one entry per step, and the entries of repeated payment attempts end in `(attempt N)`.
-- **Webhooks.** `order.status.changed` fires twice for the release (when it starts, and when it is
-  confirmed, carrying `payout_deadline_at`) and once for each later step. T+1 fields are omitted on ordinary
-  orders, and T+1 events carry `provider: "p2p"`.
-- **Third-party payouts** can settle T+1 too. Among the licensed partners that can pay a recipient, one that
-  settles instantly takes the payout whenever it can, and one that settles T+1 takes it only when none can.
-  Until Unigox has enabled delayed settlement for you, a currency or rail that only T+1 offers serve is not
-  open to your third-party payout quotes: the quote answers `400 INVALID_REQUEST`
-  (`third-party recipient payout is not available for {CURRENCY}`) for the currency and
-  `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail, not `409 NO_OFFERS_AVAILABLE`. A retry does not change
-  either. See [When a payout is delayed](./api-reference/third-party-payouts.md#when-a-payout-is-delayed).
-
-## 2026-10-19
 
 **`authorize-crypto-transfer` accepts a `signature` without the `0x` prefix again.** The signature check added on 2026-10-15 refused a bare hex signature with `400 INVALID_REQUEST` (`invalid signature: malformed signature`), although it was accepted before. Both forms are accepted now; we recommend sending `0x`. The signature is still 65 bytes (`r`, `s`, `v`), with `v` as 27/28 or 0/1 and a low `s`.
 
@@ -176,7 +117,7 @@ These describe how the API already behaves; the API does not change.
 - **Deposit addresses of their own** on EVM chains, Solana, Tron and TON, credited to the customer's address on XAI. `GET /users/{user_uuid}/wallet` shows the balance; `wallet.deposit.received` fires on each credit.
 - **Orders.** On an off-ramp the customer signs the escrow funding and any refund, and refunds land on their own address. On an on-ramp the crypto is released to the customer's address and your partner fee to your partner wallet, in the same transaction.
 - **Withdrawals** to any supported chain, signed by the customer, gas paid by Unigox: `POST /users/{user_uuid}/withdrawals/quote`, then `POST /users/{user_uuid}/withdrawals`. `wallet.withdrawal.status.changed` follows each one. Deposits and withdrawals need no KYC; orders do.
-- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`.
+- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`, `DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN`, `DEPOSIT_ADDRESS_NOT_WATCHED`, `BRIDGE_UNAVAILABLE`.
 
 **Every new customer gets their own Unigox account.** A customer created with `POST /api/v1/partner/users` from today has their own account, separate from a Unigox app user or another partner's customer with the same email. Customers you already have are unchanged.
 

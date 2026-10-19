@@ -45,7 +45,7 @@ through KYB onboarding is not on this API.
 
 You can open accounts and read them. v1 is **receive-only** for you: neither you
 nor the customer can move money off an account through this API, and converting
-what arrives is an order, not a transfer. **Not available yet.** Where Unigox has
+what arrives is an order, not a transfer. Where Unigox has
 switched it on for you, Unigox itself pays an off-ramp on from the account to
 the bank you named; see
 [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account).
@@ -279,7 +279,7 @@ These events come in the same envelope and with the same signature as
 | --- | --- | --- |
 | `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency` |
 | `fiat_account.deposit.received` | Money arrived on the account. Not sent for a credit matched to exactly one off-ramp paid through the account (see `order.own_account_payout.updated`). | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
-| `order.own_account_payout.updated` | **Not available yet.** An off-ramp paid through the account was sent on to the bank, or stopped on the account. See [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account). | `order_id`, `user_uuid`, `own_account_payout_status`, `fiat_account_id` (omitted when none), `amount`, `currency` |
+| `order.own_account_payout.updated` | An off-ramp paid through the account was sent on to the bank, or stopped on the account. See [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account). | `order_id`, `user_uuid`, `own_account_payout_status`, `fiat_account_id` (omitted when none), `amount`, `currency` |
 
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
 no per-event subscription.
@@ -302,10 +302,6 @@ an open order of the same customer by amount, to the cent; two open orders for
 the same amount are held for review rather than guessed between.
 
 ## Paying an off-ramp through the account
-
-> **Not available yet.** Off-ramps are not paid through the customer's account
-> yet: every off-ramp is paid straight to the bank you named, and none of the
-> fields or the event below are sent.
 
 Normally an off-ramp is paid by the liquidity provider straight to the bank you
 named. The customer's bank then shows someone other than the customer as the

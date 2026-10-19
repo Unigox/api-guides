@@ -48,12 +48,7 @@ behalf.
    `POST /api/v1/partner/orders/{order_id}/authorize-crypto-transfer`.
    `sender_address` is your wallet; `recipient_address` is the escrow deployed
    for this order.
-8. If the payout settles T+1, sign its release when the order asks for it
-   (`next_action: "sign_settlement_consent"`): the crypto then goes from the
-   escrow to the licensed partner's wallet, and the recipient is paid after it.
-   From USD 50,000, your customer's source of funds must also be approved. See
-   [When a payout is delayed](#when-a-payout-is-delayed).
-9. Read the order and compliance state.
+8. Read the order and compliance state.
 
 Recipient identity and destination values are versioned. The quote freezes the
 exact execution values it validated. Later edits never alter an existing quote
@@ -482,74 +477,6 @@ show a payout's compliance state later.
 
 API-created and Portal-created payouts produce the same record through the same
 path.
-
-## When a payout is delayed
-
-> **Not available yet.** Delayed settlement is not live: no payout is delayed
-> yet. The changelog will announce the date it goes live.
-
-A third-party payout can settle T+1: once you have signed its release, the
-crypto goes to the licensed partner before the recipient is paid, and the
-payment follows, expected within a window counted from the release
-(`settlement_hours`): the licensed partner's target, not a guaranteed deadline.
-The rule is the one in
-[When an order is delayed](./delayed-settlement.md#when-an-order-is-delayed),
-among the licensed partners that can pay a recipient: one that settles instantly
-takes the payout whenever it can, and one that settles T+1 takes it only when
-none can. No quote parameter asks for it. `provider_scope=licensed_only` leaves
-T+1 offers out, but it also leaves out every other P2P offer, so use it only if
-that is what you want.
-
-Your payouts can be delayed only once Unigox has enabled delayed settlement for
-you. We switch it on when you ask, once your integration can sign the release
-([Step 4](./delayed-settlement.md#step-4-sign-the-release)). Until then they match instant offers only, and a currency or rail that only
-delayed offers serve is refused at the quote, with `400 INVALID_REQUEST` for the
-currency and `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` for the rail
-([Compliance in v1](#compliance-in-v1)). A retry does not change either.
-
-You recognise it on the same fields as any delayed order:
-
-- the quote carries `delayed_settlement: true` and `settlement_hours`, next to
-  `recipient_context`;
-- `GET /api/v1/partner/orders/{order_id}` carries the same two fields and the
-  other T+1 fields, next to `recipient_context` and `compliance`. The
-  `initiate` response does not carry them. Until a licensed partner accepts
-  the payout they are provisional: they follow the offer it is currently
-  offered to, and a payout quoted T+1 can still move to an instant offer.
-
-To see it before you quote, call `POST /api/v1/partner/offramp/estimate` with
-the recipient's `recipient_id` and `recipient_destination_id`, as shown in
-[Request a quote](#3-request-a-quote).
-Its `delayed_settlement`, `settlement_hours` and `source_of_funds_required` then
-describe the payout you would be quoted: sent with your API key, as a
-destination requires, the estimate leaves T+1 offers out until delayed
-settlement is enabled for you, as your quote does. Like the price, they are
-indicative.
-
-From there the [delayed settlement guide](./delayed-settlement.md) applies
-unchanged. Once the escrow is funded, sign the release
-([Step 4](./delayed-settlement.md#step-4-sign-the-release)); nothing moves
-without it. An order worth USD 50,000 or more also needs your customer's source
-of funds approved before the release
-([Step 5](./delayed-settlement.md#step-5-source-of-funds-on-large-orders)). Your
-customer stays the sender throughout; only the bank payment goes to the
-recipient.
-
-`completed` means the payment to the recipient was recorded as paid:
-`delayed_settlement_fiat_paid_to_customer_at` is set, under the same name as on
-any other order. Between the release and that moment the order reads
-`settlement_in_progress`, or `returned` while a payment that came back waits for
-a new attempt or for Unigox to refund the crypto instead.
-
-The webhooks are the ones in
-[the delayed settlement guide](./delayed-settlement.md#webhooks), with one
-difference: a third-party payout has no payment details of your customer's, so
-`data.payment_details_id` is an empty string (`""`) on every event.
-
-If a delayed payout ends without a payment, `settlement_refund_reason` says why,
-with one of the six values in
-[Why an order ended without a payment](./delayed-settlement.md#why-an-order-ended-without-a-payment).
-A refund goes to the wallet that funded the escrow, which is yours.
 
 ## Compliance in v1
 
