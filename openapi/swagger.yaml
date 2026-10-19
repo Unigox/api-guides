@@ -106,9 +106,9 @@ tags:
       A fiat account belongs to a customer you created with `POST /api/v1/partner/users` and put
       through KYC, and it is addressed by its own `fiat_account_id`. Open one, show the customer
       where to pay in, and read what lands on it. In v1 neither you nor the customer can move money
-      off an account through this API, and converting it is an order. Where Unigox has switched it on
-      for you, Unigox itself pays an off-ramp on from the customer's account to the
-      bank you named: see `payout_via_own_account` on the order.
+      off an account through this API, and converting it is an order. EUR and GBP off-ramps are paid
+      through the customer's account by Unigox itself, on to the bank you named: see
+      `payout_via_own_account` on the order.
 
       An optional product Unigox activates per partner. `GET /api/v1/partner/fiat-accounts/config`
       answers whether it is on for you, before any customer is in scope.
@@ -4642,6 +4642,13 @@ paths:
             `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` — recipient payouts are switched off on our side, or
             their availability could not be determined. Both are opened on our side; do not retry in a
             loop.
+
+            EUR and GBP off-ramps paid through the customer's own account (see Fiat Accounts):
+            `FIAT_ACCOUNT_OPENING` — the customer's account is being opened (`details.fiat_account_id`,
+            `details.fiat_account_status`); quote again once `fiat_account.updated` reports it active.
+            `FIAT_ACCOUNT_REQUIRED` — the order cannot be paid through the customer's account
+            (`details.reason`, `details.missing_fields`). `FIAT_ACCOUNTS_NOT_ENABLED` — customer fiat
+            accounts are not active for your partner in this currency.
           content:
             application/json:
               schema:
@@ -4654,6 +4661,17 @@ paths:
                     error:
                       code: NO_OFFERS_AVAILABLE
                       message: "No offers available for USDT/NGN"
+                fiat_account_opening:
+                  summary: The customer's EUR account is being opened
+                  value:
+                    success: false
+                    error:
+                      code: FIAT_ACCOUNT_OPENING
+                      message: "EUR off-ramps are paid through the customer's own account, which is being opened; retry the quote once the fiat_account.updated webhook reports it active"
+                      details:
+                        currency: EUR
+                        fiat_account_id: "6b1d2c3e-0000-4000-8000-000000000007"
+                        fiat_account_status: pending
                 rail_not_supported:
                   summary: Recipient payouts are not open on the destination's rail
                   value:
@@ -4718,6 +4736,12 @@ paths:
                     error:
                       code: THIRD_PARTY_CONTEXT_INVALID
                       message: "recipient destination does not support the payout corridor"
+        '503':
+          description: '`FIAT_ACCOUNT_CHECK_UNAVAILABLE` — the payout route of an EUR or GBP off-ramp could not be checked. Nothing was created; retry shortly.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '500':
           description: Internal server error
           content:
@@ -4860,6 +4884,13 @@ paths:
             payout agent has not confirmed recipient-context support, in which case no order is
             created and the quote is left untouched. `WALLET_NOT_LINKED` — an `external_wallet` customer with no
             linked address.
+
+            EUR and GBP off-ramps paid through the customer's own account (see Fiat Accounts):
+            `FIAT_ACCOUNT_OPENING` — the customer's account is being opened (`details.fiat_account_id`,
+            `details.fiat_account_status`); quote again once `fiat_account.updated` reports it active.
+            `FIAT_ACCOUNT_REQUIRED` — the order cannot be paid through the customer's account
+            (`details.reason`, `details.missing_fields`). `FIAT_ACCOUNTS_NOT_ENABLED` — customer fiat
+            accounts are not active for your partner in this currency.
           content:
             application/json:
               schema:
@@ -4962,6 +4993,12 @@ paths:
                         missing_fields: ["date_of_birth", "id_number", "source_of_funds"]
                         kyc_fields: ["dob", "id_number", "source_of_funds"]
                         field_limits: {"id_number": 30}
+        '503':
+          description: '`FIAT_ACCOUNT_CHECK_UNAVAILABLE` — the payout route of an EUR or GBP off-ramp could not be checked. Nothing was created; retry shortly.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
         '500':
           description: Internal server error
           content:
@@ -9028,17 +9065,16 @@ components:
         payout_via_own_account:
           type: boolean
           description: |
-            `true` on an off-ramp paid through the customer's own fiat account:
-            the provider pays the customer's account and Unigox then pays the money on to the bank you
-            named, both in the customer's name. Applies only where Unigox has switched it on for you, to
-            a supported currency (EUR), a payout to the customer's own `payment_details` (not a
-            Recipient) and a customer with an `active` fiat account in that currency, and only when the
-            bank details you named pass Unigox's checks (same currency and rail, holder name matches the
-            customer, not the fiat account itself) and a liquidity provider that can pay the customer's
-            account directly is available for the route; otherwise the order is paid straight to your
-            bank details as before. Omitted on every other order, never `false`. You still call
-            `confirm-fiat-received`. The provider's payment into the customer's account, once matched to
-            the order, does not send `fiat_account.deposit.received`.
+            `true` on an off-ramp paid through the customer's own fiat account: the liquidity provider
+            pays the customer's account and Unigox then pays the money on to the bank you named, both in
+            the customer's name. EUR and GBP off-ramps to the customer's own `payment_details` are paid
+            this way wherever customer fiat accounts are active for your partner in that currency; when
+            they cannot be, the quote is refused (`FIAT_ACCOUNT_OPENING`, `FIAT_ACCOUNT_REQUIRED`,
+            `FIAT_ACCOUNTS_NOT_ENABLED`) unless a liquidity provider that pays banks directly takes the
+            order. Omitted on every other order, never `false`. If you do not call
+            `confirm-fiat-received`, the order is confirmed once Unigox has matched the money on the
+            customer's account. That payment into the account does not send
+            `fiat_account.deposit.received`.
           example: true
         own_account_payout_status:
           type: string
