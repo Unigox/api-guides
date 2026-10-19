@@ -181,7 +181,7 @@ Content-Type: application/json
 
 Leave out `amount` to move the whole available balance in that currency. The
 reverse direction, from your operating account to the company's, is
-`POST …/fund` with the same body. It is enabled separately.
+`POST …/fund`, where `amount` is required. It is enabled separately.
 
 ```json
 {

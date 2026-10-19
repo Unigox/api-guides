@@ -6902,7 +6902,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BusinessTransferRequest'
+              $ref: '#/components/schemas/BusinessFundRequest'
       responses:
         '200':
           description: Funded
@@ -10728,17 +10728,26 @@ components:
       properties:
         amount:
           type: string
-          description: Decimal string. Optional on transfer-to-partner (defaults to the whole available balance), required on fund.
+          description: Decimal string. Leave out to move the whole available balance in `currency`.
+          example: "1500.00"
+        currency:
+          type: string
+          example: GBP
+    BusinessFundRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: string
+          description: Decimal string.
           example: "1500.00"
         currency:
           type: string
           example: GBP
         description:
           type: string
-          description: Fund only. The reference the bank records.
-        idempotency_key:
-          type: string
-          description: Accepted when the `Idempotency-Key` header is absent. The header wins.
+          description: The reference the bank records.
     BusinessTransferResponse:
       type: object
       properties:
