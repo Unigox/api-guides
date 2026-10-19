@@ -99,7 +99,7 @@ One-time setup (Settings → Secrets and variables → Actions):
 Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
 scripts/publish-page.mjs` resolves the page read-only and makes no changes.
 
-## Bridge crypto payment guide (integration preview)
+## Bridge crypto payment guide
 
 - `crypto-payments.md`: merchant checkout and settlement walkthrough.
 - `api-reference/bridge-payments.md`: signed address requests, responses, callback
@@ -115,14 +115,20 @@ selection rules were also checked against that Quote head, Agent
 or a live merchant canary. The wallet UI's Privy path does not accept merchant callback URLs;
 these examples use direct EVM wallet signing.
 
-Publication requires adding the two Markdown pages to the GitBook space and
-linking them under Tutorials and API Reference. The current CI publishes
-`openapi/swagger.yaml`, `changelog.md` and `fiat-accounts.md`; merging a new guide
-file alone does not publish it. These drafts are submitted for wording and integration review. Publish only
-after that approval, deployment of the matching memo services, confirmation of
-the merchant bridge base URL, and a real payment with callback verification and
-settlement reconciliation. Release readiness notes belong here, not in the
-client-facing payment guide.
+`.github/workflows/publish-memo-guides.yml` publishes these pages under
+`tutorials/crypto-payments` and `api-reference/bridge-payments` when their source
+changes on `main`. It creates missing pages in the existing navigation groups,
+updates only those guides, and converts their repository links to public URLs.
+It also appends any missing wallet/deposit-address operation blocks to the
+existing User Management reference without replacing its existing blocks.
+The OpenAPI workflow still publishes the specification itself.
+
+This uses the existing `GITBOOK_TOKEN`, `GITBOOK_SPACE` and `GITBOOK_SPEC` settings.
+PR checks test the publisher and resolve its destinations read-only; they do not
+publish. A manual workflow run on `main` republishes the current sources. Verify
+both pages, their cross-links, and the five wallet/deposit-address operations on
+developers.unigox.com after publication. Review and deploy matching API changes
+before merging documentation that describes new behavior.
 
 The payout minimum and confirmed-amount additions describe the coordinated cost-slippage release contract.
 The Quote projection and quote policy were checked against lane commit
