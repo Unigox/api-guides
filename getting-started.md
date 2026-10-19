@@ -16,4 +16,5 @@ Start with the section that matches where you are in the integration process.
 
 * Read [Basics](https://developers.unigox.com/basics/how-it-works) for webhook behavior, lifecycle, and production readiness.
 * Read [Off-Ramp Partner Playbook](https://developers.unigox.com/tutorials/off-ramp-playbook) for the full phased integration flow.
+* [Let customers hold their own crypto](non-custodial-customers.md): non-custodial customers who link their own EVM address, deposit, off-ramp, on-ramp and withdraw by signing in your app.
 * Use [API Reference](https://developers.unigox.com/reference) when implementing requests.

@@ -9,6 +9,9 @@ import { pathToFileURL } from "node:url";
 export const guides = [
   { source: "crypto-payments.md", path: "tutorials/crypto-payments", sibling: "tutorials/fiat-accounts", title: "Accept crypto payments on EVM, TON, Solana and Tron" },
   { source: "api-reference/bridge-payments.md", path: "api-reference/bridge-payments", sibling: "api-reference/user-management", title: "Bridge payment addresses and credited webhooks" },
+  { source: "non-custodial-customers.md", path: "tutorials/non-custodial-customers", sibling: "tutorials/fiat-accounts", title: "Non-custodial customers" },
+  { source: "api-reference/third-party-payouts.md", path: "tutorials/third-party-payouts", sibling: "tutorials/fiat-accounts", title: "Third-party payouts" },
+  { source: "api-reference/funding-your-wallet.md", path: "tutorials/funding-your-wallet", sibling: "tutorials/fiat-accounts", title: "Funding your wallet" },
 ];
 
 // New User Management operations introduced by this release's swagger.yaml.
@@ -18,6 +21,10 @@ export const partnerOperations = [
   ["get", "/api/v1/partner/users/{user_uuid}/wallet"],
   ["get", "/api/v1/partner/users/{user_uuid}/deposit-addresses"],
   ["post", "/api/v1/partner/users/{user_uuid}/deposit-addresses/{chainType}/allocate"],
+  ["post", "/api/v1/partner/users/{user_uuid}/withdrawals/quote"],
+  ["post", "/api/v1/partner/users/{user_uuid}/withdrawals"],
+  ["get", "/api/v1/partner/users/{user_uuid}/withdrawals"],
+  ["get", "/api/v1/partner/users/{user_uuid}/withdrawals/{withdrawal_id}"],
 ];
 
 /**
@@ -139,7 +146,12 @@ export function locatePage(pages, path, parent = null) {
 export function renderGuide(markdown) {
   return markdown
     .replace(/\]\(api-reference\/bridge-payments\.md(?=[#)])/g, "](https://developers.unigox.com/api-reference/bridge-payments")
-    .replace(/\]\(\.\.\/crypto-payments\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/crypto-payments");
+    .replace(/\]\(\.\.\/crypto-payments\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/crypto-payments")
+    .replace(/\]\((?:\.\.\/|\.\/)?non-custodial-customers\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/non-custodial-customers")
+    .replace(/\]\((?:\.\.\/|\.\/)?fiat-accounts\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/fiat-accounts")
+    .replace(/\]\((?:\.\/|api-reference\/)?third-party-payouts\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/third-party-payouts")
+    .replace(/\]\((?:\.\/|api-reference\/)?funding-your-wallet\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/funding-your-wallet")
+    .replace(/\]\(\.\/README\.md(?=[#)])/g, "](https://developers.unigox.com/api-reference/welcome");
 }
 
 /**

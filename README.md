@@ -99,6 +99,41 @@ One-time setup (Settings → Secrets and variables → Actions):
 Test without merging: `GITBOOK_DRY_RUN=1 GITBOOK_TOKEN=… GITBOOK_SPACE=… node
 scripts/publish-page.mjs` resolves the page read-only and makes no changes.
 
+## Releasing documentation ahead of the code
+
+Merging to `main` publishes: the two jobs above put the spec and the changelog on
+developers.unigox.com. Docs for an API change must therefore reach `main` only
+once every service behind the change is deployed, or partners read about
+endpoints that answer `404` and behaviour production does not have yet.
+
+- Merge the api-guides pull request **last**, after the services it describes and
+  the API gateway routes are live.
+- While the change is not live, keep its changelog entry under an
+  `## Unreleased` heading. Both publish jobs run `scripts/check-release.mjs` first
+  and refuse to publish while such a heading exists (the job fails and says why).
+  That stops the two CI jobs and nothing else. The raw URL above serves `main`'s
+  spec the moment it merges, and GitBook can pick that spec up without the CI job
+  (the re-fetch described under "Updating the docs after a spec change"). The
+  guard is a backstop for a mistaken merge, not a way to merge early.
+- Neither job publishes the markdown pages, and where GitBook Git Sync is on a
+  page on `main` reaches developers.unigox.com without them: treat every page on
+  `main` as published. So a page written ahead of its release, or the section of a
+  page that is, opens with a notice that starts `> **Not available yet.**`, and
+  the `Unreleased` entry links to that page or section. An index entry that points
+  to such a page (a list item of a folder's `README.md` or of a `SUMMARY.md`) ends
+  with the same words. `scripts/check-release.mjs` holds both ends: while the
+  entry is `Unreleased` it also fails when a page or section the entry links to
+  does not open with the notice, or an index entry listing such a page does not
+  carry the words; once no entry is `Unreleased` it fails while any page or the
+  changelog still carries them (this README is not checked).
+- Once the release is live, replace `Unreleased` with the release date and remove
+  every notice in the same push. That push publishes the changelog and the spec
+  together.
+
+Run the guard's tests with `node --test scripts/*.test.mjs`. CI runs them on
+every pull request and every push to `main` (`.github/workflows/test.yml`); make
+that job a required status check of `main` so a red run blocks the merge.
+
 ## Bridge crypto payment guide
 
 - `crypto-payments.md`: merchant checkout and settlement walkthrough.

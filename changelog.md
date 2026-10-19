@@ -2,6 +2,129 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-19
+
+**Off-ramps paid through the customer's own account.** Unigox can switch on, per partner, paying an off-ramp through the customer's own fiat account. When the
+order is an off-ramp in EUR to the customer's own bank (`payment_details`, not a Recipient), and the
+customer holds an active fiat account in that currency, the liquidity provider pays the customer's account and Unigox
+sends the money on to the bank you named. Both transfers are in the customer's name, so their bank shows the
+customer as the sender. Any other order, including one whose bank details fail Unigox's checks (same
+currency and rail, holder name matches the customer) or with no liquidity provider able to pay the
+customer's account directly on its route, is paid exactly as before, and you still call
+`confirm-fiat-received`. A quote naming a fiat account you opened for the customer as `payment_details_id`
+answers `400 INVALID_PAYMENT_DETAILS`, switch on or not; name their outside bank. The payment into the
+customer's account, once matched to exactly one such order, does not send `fiat_account.deposit.received`;
+every other deposit still does. Such an order carries `payout_via_own_account: true` on `initiate`, on the
+order and on `order.status.changed`, and the order also carries `own_account_payout_status` and
+`fiat_account_id`. `completed` means the customer's account was paid; `own_account_payout_status` says
+whether the money reached the bank. The new event `order.own_account_payout.updated` reports when it was
+sent on or stopped. See [Paying an off-ramp through the
+account](./fiat-accounts.md#paying-an-off-ramp-through-the-account).
+
+**`authorize-crypto-transfer` accepts a `signature` without the `0x` prefix again.** The signature check added on 2026-10-15 refused a bare hex signature with `400 INVALID_REQUEST` (`invalid signature: malformed signature`), although it was accepted before. Both forms are accepted now; we recommend sending `0x`. The signature is still 65 bytes (`r`, `s`, `v`), with `v` as 27/28 or 0/1 and a low `s`.
+
+## 2026-10-16
+
+**You can choose the wallet your markup is paid to.** Set **Fee wallet** in the partner dashboard to any EVM address you control on XAI. The `partner_fee` of an off-ramp order, and of an on-ramp order of a non-custodial (`external_wallet`) customer, is then paid there at release instead of to your partner wallet. Leave it empty to keep the current behaviour.
+
+- It cannot be set with the API key, so a leaked key cannot redirect your fees. Every change is recorded.
+- A change applies to orders created after it; an order keeps the fee wallet it was created with.
+- Only the markup moves. Off-ramp orders are still funded from, and refunded to, your partner wallet (for an `external_wallet` customer, the customer's address). The markup of other on-ramp orders is withheld at send-out and stays in your partner wallet.
+
+**Bridge refusals are 4xx.** A withdrawal quote, or an on-ramp send-out, to an address the destination chain cannot pay answers `400 INVALID_REQUEST` with `error.details.reason`. An amount too small to bridge answers `422 AMOUNT_TOO_LOW`: either the bridge refused it (`error.details.reason`), or the bridge fee would exceed 2% of the amount (`error.details.bridge_fee`, `estimated_minimum_amount`, `max_fee_pct`). Both answered `500` before.
+
+**Funding your wallet has its own page.** [Funding your wallet](./api-reference/funding-your-wallet.md) describes the deposit addresses Unigox keeps for your partner wallet on other chains, the tokens each chain accepts, and how a deposit is credited on XAI. It was previously covered only under third-party payouts.
+
+## 2026-10-15
+
+**`authorize-crypto-transfer` checks the signature before relaying.** A `forward_request` not signed by `forward_request.from`, with a `deadline` in the past, or with a `nonce` that is not the signer's current forwarder nonce, answers `400 INVALID_REQUEST` and nothing is relayed. Such a request was relayed before and failed as `502 TRANSACTOR_ERROR`. If a relayed request failed without moving funds, a new signed request for the same order is accepted.
+
+**Payout base rate.** A payout estimate or quote may include `fee_breakdown.payout_base_rate`: the conversion rate before the licensed partner's costs and margin, when that licensed partner publishes it, for instant and T+1 offers. It lets you show the recipient amount and one combined fee without charging the fee twice. It is omitted when the rate is not known or is out of date; its absence does not mean there is no margin. Existing amounts and the meaning of `fiat_rail_fee` do not change.
+
+**Other changes to estimates, quotes and orders.**
+
+- `POST /api/v1/partner/offramp/estimate` takes four new optional fields. `recipient_payout: true` prices
+  only on the licensed partners a recipient payout can be matched to, and `exclude_delayed_settlement: true`
+  leaves T+1 offers out, answering `409 NO_OFFERS_AVAILABLE` when no instant offer covers the amount. Both
+  only narrow the estimate; neither changes what a quote matches. `recipient_id` and
+  `recipient_destination_id`, sent together with your API key, price a recipient payout on that
+  destination's own bank or wallet method, rail and country, as the quote does, so a fee a licensed partner
+  charges for that bank is included. Without them a recipient-payout estimate is priced on the corridor and
+  can show a better rate than the quote.
+- The estimate stays public. Sent with your `X-API-Key` (checked first) or a `Bearer` token that
+  authenticates, it is priced as your quote would be matched, so it leaves T+1 offers out until delayed
+  settlement is enabled for you; without credentials it prices them for anyone. A credential that does not
+  authenticate is refused only when the body names `recipient_id` or `recipient_destination_id`: `401
+  UNAUTHORIZED` for a wrong key or an expired or unknown token, `403 UNAUTHORIZED` for a valid token of a
+  user who is not a partner or whose account is inactive, and `503` (or `500`) `INTERNAL_ERROR` while the
+  authentication service is unavailable. Any other request with such a credential is priced as an
+  anonymous caller without T+1 offers, the instant price it got before. `X-Secret-Key` is not a credential
+  on this route: a request that sends it is priced as anonymous. An `Authorization` header with another
+  scheme than `Bearer` is ignored.
+- A third-party quote whose sender, recipient or destination is not found for your partner account, or was
+  archived, still answers `422 THIRD_PARTY_CONTEXT_INVALID`, now with a message that says which: `sender not
+  found or not eligible`, `recipient not found or not eligible` or `recipient destination not found or not
+  eligible`, where it said `sender, recipient or destination not found or not eligible`.
+- Quote and initiate, on both ramps, also require the customer's identity to be verified by Unigox. Under
+  KYC reliance, a customer whose verification is still pending, whom a quote used to price, now gets `422
+  KYC_NOT_CLEARED` (with `error.details.kyc_status`). The message names the `sender` on an
+  off-ramp and the `customer` on an on-ramp, where it said `beneficiary`.
+- A `quote_id` that is not a UUID answers `400 INVALID_REQUEST` (`invalid quote_id format`) on both
+  initiates, where it answered `500`. A well-formed id that names no quote still answers `404`.
+- On a third-party quote, a `recipient_id` or `recipient_destination_id` that is not a UUID answers `400
+  INVALID_REQUEST` naming the field (`recipient_id must be a UUID`), where it answered `422
+  THIRD_PARTY_CONTEXT_INVALID`.
+- `POST /api/v1/partner/orders/{order_id}/cancel` on an order no liquidity provider has accepted yet
+  cancels it and answers with the whole order, where it answered `409 INVALID_STATUS`. If a liquidity
+  provider accepts the order at the same moment, the cancel answers `409 OPERATION_NOT_ALLOWED`; retry it.
+- A quote's `expires_at` is in UTC and in whole seconds, on both ramps.
+- `order_type` is on every order response, including an order no liquidity provider has accepted yet, where
+  it was missing.
+- `GET /api/v1/partner/orders?status=` lists orders no liquidity provider has accepted yet under the status
+  they report: `awaiting_liquidity_provider` and `price_changed_requote_needed` return them instead of an
+  empty page, and `cancelled` includes orders cancelled before acceptance. An off-ramp order whose payout
+  failed is listed under `failed`, the status it reports, and no longer under `cancelled`.
+
+**Corrected in the documentation.**
+
+These describe how the API already behaves; the API does not change.
+
+- `POST /api/v1/partner/orders/{order_id}/cancel` takes an optional body with a free-text `reason`, kept
+  with the cancellation once a liquidity provider has accepted the order, and returns the order on success.
+- `crypto_transfer_authorization_pending` offers no `cancel`: the transfer is in flight.
+- `POST /api/v1/partner/orders/{order_id}/confirm-fiat-received` is not idempotent: once the order has
+  moved past the confirmation (already confirmed, or completed), it answers `409 INVALID_STATUS` and
+  changes nothing. Its `409` is now documented.
+- `POST /api/v1/partner/offramp/initiate` and `POST /api/v1/partner/onramp/initiate` answer `200` on
+  success, not `201`.
+- On a third-party quote, a `rail` that is not the destination's and a `fiat_currency` that is not the
+  destination's currency answer `422 THIRD_PARTY_CONTEXT_INVALID`; `RAIL_ROUTE_MISMATCH` is a self-payout
+  code only.
+- A recipient destination needs `institution_id` on every rail, `alipay` or `wechat-pay` on the wallet
+  rails. The wallet rails take `first_name` and `last_name`, with `full_name` still accepted and split at
+  the first space. The recipient's `recipient_kind`, not `details.beneficiary_type`, selects the individual
+  or business format, so a business recipient cannot hold a wallet destination. On `cnaps`,
+  `mobile_number` accepts a `86` or `+86` prefix and `id_number` is optional.
+- `/api/v1/supported/payment-rails` requires `direction`, and returns `has_liquidity` only when the query
+  names both `country` and `currency`.
+- `payment_details_id` is `""` on third-party payout events.
+
+## 2026-10-12
+
+**Non-custodial customers.** A customer created with `wallet_type: external_wallet` holds their crypto at their own EVM address and signs every movement of it; your partner wallet does not hold or sign for it. Ask Unigox to switch the mode on for your partner account. See [Non-custodial customers](./non-custodial-customers.md).
+
+- **Link once.** `POST /users/{user_uuid}/wallet/challenge` returns a Sign-In with Ethereum message; the customer signs it with `personal_sign` and you submit it to `POST /users/{user_uuid}/wallet`. The address is fixed from then on.
+- **Deposit addresses of their own** on EVM chains, Solana, Tron and TON, credited to the customer's address on XAI. `GET /users/{user_uuid}/wallet` shows the balance; `wallet.deposit.received` fires on each credit.
+- **Orders.** On an off-ramp the customer signs the escrow funding and any refund, and refunds land on their own address. On an on-ramp the crypto is released to the customer's address and your partner fee to your partner wallet, in the same transaction.
+- **Withdrawals** to any supported chain, signed by the customer, gas paid by Unigox: `POST /users/{user_uuid}/withdrawals/quote`, then `POST /users/{user_uuid}/withdrawals`. `wallet.withdrawal.status.changed` follows each one. Deposits and withdrawals need no KYC; orders do.
+- New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`, `DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN`, `DEPOSIT_ADDRESS_NOT_WATCHED`, `BRIDGE_UNAVAILABLE`.
+
+**Every new customer gets their own Unigox account.** A customer created with `POST /api/v1/partner/users` from today has their own account, separate from a Unigox app user or another partner's customer with the same email. Customers you already have are unchanged.
+
+- Among your customers created from this date, one email is one account: a second `user_ref` with the same email shares it.
+- KYC runs per account. A person already verified at Unigox is approved by matching that verification instead of being declined as a repeat.
+- `POST /api/v1/partner/users` answers `200` on success, for a new customer and for a repeated `user_ref` alike. The reference previously listed `201` for a new one.
+
 ## 2026-10-09
 
 **Unused fiat accounts are closed automatically.** An account with no transactions for a period set by Unigox (30 days by default) is closed, and you receive `fiat_account.updated` with `status: closed`, as for any close. To serve the customer again, open a new account with the usual request; it comes with new pay-in details. See [Unused accounts are closed](./fiat-accounts.md#unused-accounts-are-closed).
@@ -71,7 +194,7 @@ A reminder, since it came up: the markup you set in the partner dashboard applie
 - **Polling a verification is a `GET`.** `GET /api/v1/partner/users/{user_uuid}/identification` replaces the old `POST .../identification/refresh`. Checking a status never changed anything; it should not have needed a write.
 - **The envelope is the standard one.** `{"success": true, "data": { … }}` on success, and `{"success": false, "error": {"code", "message", "details"}}` on failure — the same `PartnerErrorResponse` the order and off-ramp endpoints use. Error codes are `SCREAMING_SNAKE` like everywhere else (`MISSING_FIELDS`, `CLIENT_NOT_APPROVED`, `PROVISIONING_IN_PROGRESS`), and a validation failure lists the fields under `error.details.missing_fields`. The old flat `{"ok", "source", "error", "detail"}` envelope is gone, along with the `source`-is-sometimes-an-object exception on the account list.
 - **Field names are `snake_case`,** at every depth, matching the rest of the API. They were `camelCase`.
-- **Nothing identifies our banking provider any more.** `source`, `upstream`, the `depa*` identifiers and the raw provider status are all removed, and the error codes that named the provider (`depa_error`, `depa_unavailable`) are now `BANKING_ERROR` and `BANKING_UNAVAILABLE`. Which institution issues a given currency is an operational detail we may change, and no integration should have been able to tell. `bank_name` and `bic` stay — those describe the account a payer sends money to, which is yours to display.
+- **Nothing identifies our banking provider any more.** `source`, `upstream`, the provider's own identifiers and the raw provider status are all removed, and the error codes that named the provider are now `BANKING_ERROR` and `BANKING_UNAVAILABLE`. Which institution issues a given currency is an operational detail we may change, and no integration should have been able to tell. `bank_name` and `bic` stay — those describe the account a payer sends money to, which is yours to display.
 - **Business-held accounts are on this API for the first time, on the same endpoints.** An account you issued to a company you onboarded through KYB was previously readable only in the console, under its own `business-customers/{caseId}/accounts/{bankAccountId}` tree and a third response envelope. It now appears in `GET /api/v1/partner/fiat-accounts` beside your retail ones, in the same shape, and its ledger and payments are read through the same routes. `holder_type` (`retail` | `business`) says whose account it is and `holder_id` names them in that kind's own id space — a customer `user_uuid`, or a KYB case id. Filter with `?holder_type=`; if you were never set up for business accounts you simply have none, which is not an error. Issuing one still needs a verified KYB case and stays a console flow — these are reads.
 - **Account ids are opaque and carry their holder kind:** `retail_412`, `business_87`. Pass them back verbatim and do not parse them. The two kinds are stored separately and their row numbers overlap, so the prefix is part of the id rather than a parameter beside it. The console's business listing used to publish the banking provider's own bank-account id as the account's identifier; it no longer travels.
 - **Unchanged:** enablement is still Unigox-side (`retail` product, `issue_retail_accounts` capability), money movement is still not on this API, issuance is still idempotent per (customer, currency, jurisdiction), and deposits still stay on the customer's account unless we have switched collection on for you — with the same `retail.settlement.completed` webhook when it settles.
@@ -131,7 +254,7 @@ This closes the gap flagged in the 2026-08-25 entry below. On `GET /api/v1/partn
 
 **Retail accounts: issue dedicated fiat accounts (IBANs) for your own end customers.** A new optional product lets an entitled partner register retail clients under its customers, push their identity to our banking provider, issue accounts, and read balances, ledger and incoming fiat payments — all under the existing `X-API-Key`. See the Retail accounts reference and the `Retail Accounts` endpoint group.
 
-- **The envelope is different for these endpoints.** Retail responses are flat: `{"source":"depa","ok":true, …}` on success (the payload merged at the top level, not under `data`), and `{"ok":false,"source":"depa","error":"<slug>","detail":"…"}` on error. Branch on `error`. Provider-origin failures add `upstream`; missing-field errors add a `missing` array. `GET /retail/accounts` returns `source` as an object, not the string `"depa"`.
+- **The envelope is different for these endpoints.** Retail responses are flat: `{"source":"…","ok":true, …}` on success (the payload merged at the top level, not under `data`), and `{"ok":false,"source":"…","error":"<slug>","detail":"…"}` on error. Branch on `error`. Provider-origin failures add `upstream`; missing-field errors add a `missing` array. `GET /retail/accounts` returns `source` as an object, not a string.
 - **Enablement is Unigox-side.** You reach these endpoints only once we have activated the `retail` product on your partner and, for issuing, granted `issue_retail_accounts`. Until then writes answer `403` and `GET /retail/config` reports `enabled: false`. Money movement (funding, swaps, closing, outbound payments) is not on this API.
 - **Deposits stay on the customer's account by default.** When money lands on a retail IBAN you issued, it stays on that customer's own account and you read it via `…/fiat-payments`. We can, per partner, switch on collection of those credits into your master account instead — ask us to enable it. Only when collection is on and succeeds do you receive a new `retail.settlement.completed` webhook (same envelope and signature as other events); on the default there is no deposit webhook.
 

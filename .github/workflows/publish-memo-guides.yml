@@ -6,12 +6,18 @@ on:
     paths:
       - crypto-payments.md
       - api-reference/bridge-payments.md
+      - non-custodial-customers.md
+      - api-reference/third-party-payouts.md
+      - api-reference/funding-your-wallet.md
       - scripts/publish-memo-guides.mjs
       - .github/workflows/publish-memo-guides.yml
   pull_request:
     paths:
       - crypto-payments.md
       - api-reference/bridge-payments.md
+      - non-custodial-customers.md
+      - api-reference/third-party-payouts.md
+      - api-reference/funding-your-wallet.md
       - scripts/publish-memo-guides.mjs
       - scripts/publish-memo-guides.test.mjs
       - .github/workflows/publish-memo-guides.yml

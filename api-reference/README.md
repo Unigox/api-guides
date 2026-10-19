@@ -10,6 +10,7 @@ Reference groups:
 - [User Management](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/user-management)
 - [On-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/on-ramp)
 - [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp)
+- [Funding your wallet](./funding-your-wallet.md)
 - [Third-party payouts](./third-party-payouts.md)
 - [Bridge payment addresses and credited webhooks](./bridge-payments.md)
 - [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
