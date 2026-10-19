@@ -300,6 +300,34 @@ Open the order first, then have the customer transfer. A deposit is matched to
 an open order of the same customer by amount, to the cent; two open orders for
 the same amount are held for review rather than guessed between.
 
+### Paying from money already on the account
+
+A deposit that arrives with no open order stays on the customer's account
+(`fiat_account.deposit.received` with `order_id: null`). To use it for an
+on-ramp, open the order as usual, then pay it from the balance instead of
+asking for a new transfer:
+
+```
+POST /api/v1/partner/orders/{order_id}/pay-from-balance
+```
+
+No body. The order's `fiat_amount` is taken from the account the order names
+in `fiat_account_id`, and the order then continues exactly as if that amount
+had just arrived. The answer is the order. It is offered in `allowed_actions`
+as `pay-from-balance` while the order is `awaiting_fiat_transfer`.
+
+Read `balances` on the account first (`available` is what can be spent). Calling
+it again for the same order never takes the money twice.
+
+| Error | HTTP | Meaning |
+| --- | --- | --- |
+| `INSUFFICIENT_BALANCE` | 422 | The available balance does not cover the order's `fiat_amount`. Nothing was taken. |
+| `OPERATION_NOT_ALLOWED` | 409 | The order is not paid from the customer's own account (`fiat_funding_source` is not `own_account`), or part of the balance is under review and the rest does not cover the order. |
+| `INVALID_STATUS` | 409 | The order is not waiting for its fiat, or its payment window has closed. |
+| `KYC_NOT_CLEARED` | 422 | The customer is no longer cleared. |
+| `PAY_FROM_BALANCE_UNAVAILABLE` | 503 | Paying from the balance is not available right now. Nothing was taken; the customer can still transfer. |
+| `INTERNAL_ERROR` | 500 | Read the order before retrying; a retry never takes the money twice. |
+
 ## Paying an off-ramp through the account
 
 EUR and GBP off-ramps are paid through the customer's own fiat account in that

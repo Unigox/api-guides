@@ -2,6 +2,15 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## Unreleased
+
+**An on-ramp can be paid from money already on the customer's fiat account.** `POST /api/v1/partner/orders/{order_id}/pay-from-balance` takes the order's `fiat_amount` from the customer's account instead of waiting for a new transfer, and the order continues as if the money had just arrived. Use it for a deposit that arrived before any order was open.
+
+- Offered in `allowed_actions` as `pay-from-balance` on `own_account` orders at `awaiting_fiat_transfer`.
+- Refusals: `422 INSUFFICIENT_BALANCE`, `409 OPERATION_NOT_ALLOWED`, `409 INVALID_STATUS`, `422 KYC_NOT_CLEARED`, `503 PAY_FROM_BALANCE_UNAVAILABLE`. Repeating the call never debits twice.
+
+See [Paying from money already on the account](./fiat-accounts.md#paying-from-money-already-on-the-account).
+
 ## 2026-10-19
 
 **EUR and GBP off-ramps are always paid through the customer's own account.** Where customer fiat accounts are active for your partner in that currency, an EUR or GBP off-ramp to the customer's own bank is paid into the customer's account and on to their bank, in their name. There is nothing to switch on.
