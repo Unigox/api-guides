@@ -302,9 +302,6 @@ the same amount are held for review rather than guessed between.
 
 ## Paying an off-ramp through the account
 
-> **Not available yet.** Until this release is live, the quote does not open
-> accounts or answer the codes below.
-
 EUR and GBP off-ramps are paid through the customer's own fiat account in that
 currency: into the account first, then on to the bank you named, both in the
 customer's name. Their bank shows the customer as the sender, not Unigox. There
