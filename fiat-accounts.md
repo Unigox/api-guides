@@ -38,8 +38,9 @@ Your partner account
         └── orders             — conversion; an on-ramp may be funded from the account
 ```
 
-Accounts are held by individuals. An account issued to a company you onboarded
-through KYB onboarding is not on this API.
+Accounts are held by individuals. Accounts issued to a company you onboarded
+through KYB are on their own endpoints: see
+[Business customers](./api-reference/business-customers.md).
 
 ## What you can and cannot do
 
