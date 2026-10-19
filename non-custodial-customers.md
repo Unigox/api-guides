@@ -1,7 +1,7 @@
 # Non-custodial customers
 
-This guide walks through the flow end to end. Each endpoint is described in the
-**Customer Wallets** section of the API reference.
+This guide walks through the flow end to end. Each endpoint is described on the
+[User Management](https://developers.unigox.com/api-reference/user-management) page of the API reference.
 
 Let your customers hold their own crypto. Each customer brings their own EVM
 address, deposits to it, and signs every movement of their funds with their own

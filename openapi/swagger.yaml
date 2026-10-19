@@ -87,19 +87,6 @@ tags:
       the separate Bridge payment API; the partner deposit-address routes do not attach memos.
 
     x-page-icon: user
-  - name: Customer Wallets
-    description: |
-      Non-custodial customers: a customer created with `wallet_type: external_wallet` holds funds at
-      their own EVM address and signs every movement of them. Link the address once with a signed
-      challenge, hand out deposit addresses that credit it, read the balance, and withdraw to any
-      supported chain. Off-ramp and on-ramp orders use the usual order endpoints; for these customers
-      the customer signs where your partner wallet signs for a `partner_wallet` customer.
-
-      Creating such a customer requires the non-custodial mode to be switched on for your partner account
-      (ask Unigox; `403 FEATURE_NOT_ENABLED` otherwise). Switching it off later stops new customers only.
-      Webhook payloads (`wallet.linked`, `wallet.deposit.received`, `wallet.withdrawal.status.changed`) are
-      described in the Non-custodial customers guide.
-    x-page-icon: wallet
   - name: On-Ramp
     description: On-ramp operations (fiat to crypto) — partner initiates a buy order, vendor provides liquidity, end-user sends fiat
     x-page-icon: arrow-down-to-bracket
@@ -1136,7 +1123,7 @@ paths:
   /api/v1/partner/users/{user_uuid}/wallet/challenge:
     post:
       tags:
-        - Customer Wallets
+        - User Management
       summary: Request a wallet ownership challenge
       description: |
         Returns a Sign-In with Ethereum (EIP-4361) message that proves the customer controls `address`.
@@ -1208,7 +1195,7 @@ paths:
   /api/v1/partner/users/{user_uuid}/wallet:
     post:
       tags:
-        - Customer Wallets
+        - User Management
       summary: Link the customer's address
       description: |
         Submit the challenge message and the customer's `personal_sign` signature. The signer is
@@ -1289,7 +1276,7 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
     get:
       tags:
-        - Customer Wallets
+        - User Management
       summary: Customer wallet and balance
       description: |
         The customer's linked address, its status, and the balance held at that address on the XAI
@@ -1333,7 +1320,7 @@ paths:
   /api/v1/partner/users/{user_uuid}/deposit-addresses:
     get:
       tags:
-        - Customer Wallets
+        - User Management
       summary: List customer deposit addresses and monitoring status
       description: |
         Returns the saved deposit addresses for a customer with a linked external wallet.
@@ -1414,7 +1401,7 @@ paths:
   /api/v1/partner/users/{user_uuid}/deposit-addresses/{chainType}/allocate:
     post:
       tags:
-        - Customer Wallets
+        - User Management
       summary: Allocate customer deposit addresses
       description: |
         Creates additional deposit addresses for a customer with a linked external wallet.
@@ -1551,7 +1538,7 @@ paths:
   /api/v1/partner/users/{user_uuid}/withdrawals/quote:
     post:
       tags:
-        - Customer Wallets
+        - User Management
       summary: Quote a withdrawal
       description: |
         Prices a withdrawal of `amount` of `crypto_currency` from the customer's XAI address to
@@ -1645,7 +1632,7 @@ paths:
   /api/v1/partner/users/{user_uuid}/withdrawals:
     post:
       tags:
-        - Customer Wallets
+        - User Management
       summary: Submit a signed withdrawal
       description: |
         Submit the quoted `forward_request` and the customer's signature. Unigox checks that the request
@@ -1725,7 +1712,7 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
     get:
       tags:
-        - Customer Wallets
+        - User Management
       summary: List the customer's withdrawals
       operationId: listCustomerWithdrawals
       security:
@@ -1785,7 +1772,7 @@ paths:
   /api/v1/partner/users/{user_uuid}/withdrawals/{withdrawal_id}:
     get:
       tags:
-        - Customer Wallets
+        - User Management
       summary: Withdrawal by ID
       operationId: getCustomerWithdrawal
       security:
