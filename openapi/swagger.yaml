@@ -6593,13 +6593,13 @@ paths:
       operationId: createBusinessCustomer
       description: |
         Opens a KYB case for a company and answers with the onboarding link its representative fills
-        the questionnaire in at. Every field is optional: whatever you send is pre-filled, and the
-        representative completes the rest. With `representative_email`, the link is also emailed and
-        only that person can open it.
+        the questionnaire in at. `representative_email` is required: the link is emailed there and only
+        that person can open it. Everything else is optional: whatever you send is pre-filled, and the
+        representative completes the rest.
       security:
         - ApiKeyAuth: []
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
@@ -6672,6 +6672,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: The KYB is already decided, so there is no link (`CONFLICT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
   /api/v1/partner/business-customers/{business_customer_id}/resend-invitation:
     post:
       tags:
@@ -6692,6 +6698,12 @@ paths:
                 $ref: '#/components/schemas/BusinessOnboardingLinkResponse'
         '404':
           description: No such business customer, or not yours (`BUSINESS_CUSTOMER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: The KYB is already decided, so there is no link to resend (`CONFLICT`)
           content:
             application/json:
               schema:
@@ -6754,6 +6766,24 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '422':
           description: KYB not approved yet (`KYB_NOT_APPROVED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '400':
+          description: Bad currency or issuer country (`UNSUPPORTED_CURRENCY`, `INVALID_ISSUER_COUNTRY`, `BUSINESS_NAME_MISSING`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: No such business customer, or not yours (`BUSINESS_CUSTOMER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: The company already holds an account in this currency; send `allow_duplicate` as true for a second one (`CURRENCY_ALREADY_ISSUED`)
           content:
             application/json:
               schema:
@@ -6879,7 +6909,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '409':
-          description: The key was used for a different transfer, or is still running (`IDEMPOTENCY_KEY_CONFLICT`, `TRANSFER_IN_PROGRESS`)
+          description: The key was used for a different transfer, is still running, or is held for reconciliation (`IDEMPOTENCY_KEY_CONFLICT`, `TRANSFER_IN_PROGRESS`, `TRANSFER_UNRECONCILED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '403':
+          description: Moving funds is not enabled for you, or is switched off (`CAPABILITY_NOT_GRANTED`, `ISSUANCE_DISABLED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: No such account under this customer (`FIAT_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: Nothing can move (`NOTHING_TO_MOVE`, `INSUFFICIENT_FUNDS`, `FUNDS_NOT_SETTLED`, `ACCOUNT_CLOSED`, `NO_OPERATING_ACCOUNT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '504':
+          description: The bank did not confirm in time and the transfer may still have gone through (`BANKING_TIMEOUT_UNKNOWN`). Do not retry with a new key; contact Unigox support
           content:
             application/json:
               schema:
@@ -6911,18 +6965,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/BusinessTransferResponse'
         '400':
-          description: No idempotency key (`IDEMPOTENCY_KEY_REQUIRED`) or a bad amount
+          description: No idempotency key (`IDEMPOTENCY_KEY_REQUIRED`), a bad amount (`INVALID_AMOUNT`) or a currency the account does not hold (`CURRENCY_MISMATCH`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '403':
-          description: Funding is not enabled for you (`CAPABILITY_NOT_GRANTED`)
+          description: Funding is not enabled for you, or is switched off (`CAPABILITY_NOT_GRANTED`, `ISSUANCE_DISABLED`)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 
+        '409':
+          description: The key was used for a different transfer, is still running, or is held for reconciliation (`IDEMPOTENCY_KEY_CONFLICT`, `TRANSFER_IN_PROGRESS`, `TRANSFER_UNRECONCILED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: No such account under this customer (`FIAT_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: Nothing can move (`NOTHING_TO_MOVE`, `INSUFFICIENT_FUNDS`, `FUNDS_NOT_SETTLED`, `ACCOUNT_CLOSED`, `NO_OPERATING_ACCOUNT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '504':
+          description: The bank did not confirm in time and the transfer may still have gone through (`BANKING_TIMEOUT_UNKNOWN`). Do not retry with a new key; contact Unigox support
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
 components:
   schemas:
     WalletType:
@@ -10447,6 +10525,8 @@ components:
                 nullable: true
     BusinessCustomerCreateRequest:
       type: object
+      required:
+        - representative_email
       properties:
         legal_name:
           type: string
@@ -10476,6 +10556,8 @@ components:
         invitation_expiry_days:
           type: integer
           minimum: 1
+          maximum: 90
+          description: How long the onboarding link stays valid. Left out, the link does not expire.
     BusinessOnboardingLink:
       type: object
       properties:
@@ -10485,6 +10567,8 @@ components:
         expires_at:
           type: string
           format: date-time
+          nullable: true
+          description: Null when the link does not expire.
     BusinessCustomerListResponse:
       type: object
       properties:

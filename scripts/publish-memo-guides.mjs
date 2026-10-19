@@ -12,6 +12,7 @@ export const guides = [
   { source: "non-custodial-customers.md", path: "tutorials/non-custodial-customers", sibling: "tutorials/fiat-accounts", title: "Non-custodial customers" },
   { source: "api-reference/third-party-payouts.md", path: "tutorials/third-party-payouts", sibling: "tutorials/fiat-accounts", title: "Third-party payouts" },
   { source: "api-reference/funding-your-wallet.md", path: "tutorials/funding-your-wallet", sibling: "tutorials/fiat-accounts", title: "Funding your wallet" },
+  { source: "api-reference/business-customers.md", path: "tutorials/business-customers", sibling: "tutorials/fiat-accounts", title: "Business customers" },
 ];
 
 // New User Management operations introduced by this release's swagger.yaml.

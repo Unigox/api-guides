@@ -48,8 +48,9 @@ Not on the API, and done in the B2B console instead:
   addressed as `business_<n>` and is only found under the customer that holds
   it. An id that does not exist and one that is not yours both answer `404`.
 - **Money movement needs an `Idempotency-Key` header.** Send a new key for each
-  transfer, and the same key when you retry one. A retry answers from the first
-  attempt with `replayed: true` and moves nothing. A key reused for a different
+  transfer, and the same key when you retry one. A retry of a transfer that went
+  through answers from the first attempt with `replayed: true` and moves nothing.
+  A retry of one that was refused is tried again. A key reused for a different
   amount or account answers `409 IDEMPOTENCY_KEY_CONFLICT`.
 - **Amounts** are decimal strings.
 
@@ -67,13 +68,17 @@ Content-Type: application/json
   "country_of_incorporation": "GB",
   "registration_number": "12345678",
   "representative_email": "director@hfwm.example",
-  "external_ref": "crm-8812"
+  "external_ref": "crm-8812",
+  "invitation_expiry_days": 7
 }
 ```
 
-Every field is optional. What you send is pre-filled in the questionnaire, and
-the company's representative completes the rest. With `representative_email`,
-the link is also emailed and only that person can open it.
+`representative_email` is required: the link is emailed there, and only that
+person can open it. Every other field is optional. What you send is pre-filled
+in the questionnaire, and the representative completes the rest.
+
+The link does not expire unless you send `invitation_expiry_days` (1 to 90);
+then `expires_at` says when it does, and otherwise it is `null`.
 
 ```json
 {
@@ -97,7 +102,8 @@ the link is also emailed and only that person can open it.
 
 Send `onboarding_link.url` to the company. If it expires or gets lost,
 `POST …/{business_customer_id}/resend-invitation` issues a new one (the old one
-stops working).
+stops working). Once the KYB is approved or rejected there is no link, and both
+calls answer `409 CONFLICT`.
 
 ### 2. Follow the KYB
 
@@ -122,8 +128,9 @@ Content-Type: application/json
 ```
 
 `issuer_country` is optional and defaults per currency. A second account in a
-currency the company already holds needs `"allow_duplicate": true`. Before
-approval this answers `422 KYB_NOT_APPROVED`.
+currency the company already holds needs `"allow_duplicate": true`; without it
+the call answers `409 CURRENCY_ALREADY_ISSUED`. Before approval it answers
+`422 KYB_NOT_APPROVED`.
 
 ```json
 {
@@ -181,7 +188,8 @@ Content-Type: application/json
 
 Leave out `amount` to move the whole available balance in that currency. The
 reverse direction, from your operating account to the company's, is
-`POST …/fund`, where `amount` is required. It is enabled separately.
+`POST …/fund`, where `amount` is required. Each direction is enabled for you
+separately; one that is not answers `403 CAPABILITY_NOT_GRANTED`.
 
 ```json
 {
@@ -201,7 +209,7 @@ reverse direction, from your operating account to the company's, is
 ```
 
 If the bank does not confirm a transfer in time, the answer is
-`504 PROVIDER_TIMEOUT_UNKNOWN`: the transfer may still have gone through. Do
+`504 BANKING_TIMEOUT_UNKNOWN`: the transfer may still have gone through. Do
 not retry with a new key. Contact Unigox support; the attempt is held for
 reconciliation.
 
@@ -214,9 +222,18 @@ reconciliation.
 | `ISSUANCE_DISABLED` | 403 | Account issuance and funding are switched off for now |
 | `BUSINESS_CUSTOMER_NOT_FOUND` | 404 | No such business customer, or not yours |
 | `FIAT_ACCOUNT_NOT_FOUND` | 404 | No such account under this customer |
+| `INVALID_REQUEST` | 400 | The body is malformed, or `representative_email` is missing |
+| `UNSUPPORTED_CURRENCY`, `INVALID_ISSUER_COUNTRY` | 400 | No account can be issued in that currency or country |
+| `CONFLICT` | 409 | The KYB is already decided, so there is no onboarding link |
+| `CURRENCY_ALREADY_ISSUED` | 409 | The company already holds an account in this currency; send `allow_duplicate` |
 | `KYB_NOT_APPROVED` | 422 | The KYB is not approved yet |
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | Money movement without an `Idempotency-Key` |
+| `INVALID_AMOUNT`, `CURRENCY_MISMATCH` | 400 | The amount is not a positive decimal, or the account does not hold that currency |
 | `IDEMPOTENCY_KEY_CONFLICT` | 409 | The key was used for a different transfer |
 | `TRANSFER_IN_PROGRESS` | 409 | A transfer with this key is still running |
 | `TRANSFER_UNRECONCILED` | 409 | An earlier attempt with this key is held for reconciliation |
-| `KYB_UNAVAILABLE`, `BANKING_UNAVAILABLE`, `BANKING_ERROR` | 5xx | Try again shortly |
+| `NOTHING_TO_MOVE`, `INSUFFICIENT_FUNDS` | 422 | The balance is zero, or does not cover the amount |
+| `FUNDS_NOT_SETTLED` | 422 | The money has arrived but is not available yet |
+| `ACCOUNT_CLOSED` | 422 | The account is closed |
+| `BANKING_TIMEOUT_UNKNOWN` | 504 | The bank did not confirm a transfer in time; do not retry with a new key |
+| `KYB_UNAVAILABLE`, `BANKING_UNAVAILABLE`, `BANKING_ERROR`, `SERVICE_UNAVAILABLE` | 5xx | Try again shortly |
