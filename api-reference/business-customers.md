@@ -168,7 +168,7 @@ name the bank has on file, which is what a payer sees. It can differ from
   zero.
 - `GET …/ledger?page=1` lists every entry on the account's book, newest first:
   `bank_transfer`, `conversion`, `internal_transfer`, `crypto_transfer`, `fee`
-  or `other`, with `balance_after`.
+  or `other`, with `balance_after` when the bank reports it.
 - `GET …/payments?page=1` lists the bank transfers in (`incoming`) and out
   (`outgoing`), with the counterparty.
 
