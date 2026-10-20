@@ -303,8 +303,6 @@ the same amount are held for review rather than guessed between.
 
 ### Paying from money already on the account
 
-> **Not available yet.** This endpoint is not live. This notice is removed when it is.
-
 A deposit that arrives with no open order stays on the customer's account
 (`fiat_account.deposit.received` with `order_id: null`). To use it for an
 on-ramp, open the order as usual, then pay it from the balance instead of

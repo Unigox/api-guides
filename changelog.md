@@ -2,7 +2,7 @@
 
 Notable changes to the Unigox partner API, newest first.
 
-## Unreleased
+## 2026-10-20
 
 **An on-ramp can be paid from money already on the customer's fiat account.** `POST /api/v1/partner/orders/{order_id}/pay-from-balance` takes the order's `fiat_amount` from the customer's account instead of waiting for a new transfer, and the order continues as if the money had just arrived. Use it for a deposit that arrived before any order was open.
 

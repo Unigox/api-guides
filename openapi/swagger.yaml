@@ -3543,8 +3543,6 @@ paths:
         - On-Ramp
       summary: Pay an on-ramp from the customer's account balance
       description: |
-        > **Not available yet.** This endpoint is not live. This notice is removed when it is.
-
         Pays an on-ramp order with `fiat_funding_source: own_account` out of money already standing on
         the customer's fiat account, instead of a new transfer. The order's `fiat_amount` is taken from
         the account named in the order's `fiat_account_id` (or, for an order opened before the account
