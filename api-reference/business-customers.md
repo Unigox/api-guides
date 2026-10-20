@@ -224,8 +224,6 @@ reconciliation.
 
 ## Your operating account
 
-> **Not available yet.**
-
 What `transfer-to-partner` moves lands on your own operating account, and crypto
 withdrawals leave from there. Three read-only calls show it:
 
