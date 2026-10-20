@@ -18,6 +18,15 @@ Business customers are enabled per partner. If your calls answer
 `403 CAPABILITY_NOT_GRANTED`, ask Unigox to switch them on.
 {% endhint %}
 
+## Who onboards with UNIGOX
+
+B2B clients can use their own front end as technology providers, while their
+customers onboard directly with UNIGOX. Anyone with access to a customer's bank
+account must also onboard with UNIGOX. To initiate fund movements on a
+customer's behalf, the B2B client must obtain power of attorney from that
+customer. This does not replace direct onboarding with UNIGOX; nested flows are
+not permitted.
+
 ## What you can and cannot do
 
 | You can | Endpoint |
@@ -212,6 +221,36 @@ If the bank does not confirm a transfer in time, the answer is
 `504 BANKING_TIMEOUT_UNKNOWN`: the transfer may still have gone through. Do
 not retry with a new key. Contact Unigox support; the attempt is held for
 reconciliation.
+
+## Your operating account
+
+What `transfer-to-partner` moves lands on your own operating account, and crypto
+withdrawals leave from there. Three read-only calls show it:
+
+- `GET /api/v1/partner/operating-account` returns what it holds, in
+  `fiat_balances` and `crypto_balances` (for example `USDC`). Each line's
+  `available` is what you can spend now; fees Unigox has reserved on the account
+  are already taken off.
+- `GET /api/v1/partner/operating-account/ledger?page=1` lists every entry,
+  newest first, in the same shape as a company account's ledger. Money moved in
+  from a company's account is an `internal_transfer`.
+- `GET /api/v1/partner/operating-account/payments?page=1` lists the bank
+  transfers in and out.
+
+```json
+{
+  "success": true,
+  "data": {
+    "operating_account": {
+      "fiat_balances": [{ "currency": "GBP", "available": "1500.00" }],
+      "crypto_balances": [{ "currency": "USDC", "available": "750.50" }]
+    }
+  }
+}
+```
+
+If no operating account is set up for you, these answer
+`403 NO_OPERATING_ACCOUNT`.
 
 ## Errors
 
