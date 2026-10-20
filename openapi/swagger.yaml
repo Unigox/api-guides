@@ -3209,6 +3209,8 @@ paths:
         unless the order's `fiat_funding_source` is `own_account`. Then `next_action` is
         `deposit_to_user_account`: the customer transfers the order's fiat amount into the fiat account
         issued to them, that transfer confirms the payment, and `confirm-payment-sent` is not used.
+        If the money is already on that account, pay the order from it with
+        `POST /api/v1/partner/orders/{order_id}/pay-from-balance` instead of a new transfer.
         If the order type is `payment_request`, call `submit-payer-details` first before confirming.
 
         **KYC requirement:** The customer must be KYC-cleared, as described on `POST /onramp/quote`.
@@ -3534,6 +3536,132 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+
+  /api/v1/partner/orders/{order_id}/pay-from-balance:
+    post:
+      tags:
+        - On-Ramp
+      summary: Pay an on-ramp from the customer's account balance
+      description: |
+        Pays an on-ramp order with `fiat_funding_source: own_account` out of money already standing on
+        the customer's fiat account, instead of a new transfer. The order's `fiat_amount` is taken from
+        the account named in the order's `fiat_account_id` (or, for an order opened before the account
+        was issued, the customer's open account in that currency), and the order then continues exactly
+        as if that amount had just arrived.
+
+        Offered in `allowed_actions` as `pay-from-balance` while the order is `awaiting_fiat_transfer`
+        and its fiat has not been collected. Read the account's `balances` first: `available` is what can
+        be spent. No request body.
+
+        Repeating the call for the same order never takes the money twice: a payment already taken is
+        answered from its record. If a transfer has already funded the order, the call is refused.
+
+        **KYC requirement:** the customer must still be KYC-cleared; otherwise `422 KYC_NOT_CLEARED`.
+      operationId: payOnRampFromBalance
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+          example: "ce3cfd6a-1234-5678-abcd-ef1234567890"
+      responses:
+        '200':
+          description: The fiat was taken from the balance. The order, as `GET /api/v1/partner/orders/{order_id}` returns it.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PartnerOrderResponse'
+        '400':
+          description: '`INVALID_REQUEST` — malformed `order_id`, or the order is not an on-ramp.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '401':
+          description: Unauthorized — invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: '`ORDER_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: |
+            - `OPERATION_NOT_ALLOWED` — the order is not paid from the customer's own account, a transfer already funds it, or part of the balance is under review and the rest does not cover the order.
+            - `INVALID_STATUS` — the order is not waiting for its fiat, or its payment window has closed.
+            - `FIAT_ACCOUNT_REQUIRED` — the customer has no open fiat account this order can be paid from.
+            Nothing was taken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INVALID_STATUS
+                  message: "this order's payment window has closed"
+        '422':
+          description: |
+            - `INSUFFICIENT_BALANCE` — the available balance does not cover the order's `fiat_amount`.
+            - `KYC_NOT_CLEARED` — the customer is no longer cleared.
+            Nothing was taken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INSUFFICIENT_BALANCE
+                  message: "the available balance on the customer's account does not cover this order"
+        '500':
+          description: '`INTERNAL_ERROR` — read the order before retrying; a retry never takes the money twice.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: '`INTERNAL_ERROR` from the gateway — trades could not be reached or failed. The payment may have been taken: read the order (`GET /api/v1/partner/orders/{order_id}`) before retrying; a retry never takes the money twice.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request could not be completed and may have been applied: read the order before retrying"
+        '503':
+          description: '`PAY_FROM_BALANCE_UNAVAILABLE` — not available right now. Nothing was taken; the customer can still transfer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '504':
+          description: '`INTERNAL_ERROR` from the gateway — trades did not answer within 90 s. The payment may still have been taken: read the order before retrying; a retry never takes the money twice.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
 
   /api/v1/partner/send-out/routes:
     get:
@@ -9394,7 +9522,8 @@ components:
               is the one case where a terminal status still needs something from you
             - `deposit_to_user_account` — an on-ramp order with `fiat_funding_source: own_account` is waiting for the
               customer to transfer the order's fiat amount into the fiat account issued to them. The transfer
-              itself confirms the payment; there is nothing to call
+              itself confirms the payment; there is nothing to call. If the money is already on the account,
+              `pay-from-balance` is in `allowed_actions` and pays the order from it
             - `sign_settlement_consent` — a **delayed settlement (T+1)** order remains at `crypto_received`
               and nobody has signed the release yet. Call
               `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
@@ -9486,7 +9615,10 @@ components:
               `authorize_refund` and `action_required` names the endpoint at the same time.
 
             On-ramp orders with `fiat_funding_source: own_account` never offer `confirm-payment-sent`: the
-            transfer into the customer's own account is the confirmation.
+            transfer into the customer's own account is the confirmation. At `awaiting_fiat_transfer` they
+            offer `["pay-from-balance"]` instead, until the order's fiat has been collected. A `completed`
+            order paid from the balance whose crypto hand-over has not finished also offers
+            `["pay-from-balance"]`: calling it again retries the hand-over and never takes the money twice.
 
             On a funded **delayed settlement (T+1)** order awaiting release whose crypto you hold,
             `confirm-fiat-received` is removed — the endpoint behind it refuses a delayed order — and

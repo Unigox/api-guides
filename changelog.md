@@ -2,6 +2,15 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-20
+
+**An on-ramp can be paid from money already on the customer's fiat account.** `POST /api/v1/partner/orders/{order_id}/pay-from-balance` takes the order's `fiat_amount` from the customer's account instead of waiting for a new transfer, and the order continues as if the money had just arrived. Use it for a deposit that arrived before any order was open.
+
+- Offered in `allowed_actions` as `pay-from-balance` on `own_account` orders at `awaiting_fiat_transfer`.
+- Refusals: `422 INSUFFICIENT_BALANCE`, `409 FIAT_ACCOUNT_REQUIRED`, `409 OPERATION_NOT_ALLOWED`, `409 INVALID_STATUS`, `422 KYC_NOT_CLEARED`, `503 PAY_FROM_BALANCE_UNAVAILABLE`. Repeating the call never debits twice.
+
+See [Paying from money already on the account](./fiat-accounts.md#paying-from-money-already-on-the-account).
+
 ## 2026-10-19
 
 **Business customers are on the Partner API.** Companies you onboard through KYB, and the accounts Unigox issues in their name, were reachable only in the B2B console. They are now on `/api/v1/partner/business-customers`: start KYB and get the onboarding link, follow the KYB status, issue accounts once it is approved, read balances, the ledger and bank transfers, and move balances between a company's account and your operating account (`transfer-to-partner`, `fund`, both with an `Idempotency-Key`). Accounts are addressed as `business_<n>` under the customer that holds them. Closing an account and crypto withdrawals stay in the console. Enabled per partner. See [Business customers](./api-reference/business-customers.md).
