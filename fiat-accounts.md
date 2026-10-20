@@ -322,6 +322,10 @@ as `pay-from-balance` while the order is `awaiting_fiat_transfer`.
 Read `balances` on the account first (`available` is what can be spent). Calling
 it again for the same order never takes the money twice.
 
+If the order shows `completed` but `allowed_actions` still lists
+`pay-from-balance`, the money was taken and handing over the crypto has not
+finished: call it again to retry. It does not take the money a second time.
+
 | Error | HTTP | Meaning |
 | --- | --- | --- |
 | `INSUFFICIENT_BALANCE` | 422 | The available balance does not cover the order's `fiat_amount`. Nothing was taken. |

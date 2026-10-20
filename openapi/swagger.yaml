@@ -9596,7 +9596,9 @@ components:
 
             On-ramp orders with `fiat_funding_source: own_account` never offer `confirm-payment-sent`: the
             transfer into the customer's own account is the confirmation. At `awaiting_fiat_transfer` they
-            offer `["pay-from-balance"]` instead, until the order's fiat has been collected.
+            offer `["pay-from-balance"]` instead, until the order's fiat has been collected. A `completed`
+            order paid from the balance whose crypto hand-over has not finished also offers
+            `["pay-from-balance"]`: calling it again retries the hand-over and never takes the money twice.
 
             On a funded **delayed settlement (T+1)** order awaiting release whose crypto you hold,
             `confirm-fiat-received` is removed — the endpoint behind it refuses a delayed order — and
