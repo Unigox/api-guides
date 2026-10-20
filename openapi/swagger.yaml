@@ -121,6 +121,11 @@ tags:
 
       Enabled per partner. Closing an account and crypto withdrawals stay in the B2B console.
     x-page-icon: briefcase
+  - name: Operating Account
+    description: |
+      Your own operating account at Unigox, read-only: what it holds, every entry on its book and its
+      bank transfers. A business customer's balance moved with `transfer-to-partner` lands here, and
+      crypto withdrawals leave from here.
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
     x-page-icon: receipt
@@ -6818,7 +6823,7 @@ paths:
         - Business Customers
       summary: Every entry on the account's book
       operationId: getBusinessFiatAccountLedger
-      description: Credits, debits, conversions, internal transfers and fees, newest first, with the balance after each.
+      description: Credits, debits, conversions, internal transfers and fees, newest first, with the balance after each when the bank reports it.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -6997,6 +7002,89 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '504':
           description: The bank did not confirm in time and the transfer may still have gone through (`BANKING_TIMEOUT_UNKNOWN`). Do not retry with a new key; contact Unigox support
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/operating-account:
+    get:
+      tags:
+        - Operating Account
+      summary: Your operating account's balances
+      operationId: getOperatingAccount
+      description: |
+        What your operating account holds, fiat and crypto apart. Amounts are what you can spend now:
+        any fees Unigox has reserved on the account are already taken off.
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: The balances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatingAccountResponse'
+        '403':
+          description: No operating account is set up for you (`NO_OPERATING_ACCOUNT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/operating-account/ledger:
+    get:
+      tags:
+        - Operating Account
+      summary: Every entry on your operating account's book
+      operationId: getOperatingAccountLedger
+      description: |
+        Newest first: money moved in from a business customer's account (`internal_transfer`),
+        conversions, crypto transfers, bank transfers and fees.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: One page of entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessLedgerResponse'
+        '403':
+          description: No operating account is set up for you (`NO_OPERATING_ACCOUNT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/operating-account/payments:
+    get:
+      tags:
+        - Operating Account
+      summary: Bank transfers in and out of your operating account
+      operationId: getOperatingAccountPayments
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: One page of payments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessPaymentsResponse'
+        '403':
+          description: No operating account is set up for you (`NO_OPERATING_ACCOUNT`)
           content:
             application/json:
               schema:
@@ -10722,6 +10810,36 @@ components:
             currency_mismatch:
               type: boolean
               description: On issue only. The bank opened the account in a different currency than asked.
+    OperatingBalanceLine:
+      type: object
+      properties:
+        currency:
+          type: string
+          example: USDC
+        available:
+          type: string
+          description: Decimal string. What can be spent now.
+          example: "1500.00"
+    OperatingAccountResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            operating_account:
+              type: object
+              properties:
+                fiat_balances:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/OperatingBalanceLine'
+                crypto_balances:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/OperatingBalanceLine'
     BusinessLedgerResponse:
       type: object
       properties:

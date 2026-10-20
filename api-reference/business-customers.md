@@ -213,6 +213,38 @@ If the bank does not confirm a transfer in time, the answer is
 not retry with a new key. Contact Unigox support; the attempt is held for
 reconciliation.
 
+## Your operating account
+
+> **Not available yet.**
+
+What `transfer-to-partner` moves lands on your own operating account, and crypto
+withdrawals leave from there. Three read-only calls show it:
+
+- `GET /api/v1/partner/operating-account` returns what it holds, in
+  `fiat_balances` and `crypto_balances` (for example `USDC`). Each line's
+  `available` is what you can spend now; fees Unigox has reserved on the account
+  are already taken off.
+- `GET /api/v1/partner/operating-account/ledger?page=1` lists every entry,
+  newest first, in the same shape as a company account's ledger. Money moved in
+  from a company's account is an `internal_transfer`.
+- `GET /api/v1/partner/operating-account/payments?page=1` lists the bank
+  transfers in and out.
+
+```json
+{
+  "success": true,
+  "data": {
+    "operating_account": {
+      "fiat_balances": [{ "currency": "GBP", "available": "1500.00" }],
+      "crypto_balances": [{ "currency": "USDC", "available": "750.50" }]
+    }
+  }
+}
+```
+
+If no operating account is set up for you, these answer
+`403 NO_OPERATING_ACCOUNT`.
+
 ## Errors
 
 | Code | Status | Meaning |
