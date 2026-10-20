@@ -5925,7 +5925,7 @@ paths:
 
         Once `authorize-crypto-transfer` has submitted the escrow funding, an off-ramp cannot be
         cancelled while that transfer may still execute: the call answers `409 OPERATION_NOT_ALLOWED`.
-        If the submitted transfer failed without moving funds, the order can be cancelled again.
+        It can be cancelled again only if the submitted transfer failed without reaching the chain.
       operationId: cancelOrder
       security:
         - ApiKeyAuth: []
