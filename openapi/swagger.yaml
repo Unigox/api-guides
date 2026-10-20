@@ -119,13 +119,12 @@ tags:
       approved. Start KYB, send the representative the onboarding link, watch the status, issue
       accounts, read what moved on them, and move balances between them and your own operating account.
 
+      Your operating account can be read here too: what it holds, fiat and crypto, every entry on its
+      book and its bank transfers. A balance moved with `transfer-to-partner` lands there, and crypto
+      withdrawals leave from there.
+
       Enabled per partner. Closing an account and crypto withdrawals stay in the B2B console.
     x-page-icon: briefcase
-  - name: Operating Account
-    description: |
-      Your own operating account at Unigox, read-only: what it holds, every entry on its book and its
-      bank transfers. A business customer's balance moved with `transfer-to-partner` lands here, and
-      crypto withdrawals leave from here.
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
     x-page-icon: receipt
@@ -7009,7 +7008,7 @@ paths:
   /api/v1/partner/operating-account:
     get:
       tags:
-        - Operating Account
+        - Business Customers
       summary: Your operating account's balances
       operationId: getOperatingAccount
       description: |
@@ -7033,7 +7032,7 @@ paths:
   /api/v1/partner/operating-account/ledger:
     get:
       tags:
-        - Operating Account
+        - Business Customers
       summary: Every entry on your operating account's book
       operationId: getOperatingAccountLedger
       description: |
@@ -7064,7 +7063,7 @@ paths:
   /api/v1/partner/operating-account/payments:
     get:
       tags:
-        - Operating Account
+        - Business Customers
       summary: Bank transfers in and out of your operating account
       operationId: getOperatingAccountPayments
       security:
