@@ -3310,7 +3310,9 @@ paths:
                     success: false
                     error:
                       code: QUOTE_ALREADY_USED
-                      message: "Quote has already been used"
+                      message: "quote has already been used to initiate an order"
+                      details:
+                        order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
         '422':
           description: >-
             The customer is not KYC-cleared. `error.details.kyc_status` carries the customer's current
@@ -5056,7 +5058,9 @@ paths:
                     success: false
                     error:
                       code: QUOTE_ALREADY_USED
-                      message: "Quote has already been used"
+                      message: "quote has already been used to initiate an order"
+                      details:
+                        order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                 slippage_exceeded:
                   summary: Price changed beyond tolerance
                   value:
@@ -5918,6 +5922,10 @@ paths:
       description: |
         Cancel an order if cancellation is allowed at the current status.
         Check `allowed_actions` on the order response — `cancel` is available when cancellation is permitted.
+
+        Once `authorize-crypto-transfer` has submitted the escrow funding, an off-ramp cannot be
+        cancelled while that transfer may still execute: the call answers `409 OPERATION_NOT_ALLOWED`.
+        It can be cancelled again only if the submitted transfer failed without reaching the chain.
       operationId: cancelOrder
       security:
         - ApiKeyAuth: []
@@ -6110,6 +6118,21 @@ paths:
             type: string
             enum: [onramp, offramp]
           example: offramp
+        - name: reference_id
+          in: query
+          required: false
+          description: |
+            Return only the orders you created with this `reference_id` on initiate, newest first, at
+            most 100. Use it to find an order when the initiate response was lost. Each entry is the
+            same object `GET /partner/orders/{order_id}` returns.
+
+            `reference_id` is not enforced unique, so the answer is a list. Combines with `type`,
+            `page` and `limit`. Combined with `status` it answers `400 INVALID_REQUEST`. At most 255
+            characters.
+          schema:
+            type: string
+            maxLength: 255
+          example: "parse-order-000123"
         - name: page
           in: query
           required: false
@@ -11128,7 +11151,7 @@ components:
                 Machine-readable error code. Possible values:
                 - `QUOTE_EXPIRED` — quote TTL has passed; for a customer withdrawal, also the customer's forwarder nonce moved or another withdrawal has not executed yet (request a new quote)
                 - `QUOTE_NOT_FOUND` — quote ID does not exist
-                - `QUOTE_ALREADY_USED` — quote was already consumed by initiate
+                - `QUOTE_ALREADY_USED` — quote was already consumed by initiate. `details.order_id` names the order it created, so a retried initiate whose first response was lost can continue with that order
                 - `PRICE_CHANGED_REQUOTE` — price changed beyond slippage tolerance, partner should request a new quote
                 - `ORDER_NOT_FOUND` — order ID does not exist or belongs to another partner
                 - `NO_OFFERS_AVAILABLE` — no vendor offers for the requested pair

@@ -4,6 +4,13 @@ Notable changes to the Unigox partner API, newest first.
 
 ## 2026-10-20
 
+**Finding an order when the initiate response was lost.**
+
+- `GET /api/v1/partner/orders?reference_id=` returns the orders you created with that `reference_id`, newest first. `reference_id` is still not enforced unique, so it is a list. It combines with `type`; combined with `status` it answers `400 INVALID_REQUEST`.
+- A retried initiate whose quote was already used answers `QUOTE_ALREADY_USED` with `error.details.order_id`, the order the first call created. On- and off-ramp alike.
+
+**An off-ramp cannot be cancelled while its escrow funding may still execute.** After `authorize-crypto-transfer` has submitted the transfer, `POST /orders/{order_id}/cancel` answers `409 OPERATION_NOT_ALLOWED`. It can be cancelled again only if the transfer failed without reaching the chain; otherwise the order is funded, or expires at its funding deadline and any crypto that arrives is refunded to the customer.
+
 **Your operating account is readable on the Partner API.** Money a business customer's balance moves into with `transfer-to-partner`, and crypto withdrawals leave from, can now be followed by API: `GET /api/v1/partner/operating-account` for the balances (fiat and crypto, as amounts you can spend), `/operating-account/ledger` for every entry on its book and `/operating-account/payments` for its bank transfers. Read-only. See [Your operating account](./api-reference/business-customers.md#your-operating-account).
 
 **Who onboards, and power of attorney.** Your customers, and anyone with access to their bank accounts, onboard directly with UNIGOX. To move funds on a customer's behalf you need their power of attorney; nested flows are not permitted. It is set out at the top of the Business customers guide.
