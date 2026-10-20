@@ -18,6 +18,15 @@ Business customers are enabled per partner. If your calls answer
 `403 CAPABILITY_NOT_GRANTED`, ask Unigox to switch them on.
 {% endhint %}
 
+## Who onboards with UNIGOX
+
+B2B clients can use their own front end as technology providers, while their
+customers onboard directly with UNIGOX. Anyone with access to a customer's bank
+account must also onboard with UNIGOX. To initiate fund movements on a
+customer's behalf, the B2B client must obtain power of attorney from that
+customer. This does not replace direct onboarding with UNIGOX; nested flows are
+not permitted.
+
 ## What you can and cannot do
 
 | You can | Endpoint |

@@ -6,6 +6,8 @@ Notable changes to the Unigox partner API, newest first.
 
 **Your operating account is readable on the Partner API.** Money a business customer's balance moves into with `transfer-to-partner`, and crypto withdrawals leave from, can now be followed by API: `GET /api/v1/partner/operating-account` for the balances (fiat and crypto, as amounts you can spend), `/operating-account/ledger` for every entry on its book and `/operating-account/payments` for its bank transfers. Read-only. See [Your operating account](./api-reference/business-customers.md#your-operating-account).
 
+**Who onboards, and power of attorney.** Your customers, and anyone with access to their bank accounts, onboard directly with UNIGOX. To move funds on a customer's behalf you need their power of attorney; nested flows are not permitted. It is set out at the top of the Business customers guide.
+
 ## 2026-10-19
 
 **Business customers are on the Partner API.** Companies you onboard through KYB, and the accounts Unigox issues in their name, were reachable only in the B2B console. They are now on `/api/v1/partner/business-customers`: start KYB and get the onboarding link, follow the KYB status, issue accounts once it is approved, read balances, the ledger and bank transfers, and move balances between a company's account and your operating account (`transfer-to-partner`, `fund`, both with an `Idempotency-Key`). Accounts are addressed as `business_<n>` under the customer that holds them. Closing an account and crypto withdrawals stay in the console. Enabled per partner. See [Business customers](./api-reference/business-customers.md).
