@@ -3636,12 +3636,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: '`INTERNAL_ERROR` from the gateway — trades could not be reached or failed. The payment may have been taken: read the order (`GET /api/v1/partner/orders/{order_id}`) before retrying; a retry never takes the money twice.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request could not be completed and may have been applied: read the order before retrying"
         '503':
           description: '`PAY_FROM_BALANCE_UNAVAILABLE` — not available right now. Nothing was taken; the customer can still transfer.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+        '504':
+          description: '`INTERNAL_ERROR` from the gateway — trades did not answer within 90 s. The payment may still have been taken: read the order before retrying; a retry never takes the money twice.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+              example:
+                success: false
+                error:
+                  code: INTERNAL_ERROR
+                  message: "the request did not complete in time and may still have been applied: read the order before retrying"
 
   /api/v1/partner/send-out/routes:
     get:
