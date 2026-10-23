@@ -1,5 +1,5 @@
 // Creates the approved business article in the existing guide.unigox.com space.
-// The old Introduction content is preserved; only its menu position is set first.
+// The main Introduction is preserved. The redundant integration Introduction is removed.
 // --dry-run is read-only.
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -7,17 +7,18 @@ import { pathToFileURL } from "node:url";
 import { locatePage } from "./publish-memo-guides.mjs";
 
 export const SPACE = "R5WxtczoTRZuTKmBWr2I";
-export const PAGE_PATH = "integration-guide/unigox-for-business";
+export const PAGE_PATH = "unigox-for-business";
+export const LEGACY_PATH = "integration-guide/unigox-for-business";
+const SITE = "/orgs/e0uEDf9W74izxMHzVmef/sites/site_hmJm4";
 export const TITLE = "How Unigox works for your business";
 const SOURCE = "business/unigox-for-business.md";
 const COVER = "business/assets/unigox-business-guide-cover.png";
 
-function childrenOf(pages, parent) {
-  for (const page of pages ?? []) {
-    if (page.id === parent) return page.pages ?? [];
-    const children = childrenOf(page.pages, parent);
-    if (children) return children;
-  }
+function navigationSnapshot(pages, excluded) {
+  return (pages ?? []).filter(page => !excluded.has(page.id)).map(page => ({
+    id: page.id, title: page.title, path: page.path, hidden: Boolean(page.hidden),
+    pages: navigationSnapshot(page.pages, excluded),
+  }));
 }
 
 // GitBook normalizes Markdown escaping, whitespace and list markers. Check every
@@ -43,39 +44,45 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
   if (![space.urls?.published, space.urls?.public].some(url => url && new URL(url).hostname === "guide.unigox.com")) {
     throw new Error("Refusing to publish outside guide.unigox.com");
   }
+  const site = await api("GET", SITE);
+  if (!site.urls?.published || new URL(site.urls.published).hostname !== "guide.unigox.com") throw new Error("Unexpected redirect site");
   const tree = await api("GET", `${base}/content`);
   const introduction = locatePage(tree.pages, "integration-guide/introduction");
-  if (!introduction?.parent) throw new Error("Existing Business section could not be resolved");
-  const existing = locatePage(tree.pages, PAGE_PATH);
-  if (existing && (existing.parent !== introduction.parent || existing.page.id === introduction.page.id)) {
-    throw new Error("Unexpected page identity or Business parent");
-  }
+  if (introduction?.page.pages?.length) throw new Error("Refusing to remove Introduction with child pages");
+  const homePages = tree.pages.filter(page => page.title === "Introduction" && page.type !== "link");
+  if (homePages.length !== 1) throw new Error("Main Introduction could not be uniquely resolved");
+  const home = homePages[0];
+  const current = locatePage(tree.pages, PAGE_PATH);
+  const legacy = locatePage(tree.pages, LEGACY_PATH);
+  if (current && legacy) throw new Error("Duplicate business articles found");
+  const existing = current ?? legacy;
+  const rootPeers = tree.pages.filter(page => page.id !== existing?.page.id);
+  const position = rootPeers.findIndex(page => page.id === home.id) + 1;
   if (!/^[a-f0-9]{40}$/.test(commit ?? "")) throw new Error("A pinned GitHub commit is required");
   const coverUrl = `https://raw.githubusercontent.com/Unigox/api-guides/${commit}/${COVER}`;
-  console.log(`${existing ? "Refresh" : "Create"} ${PAGE_PATH}; leave integration-guide/introduction unchanged.`);
-  if (dryRun) return { dryRun: true, path: PAGE_PATH, parent: introduction.parent, coverUrl };
+  console.log(`${existing ? "Refresh" : "Create"} ${PAGE_PATH} at the root; remove only integration-guide/introduction.`);
+  if (dryRun) return { dryRun: true, path: PAGE_PATH, parent: null, coverUrl };
 
   const cr = await api("POST", `${base}/change-requests`, { subject: "Publish Unigox for business as a new article" });
   if (!cr.id || !cr.revision) throw new Error("GitBook change request has no ID/revision");
   const target = `${base}/change-requests/${cr.id}`;
   console.log(`Prepared GitBook change request ${cr.id}`);
-  const before = await api("GET", `${target}/content/path/integration-guide%2Fintroduction?format=markdown`);
+  const before = await api("GET", `${target}/content/page/${home.id}?format=markdown`);
   const result = await api("POST", `${target}/content?compat=false`, {
     expectedRevision: cr.revision,
     changes: [
       { operation: "insert_files", files: [{ ref: "assets/unigox-business-guide-cover.png", name: "unigox-business-guide-cover.png", contentType: "image/png", url: coverUrl }] },
-      // Establish Introduction first explicitly before positioning the article.
-      { operation: "update_page", page: introduction.page.id, into: introduction.parent, at: 0 },
       {
-        ...(existing ? { operation: "update_page", page: existing.page.id } : { operation: "insert_page", slug: "unigox-for-business" }),
-        into: introduction.parent,
-        at: 1,
+        ...(existing ? { operation: "update_page", page: existing.page.id, into: null } : { operation: "insert_page" }),
+        slug: "unigox-for-business",
+        at: position,
         icon: "briefcase",
         title: TITLE,
         linkTitle: "Unigox for business",
         description: "Business products, use cases and ways to get started.",
         document: { markdown },
       },
+      ...(introduction ? [{ operation: "delete_page", page: introduction.page.id }] : []),
     ],
   });
   const file = result.insertedFiles?.find(item => item.name === "unigox-business-guide-cover.png");
@@ -89,19 +96,27 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
   if (!imported.markdown.includes(file.id) && !imported.markdown.includes(file.downloadURL)) {
     throw new Error("Imported article does not reference the uploaded cover");
   }
-  const unchanged = await api("GET", `${target}/content/path/integration-guide%2Fintroduction?format=markdown`);
-  if (unchanged.id !== before.id || unchanged.markdown !== before.markdown) throw new Error("Existing Introduction changed");
+  const unchanged = await api("GET", `${target}/content/page/${home.id}?format=markdown`);
+  if (unchanged.id !== before.id || unchanged.markdown !== before.markdown) throw new Error("Main Introduction changed");
   const draftTree = await api("GET", `${target}/content`);
   const page = locatePage(draftTree.pages, PAGE_PATH);
-  if (!page || page.parent !== introduction.parent || page.page.title !== TITLE) throw new Error("Published page metadata mismatch");
+  if (!page || page.parent !== null || page.page.title !== TITLE) throw new Error("Published page metadata mismatch");
   if (existing && page.page.id !== existing.page.id) throw new Error("Duplicate page created");
-  const expectedOrder = [introduction.page.id, page.page.id, ...childrenOf(tree.pages, introduction.parent).filter(item => item.id !== page.page.id && item.id !== introduction.page.id).map(item => item.id)];
-  const actualOrder = childrenOf(draftTree.pages, introduction.parent).map(item => item.id);
-  if (page.page.icon !== "briefcase" || JSON.stringify(actualOrder) !== JSON.stringify(expectedOrder)) {
-    throw new Error(`Unexpected navigation order: ${JSON.stringify({ expectedOrder, actualOrder, icon: page.page.icon })}`);
-  }
+  if (locatePage(draftTree.pages, LEGACY_PATH) || locatePage(draftTree.pages, "integration-guide/introduction")) throw new Error("Old integration pages still present");
+  const excluded = new Set([page.page.id, introduction?.page.id]);
+  if (JSON.stringify(navigationSnapshot(tree.pages, excluded)) !== JSON.stringify(navigationSnapshot(draftTree.pages, excluded))) throw new Error("Unrelated navigation changed");
+  if (page.page.icon !== "briefcase" || draftTree.pages[position]?.id !== page.page.id) throw new Error("Business article is not immediately after the main Introduction");
+
+  const sources = [`/${LEGACY_PATH}`, `/${LEGACY_PATH}.md`];
+  const staged = await api("PUT", `${SITE}/redirects`, { redirects: sources.map((source, index) => ({
+    source, intent: "draft", permanent: true,
+    destination: { kind: "external", url: `https://guide.unigox.com/${PAGE_PATH}${index ? ".md" : ""}` },
+  })) });
+  if (staged.results?.length !== 2 || staged.results.some(item => !["created", "updated"].includes(item.status))) throw new Error("Could not stage legacy URL redirects");
   const merge = await api("POST", `${target}/merge`, {});
   if (merge.result !== "merge") throw new Error(`GitBook did not merge cleanly: ${merge.result}`);
+  const redirects = await api("PUT", `${SITE}/redirects`, { redirects: sources.map(source => ({ source, intent: "publish" })) });
+  if (redirects.results?.length !== 2 || redirects.results.some(item => item.status !== "published")) throw new Error("Legacy URL redirects did not publish");
   return { url: `https://guide.unigox.com/${PAGE_PATH}`, pageId: page.page.id, changeRequest: cr.id, revision: merge.revision, commit, coverHash, coverUrl: file.downloadURL };
 }
 

@@ -2,7 +2,13 @@
 
 Unigox helps you receive and send business payments, build financial services into your product, and earn from your audience or business network. You can use one service for a specific task or combine several as your business grows.
 
-This guide is organised around what you need to do: manage company money, serve your customers, launch an app, pay suppliers in China, or build a new source of revenue.
+Choose the section that matches what you need to do:
+
+- Manage your company’s money.
+- Add financial services to your product.
+- Build a trading or money app.
+- Pay suppliers in China.
+- Earn from your audience and business network.
 
 <figure><img src="./assets/unigox-business-guide-cover.png" alt="How Unigox works for your business — the Unigox mascot signing a business agreement"><figcaption></figcaption></figure>
 
