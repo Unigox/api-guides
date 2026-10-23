@@ -1,0 +1,46 @@
+name: Publish business article to GitBook
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - business/**
+      - scripts/publish-business-guide.mjs
+      - .github/workflows/publish-business-guide.yml
+  pull_request:
+    paths:
+      - business/**
+      - scripts/publish-business-guide*
+      - .github/workflows/publish-business-guide.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-business-article
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --test scripts/publish-business-guide.test.mjs
+      - name: Verify access to the user guide without publishing
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+        run: node scripts/publish-business-guide.mjs --dry-run
+      - name: Publish the new business article
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+        run: node scripts/publish-business-guide.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: business-guide-publication
+          path: publication/business-guide.json
