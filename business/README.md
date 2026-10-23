@@ -14,8 +14,8 @@ Product links lead to the live landings. Avoid turning every section into the
 same audience-label-and-feature-list template.
 
 This is a separate page with a briefcase icon, immediately after Introduction
-in the Integration Guide group. Introduction stays first. The existing
-`integration-guide/introduction` page is not updated or replaced. Other guide
+in the Integration Guide group. Introduction stays first; only its menu position
+is set. The content of `integration-guide/introduction` is preserved. Other guide
 pages and the developer API reference are outside this workflow's scope.
 
 Pull requests run a read-only GitBook preflight. After merging to `main`, the

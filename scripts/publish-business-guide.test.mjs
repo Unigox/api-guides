@@ -54,12 +54,14 @@ for (const refresh of [false, true]) test(`publishing ${refresh ? "moves" : "ins
     if (method === "POST" && path.endsWith("/change-requests")) return { id: "cr", revision: "rev" };
     if (method === "POST" && path.includes("/content?")) {
       assert.equal(body.expectedRevision, "rev");
-      assert.deepEqual(body.changes.map(change => change.operation), ["insert_files", refresh ? "update_page" : "insert_page"]);
-      assert.equal(body.changes[1].into, "business");
-      assert.equal(body.changes[1].at, 1);
-      assert.equal(body.changes[1].icon, "briefcase");
-      if (refresh) assert.equal(body.changes[1].page, "new");
-      else assert.equal(body.changes[1].slug, "unigox-for-business");
+      assert.deepEqual(body.changes.map(change => change.operation), ["insert_files", "update_page", refresh ? "update_page" : "insert_page"]);
+      assert.deepEqual(body.changes[1], { operation: "update_page", page: "original", into: "business", at: 0 });
+      const articleChange = body.changes[2];
+      assert.equal(articleChange.into, "business");
+      assert.equal(articleChange.at, 1);
+      assert.equal(articleChange.icon, "briefcase");
+      if (refresh) assert.equal(articleChange.page, "new");
+      else assert.equal(articleChange.slug, "unigox-for-business");
       assert.equal(body.changes[0].files[0].url.includes(options.commit), true);
       return { insertedFiles: [{ id: "cover-id", name: "unigox-business-guide-cover.png", downloadURL: "https://example.org/cover-id.png" }] };
     }

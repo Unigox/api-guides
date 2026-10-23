@@ -1,5 +1,6 @@
 // Creates the approved business article in the existing guide.unigox.com space.
-// The old integration-guide/introduction page is never edited. --dry-run is read-only.
+// The old Introduction content is preserved; only its menu position is set first.
+// --dry-run is read-only.
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -63,6 +64,8 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
     expectedRevision: cr.revision,
     changes: [
       { operation: "insert_files", files: [{ ref: "assets/unigox-business-guide-cover.png", name: "unigox-business-guide-cover.png", contentType: "image/png", url: coverUrl }] },
+      // Establish Introduction first explicitly before positioning the article.
+      { operation: "update_page", page: introduction.page.id, into: introduction.parent, at: 0 },
       {
         ...(existing ? { operation: "update_page", page: existing.page.id } : { operation: "insert_page", slug: "unigox-for-business" }),
         into: introduction.parent,
@@ -95,7 +98,7 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
   const expectedOrder = [introduction.page.id, page.page.id, ...childrenOf(tree.pages, introduction.parent).filter(item => item.id !== page.page.id && item.id !== introduction.page.id).map(item => item.id)];
   const actualOrder = childrenOf(draftTree.pages, introduction.parent).map(item => item.id);
   if (page.page.icon !== "briefcase" || JSON.stringify(actualOrder) !== JSON.stringify(expectedOrder)) {
-    throw new Error("Introduction must appear first, followed by the business article with a briefcase icon; other pages retain their order");
+    throw new Error(`Unexpected navigation order: ${JSON.stringify({ expectedOrder, actualOrder, icon: page.page.icon })}`);
   }
   const merge = await api("POST", `${target}/merge`, {});
   if (merge.result !== "merge") throw new Error(`GitBook did not merge cleanly: ${merge.result}`);
