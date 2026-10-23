@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { publishBusinessGuide, verifyArticle, TITLE, PAGE_PATH } from "./publish-business-guide.mjs";
 
-const markdown = `# ${TITLE}\n\nApproved introduction.\n\n![Cover](./assets/unigox-business-guide-cover.png)\n\n## Payments\n\n[Payments API](https://www.unigox.com/payments-api) keeps your wallets.\n\n[Book a call](https://calendly.com/hazem-unigox/30min)\n`;
+const markdown = `# ${TITLE}\n\nApproved introduction.\n\n<figure><img src="./assets/unigox-business-guide-cover.png" alt="Cover"><figcaption></figcaption></figure>\n\n## Payments\n\n[Payments API](https://www.unigox.com/payments-api) keeps your wallets.\n\n[Book a call](https://calendly.com/hazem-unigox/30min)\n`;
 const tree = { pages: [{ id: "business", path: "integration-guide", pages: [{ id: "original", path: "integration-guide/introduction", title: "Introduction" }] }] };
 const options = { dryRun: true, commit: "a".repeat(40), markdown, coverHash: "unused" };
 
@@ -29,6 +29,7 @@ test("import verification rejects a missing paragraph or external link", () => {
   verifyArticle(markdown, markdown);
   assert.throws(() => verifyArticle(markdown.replace("keeps your wallets.", ""), markdown), /content missing/);
   assert.throws(() => verifyArticle(markdown.replace("https://www.unigox.com/payments-api", "https://www.unigox.com"), markdown), /content missing/);
+  assert.throws(() => verifyArticle(markdown.replace('alt="Cover"', 'alt=""'), markdown), /alt text missing/);
 });
 
 test("publishing inserts a new page, checks the cover and preserves Introduction", async t => {

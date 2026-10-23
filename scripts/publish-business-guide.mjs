@@ -18,7 +18,12 @@ export function verifyArticle(actual, expected) {
   const normalize = value => value.replace(/\\([*_\[\]()])/g, "$1").replace(/\s+/g, " ").trim();
   const text = normalize(actual);
   for (const block of expected.split(/\n\s*\n/)) {
-    if (block.startsWith("![")) continue; // Uploaded image is checked separately.
+    if (block.startsWith("<figure>")) {
+      const alt = block.match(/alt="([^"]+)"/)?.[1];
+      if (alt && !actual.includes(`alt="${alt}"`)) throw new Error("Imported cover alt text missing");
+      continue; // Uploaded image URL and original bytes are checked separately.
+    }
+    if (block.startsWith("![")) continue;
     if (!text.includes(normalize(block))) throw new Error(`Imported content missing: ${block.slice(0, 100)}`);
   }
 }
