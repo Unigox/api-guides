@@ -11,6 +11,14 @@ export const TITLE = "How Unigox works for your business";
 const SOURCE = "business/unigox-for-business.md";
 const COVER = "business/assets/unigox-business-guide-cover.png";
 
+function childrenOf(pages, parent) {
+  for (const page of pages ?? []) {
+    if (page.id === parent) return page.pages ?? [];
+    const children = childrenOf(page.pages, parent);
+    if (children) return children;
+  }
+}
+
 // GitBook normalizes Markdown escaping and whitespace. Check every paragraph,
 // section and external link, not merely a few representative strings.
 export function verifyArticle(actual, expected) {
@@ -56,7 +64,10 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
     changes: [
       { operation: "insert_files", files: [{ ref: "assets/unigox-business-guide-cover.png", name: "unigox-business-guide-cover.png", contentType: "image/png", url: coverUrl }] },
       {
-        ...(existing ? { operation: "update_page", page: existing.page.id } : { operation: "insert_page", into: introduction.parent, slug: "unigox-for-business" }),
+        ...(existing ? { operation: "update_page", page: existing.page.id } : { operation: "insert_page", slug: "unigox-for-business" }),
+        into: introduction.parent,
+        at: 0,
+        icon: "briefcase",
         title: TITLE,
         linkTitle: "Unigox for business",
         description: "Explore Unigox business accounts, local payments, crypto processing, OTC, trading, branded apps and partner revenue.",
@@ -81,6 +92,11 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
   const page = locatePage(draftTree.pages, PAGE_PATH);
   if (!page || page.parent !== introduction.parent || page.page.title !== TITLE) throw new Error("Published page metadata mismatch");
   if (existing && page.page.id !== existing.page.id) throw new Error("Duplicate page created");
+  const expectedOrder = [page.page.id, ...childrenOf(tree.pages, introduction.parent).filter(item => item.id !== page.page.id).map(item => item.id)];
+  const actualOrder = childrenOf(draftTree.pages, introduction.parent).map(item => item.id);
+  if (page.page.icon !== "briefcase" || JSON.stringify(actualOrder) !== JSON.stringify(expectedOrder)) {
+    throw new Error("Business article must appear first with a briefcase icon; other pages retain their order");
+  }
   const merge = await api("POST", `${target}/merge`, {});
   if (merge.result !== "merge") throw new Error(`GitBook did not merge cleanly: ${merge.result}`);
   return { url: `https://guide.unigox.com/${PAGE_PATH}`, pageId: page.page.id, changeRequest: cr.id, revision: merge.revision, commit, coverHash, coverUrl: file.downloadURL };
