@@ -7,9 +7,11 @@ The **Publish business article to GitBook** workflow publishes to:
 
 https://guide.unigox.com/integration-guide/unigox-for-business
 
-The guide uses short product descriptions and bullet lists of use cases and
-capabilities. Keep the non-custodial compatibility, integration options and
-partner earnings clear when editing. Product links lead to the live landings.
+Organise the guide by business task, with product subsections. Short paragraphs
+explain when a product helps; lists clarify flows, capabilities and terms. Keep
+the non-custodial compatibility, integration options and partner earnings clear.
+Product links lead to the live landings. Avoid turning every section into the
+same audience-label-and-feature-list template.
 
 This is a separate page, first in the Integration Guide group with a briefcase
 icon. The existing
