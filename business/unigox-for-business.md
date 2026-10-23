@@ -4,7 +4,7 @@ Receive international payments, pay suppliers and move between local currencies 
 
 Unigox gives you several ways to serve your customers and grow your business. Choose the services that fit what you do today, and combine them as your needs grow.
 
-![How Unigox works for your business — the Unigox mascot signing a business agreement](./assets/unigox-business-guide-cover.png)
+<figure><img src="./assets/unigox-business-guide-cover.png" alt="How Unigox works for your business — the Unigox mascot signing a business agreement"><figcaption></figcaption></figure>
 
 ## Receive payments through accounts in your company’s name
 
