@@ -7,13 +7,18 @@ The **Publish business article to GitBook** workflow publishes to:
 
 https://guide.unigox.com/integration-guide/unigox-for-business
 
-This is a new page in the existing Business group. The existing
+The guide uses short product descriptions and bullet lists of use cases and
+capabilities. Keep the non-custodial compatibility, integration options and
+partner earnings clear when editing. Product links lead to the live landings.
+
+This is a separate page, first in the Integration Guide group with a briefcase
+icon. The existing
 `integration-guide/introduction` page is not updated or replaced. Other guide
 pages and the developer API reference are outside this workflow's scope.
 
 Pull requests run a read-only GitBook preflight. After merging to `main`, the
 workflow uploads the cover from the pinned commit, inserts the new page (or
-refreshes that same new page on later runs), checks imported paragraphs, links,
+refreshes that same page on later runs), checks imported paragraphs, list items, links,
 the original Introduction and cover bytes, then merges the GitBook change.
 It uses the existing `GITBOOK_TOKEN` secret and an explicit user-guide space ID;
 the repository's `GITBOOK_SPACE` variable targets the separate developer site.
