@@ -4,7 +4,11 @@ import { createHash } from "node:crypto";
 import { publishBusinessGuide, verifyArticle, TITLE, PAGE_PATH } from "./publish-business-guide.mjs";
 
 const markdown = `# ${TITLE}\n\nApproved introduction.\n\n<figure><img src="./assets/unigox-business-guide-cover.png" alt="Cover"><figcaption></figcaption></figure>\n\n## Payments\n\n[Payments API](https://www.unigox.com/payments-api) keeps your wallets.\n\n[Book a call](https://calendly.com/hazem-unigox/30min)\n`;
-const tree = { pages: [{ id: "business", path: "integration-guide", pages: [{ id: "original", path: "integration-guide/introduction", title: "Introduction" }] }] };
+const tree = { pages: [{ id: "business", path: "integration-guide", pages: [
+  { id: "original", path: "integration-guide/introduction", title: "Introduction" },
+  { id: "partner", path: "integration-guide/partner-integration-instructions", title: "Partner Integration Instructions" },
+  { id: "api", path: "integration-guide/api", title: "API" },
+] }] };
 const options = { dryRun: true, commit: "a".repeat(40), markdown, coverHash: "unused" };
 
 test("dry-run resolves the existing Business group without writing", async () => {
@@ -39,9 +43,9 @@ test("list verification accepts GitBook formatting but rejects a missing benefit
   assert.throws(() => verifyArticle(imported.replace("* **Your wallets:** keep your provider.", ""), source), /content missing/);
 });
 
-for (const refresh of [false, true]) test(`publishing ${refresh ? "refreshes" : "inserts"} the article first with an icon and preserves Introduction`, async t => {
+for (const refresh of [false, true]) test(`publishing ${refresh ? "moves" : "inserts"} the article after Introduction and preserves the other pages`, async t => {
   const liveTree = structuredClone(tree);
-  if (refresh) liveTree.pages[0].pages.push({ id: "new", path: PAGE_PATH, title: TITLE });
+  if (refresh) liveTree.pages[0].pages.unshift({ id: "new", path: PAGE_PATH, title: TITLE });
   const cover = Buffer.from("original image bytes");
   t.mock.method(globalThis, "fetch", async () => new Response(cover));
   let merged = false;
@@ -52,7 +56,7 @@ for (const refresh of [false, true]) test(`publishing ${refresh ? "refreshes" : 
       assert.equal(body.expectedRevision, "rev");
       assert.deepEqual(body.changes.map(change => change.operation), ["insert_files", refresh ? "update_page" : "insert_page"]);
       assert.equal(body.changes[1].into, "business");
-      assert.equal(body.changes[1].at, 0);
+      assert.equal(body.changes[1].at, 1);
       assert.equal(body.changes[1].icon, "briefcase");
       if (refresh) assert.equal(body.changes[1].page, "new");
       else assert.equal(body.changes[1].slug, "unigox-for-business");
@@ -64,7 +68,7 @@ for (const refresh of [false, true]) test(`publishing ${refresh ? "refreshes" : 
     if (method === "GET" && path.endsWith("/content")) {
       if (!path.includes("change-requests")) return liveTree;
       const draft = structuredClone(tree);
-      draft.pages[0].pages.unshift({ id: "new", path: PAGE_PATH, title: TITLE, icon: "briefcase" });
+      draft.pages[0].pages.splice(1, 0, { id: "new", path: PAGE_PATH, title: TITLE, icon: "briefcase" });
       return draft;
     }
     if (path.endsWith("/merge")) { merged = true; return { result: "merge", revision: "published" }; }

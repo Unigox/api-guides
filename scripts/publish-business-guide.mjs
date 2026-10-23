@@ -66,7 +66,7 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
       {
         ...(existing ? { operation: "update_page", page: existing.page.id } : { operation: "insert_page", slug: "unigox-for-business" }),
         into: introduction.parent,
-        at: 0,
+        at: 1,
         icon: "briefcase",
         title: TITLE,
         linkTitle: "Unigox for business",
@@ -92,10 +92,10 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
   const page = locatePage(draftTree.pages, PAGE_PATH);
   if (!page || page.parent !== introduction.parent || page.page.title !== TITLE) throw new Error("Published page metadata mismatch");
   if (existing && page.page.id !== existing.page.id) throw new Error("Duplicate page created");
-  const expectedOrder = [page.page.id, ...childrenOf(tree.pages, introduction.parent).filter(item => item.id !== page.page.id).map(item => item.id)];
+  const expectedOrder = [introduction.page.id, page.page.id, ...childrenOf(tree.pages, introduction.parent).filter(item => item.id !== page.page.id && item.id !== introduction.page.id).map(item => item.id)];
   const actualOrder = childrenOf(draftTree.pages, introduction.parent).map(item => item.id);
   if (page.page.icon !== "briefcase" || JSON.stringify(actualOrder) !== JSON.stringify(expectedOrder)) {
-    throw new Error("Business article must appear first with a briefcase icon; other pages retain their order");
+    throw new Error("Introduction must appear first, followed by the business article with a briefcase icon; other pages retain their order");
   }
   const merge = await api("POST", `${target}/merge`, {});
   if (merge.result !== "merge") throw new Error(`GitBook did not merge cleanly: ${merge.result}`);
