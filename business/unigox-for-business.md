@@ -1,71 +1,135 @@
 # How Unigox works for your business
 
-Receive international payments, pay suppliers and move between local currencies and stablecoins. Build accounts, payments or trading into your own product. Earn from your website’s audience or the business clients you already know.
+Choose Unigox products for three types of business needs:
 
-Unigox gives you several ways to serve your customers and grow your business. Choose the services that fit what you do today, and combine them as your needs grow.
+- **Manage your company’s money:** receive payments, pay suppliers and convert between fiat and stablecoins.
+- **Offer financial services:** add accounts, local payments or trading to your own product.
+- **Earn from your network:** monetize your website’s audience or introduce business clients.
 
 <figure><img src="./assets/unigox-business-guide-cover.png" alt="How Unigox works for your business — the Unigox mascot signing a business agreement"><figcaption></figcaption></figure>
 
-## Receive payments through accounts in your company’s name
+## Business accounts in Europe
 
-[Business accounts in Europe](https://www.unigox.com/european-business-accounts) give your company EUR, GBP and USD accounts in its own name. Receive payments from international customers, pay suppliers in EUR or GBP and manage your accounts through the Business Portal. Your finance team can download statements and keep track of the money coming in and going out. Companies registered outside Europe can apply too; eligibility depends on the country and business activity.
+**For:** companies receiving international payments, and fintechs offering accounts to their customers.
 
-You can also make accounts part of your own service. Issue accounts in your business clients’ legal names or your individual customers’ names, so they can receive bank transfers through your product. Earn from those account services and automate the same operations available in the portal through the API. Account issuance is arranged separately, with verification for your business and each account holder.
+### Accounts for your company
 
-## Convert larger amounts between fiat and stablecoins
+- Open EUR, GBP and USD accounts in your company’s legal name.
+- Receive customer payments and pay suppliers in EUR or GBP.
+- Manage accounts, track incoming and outgoing payments, and download statements in the Business Portal.
 
-If your revenue arrives in stablecoins but your expenses are in euros or pounds, the [OTC desk](https://www.unigox.com/otc-desk) handles the conversion for you. It works in both directions: sell stablecoins for EUR or GBP to cover business costs, or buy stablecoins to pay partners.
+### Accounts for your customers
 
-You agree the amount, exchange rate, fees and settlement details with our team before sending funds. We carry out the trade and send the proceeds to the agreed account or wallet. Confirmed deals appear in your Business Portal for your finance team to reference. OTC desks can also arrange settlement for their clients, with the paying business verified and the payment reviewed before funds are sent.
+- Issue accounts in your business clients’ legal names or individual customers’ names.
+- Let customers receive bank transfers through your product and earn from account services.
+- Automate the operations available in the portal through the API.
 
-## Add local deposits and withdrawals to your app
+**Applications**
 
-[Payments API](https://www.unigox.com/payments-api) lets customers move money into and out of your product using bank transfers and mobile money. A customer pays in local currency to fund their balance; your business receives stablecoins. For a withdrawal, your business funds the payment in stablecoins and the customer receives local currency in their bank account or mobile wallet.
+- Companies outside Europe can apply; eligibility depends on the country and business activity.
+- Customer account issuance is arranged separately and requires verification of your business and each account holder.
 
-You control the customer experience and can add your own fee. Customers use familiar local payment methods to fund their balance or cash out, all through your app.
+[Explore business accounts](https://www.unigox.com/european-business-accounts)
 
-**Keep your existing non-custodial wallet infrastructure.** If you run a wallet, neobank or DeFi app, connect Payments API without migrating users’ wallets or replacing your wallet provider. Add fiat deposits and withdrawals to the product you already have.
+## OTC conversions
 
-## Accept crypto payments your way
+**For:** businesses converting larger amounts between fiat and stablecoins.
 
-[Crypto processing](https://www.unigox.com/crypto-processing) lets customers pay your business in stablecoins from their wallet or exchange. Integrate our API into your website or app, or use ready-made tools from Unigox to accept payments. Each payment is linked to the right invoice or customer, saving your team the work of matching transfers by hand.
+- **Cover business expenses:** convert stablecoin revenue into EUR or GBP.
+- **Pay partners in stablecoins:** convert EUR or GBP in the other direction.
+- **Agree terms before funding:** confirm the amount, rate, fees and receiving account or wallet with our team.
+- **Conversion and settlement:** Unigox handles the trade and sends the proceeds to the agreed destination.
+- **Keep a record:** find confirmed deals in your Business Portal.
+- **Settle OTC client deals:** arrange settlement separately, with verification of the paying business and review of the payment before it is sent.
 
-Use it for customer purchases, invoices or balance top-ups. Keep the proceeds in stablecoins, send them to your wallet, or convert and withdraw to your bank account in a supported currency.
+[Explore the OTC desk](https://www.unigox.com/otc-desk)
 
-## Turn your website’s crypto audience into revenue
+## Payments API
 
-If your visitors already come to you to learn about crypto or find ways to buy and sell it, the [crypto widget](https://www.unigox.com/crypto-widget) lets them take that next step on your website. Embed ready-made buying and selling screens alongside your content, without building a trading interface or a customer verification flow.
+**For:** wallets, neobanks and apps that need local deposits and withdrawals.
 
-You earn **20% of Unigox’s trading fee** on completed buys and sells through your widget. On sell trades, you can add your own markup and adjust it in your partner dashboard. The dashboard also shows orders, statuses, completed volume and markup earned, so you can see how the widget is performing.
+- **Deposits:** your customer pays in local currency by bank transfer or mobile money; your business receives stablecoins.
+- **Withdrawals:** your business funds the payment in stablecoins; your customer receives local currency in their bank account or mobile wallet.
+- **Your customer experience:** build payments into your own app and add your own fee.
+- **Your existing wallets:** connect to your non-custodial infrastructure without migrating users’ wallets or replacing your wallet provider. Suitable for wallets, neobanks and DeFi apps.
 
-Withdraw your earnings in crypto to your own wallet, or convert them to local currency using a payment method available in your country.
+[Explore Payments API](https://www.unigox.com/payments-api)
 
-## Build trading into your product
+## Crypto processing
 
-[Trade API](https://www.unigox.com/trade-api) brings tokenized stocks, ETFs and meme coins into wallets, neobanks and trading apps. Users can buy assets on supported networks with the stablecoins they already hold, without separately bridging funds, buying a gas token or creating another wallet. Purchased assets arrive at their existing address.
+**For:** businesses accepting stablecoin payments for purchases, invoices or customer balance top-ups.
 
-Your team builds the trading experience; Unigox handles the blockchain execution. Asset discovery and trending data help you show customers what they can trade, while order updates let your app follow each transaction. You earn revenue from trades, and Unigox-funded trading competitions can help engage your users where local rules allow. Explore the product page to request access.
+- **Choose how to connect:** integrate our API into your website or app, or use ready-made payment tools from Unigox.
+- **Accept payments from wallets and exchanges:** customers pay your business in stablecoins.
+- **Match payments automatically:** link each payment to the right invoice or customer, without checking transfers by hand.
+- **Choose how to use the proceeds:** keep stablecoins, send them to your wallet, or convert and withdraw to your bank account in a supported currency.
 
-## Launch a money app under your own brand
+[Explore crypto processing](https://www.unigox.com/crypto-processing)
 
-[NeoBank-as-a-Service](https://www.unigox.com/neobank-as-a-service) is for teams that want a complete branded app. It combines local payments, a non-custodial crypto wallet and swaps with customer identity checks and transaction monitoring. Unigox builds the mobile app, supports the App Store submission and provides the payment infrastructure and operational support.
+## Crypto widget
 
-You bring your brand, audience and business model. We agree the markets, services and launch scope with you. This reduces the work of assembling a wallet, payment connections and verification systems from separate providers. If your business already has its own regulatory licence and compliance team, a technology licence is also available.
+**For:** publishers, communities and websites whose visitors want to buy or sell crypto.
+
+- **Add trading to your website:** embed ready-made buy and sell screens alongside your content. Unigox provides the trading and customer verification flows.
+- **Earn on completed trades:** receive **20% of Unigox’s trading fee** on buys and sells through your widget.
+- **Set your own sell markup:** add and adjust it in your partner dashboard.
+- **Track performance:** see orders, statuses, completed volume and markup earned in the dashboard.
+- **Withdraw earnings:** send crypto to your wallet, or convert to local currency using a payment method available in your country.
+
+[Explore the crypto widget](https://www.unigox.com/crypto-widget)
+
+## Trade API
+
+**For:** wallets, neobanks and trading apps adding asset trading to their product.
+
+- Offer tokenized stocks, ETFs and meme coins on supported networks.
+- Let users buy with the stablecoins they already hold, without separately bridging funds, buying a gas token or creating another wallet.
+- Deliver purchased assets to the user’s existing address.
+- Build your own trading screens; Unigox handles blockchain execution.
+- Use asset discovery, trending data and order updates to show available assets and transaction progress.
+- Earn revenue from trades. Unigox-funded trading competitions can help engage users where local rules allow.
+
+[Explore Trade API and request access](https://www.unigox.com/trade-api)
+
+## NeoBank-as-a-Service
+
+**For:** teams launching a complete money app under their own brand.
+
+- Combine local payments, a non-custodial crypto wallet and swaps in one app.
+- Include customer identity checks and transaction monitoring.
+- Get a mobile app built by Unigox, with App Store submission support, payment infrastructure and operational support.
+- Bring your brand, audience and business model; agree the markets, services and launch scope with our team.
+- Use a technology licence if you already have your own regulatory licence and compliance team.
+
+[Explore NeoBank-as-a-Service](https://www.unigox.com/neobank-as-a-service)
 
 ## Pay suppliers in China
 
-For importers and businesses buying from China, [Pay suppliers in China](https://www.unigox.com/pay-china) helps you find a payment route for your supplier’s invoice. Choose your country, enter the amount the supplier should receive in CNY and see the available methods and estimated cost. Funding options depend on your country and account, and can include local payments or stablecoins.
+**For:** importers and businesses paying Chinese suppliers.
 
-If your supplier invoices in USD, choose the destination shown in their bank details, whether that is mainland China, Hong Kong or Singapore. You can check the relevant route before arranging payment.
+- Choose your country and enter the amount your supplier should receive in CNY.
+- Compare available payment methods and estimated cost before arranging payment.
+- Fund with local payments or stablecoins, depending on your country and account.
+- For USD invoices, select the destination in your supplier’s bank details: mainland China, Hong Kong or Singapore. Check the relevant route before paying.
 
-## Turn your business network into recurring revenue
+[Find a supplier payment route](https://www.unigox.com/pay-china)
 
-Your existing contacts could be your next source of income. With [Business referrals](https://www.unigox.com/sourcers), offer companies you know accounts, local payments, crypto processing or OTC conversions. A broad product range gives you more ways to help each client. Earn **up to 20% of the revenue Unigox earns** from those clients, for as long as they use the services covered by your partnership.
+## Business referrals
 
-Bringing a client is straightforward: share your personal application link, then follow their verification, services and activity in your Business Portal. We handle the business review and service setup. Your revenue share and payment terms are agreed before you start.
+**For:** advisers, consultants and sales partners with an existing network of business contacts.
 
-## Start with what your business needs to do
+- **Match a product to each client:** offer business accounts, local payments, crypto processing or OTC conversions according to what they need.
+- **Make the introduction:** share your personal application link. Unigox handles business review and service setup.
+- **Follow progress:** see client verification, services and activity in your Business Portal.
+- **Earn recurring revenue:** receive **up to 20% of the revenue Unigox earns** from referred clients while they use the services covered by your partnership.
+- **Agree terms first:** confirm your revenue share and payment terms before bringing clients.
 
-You can combine products around the way your business works. A wallet can accept stablecoin top-ups through crypto processing and add local withdrawals through Payments API. An international company can receive customer payments into named accounts and use the OTC desk for larger conversions. A fintech can offer accounts to customers alongside local payment services.
+[Explore business referrals](https://www.unigox.com/sourcers)
 
-[**Book a call**](https://calendly.com/hazem-unigox/30min) to discuss your customers, markets and payment needs. We’ll help you choose the right products, confirm availability and agree pricing and setup.
+## Combine products for your business
+
+- **Wallet or app:** accept stablecoin top-ups through crypto processing and add local withdrawals through Payments API.
+- **International company:** receive payments into named accounts and use the OTC desk for larger conversions.
+- **Fintech:** offer accounts to customers alongside local payment services.
+
+[**Book a call**](https://calendly.com/hazem-unigox/30min) to confirm the products, markets, pricing and setup for your business.

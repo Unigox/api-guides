@@ -32,6 +32,13 @@ test("import verification rejects a missing paragraph or external link", () => {
   assert.throws(() => verifyArticle(markdown.replace('alt="Cover"', 'alt=""'), markdown), /alt text missing/);
 });
 
+test("list verification accepts GitBook formatting but rejects a missing benefit", () => {
+  const source = "## Payments API\n\n- **Deposits:** local payments.\n- **Your wallets:** keep your provider.\n\n[Product](https://www.unigox.com/payments-api)";
+  const imported = source.replace(/^- /gm, "* ").replace("\n* **Your", "\n\n* **Your");
+  verifyArticle(imported, source);
+  assert.throws(() => verifyArticle(imported.replace("* **Your wallets:** keep your provider.", ""), source), /content missing/);
+});
+
 for (const refresh of [false, true]) test(`publishing ${refresh ? "refreshes" : "inserts"} the article first with an icon and preserves Introduction`, async t => {
   const liveTree = structuredClone(tree);
   if (refresh) liveTree.pages[0].pages.push({ id: "new", path: PAGE_PATH, title: TITLE });

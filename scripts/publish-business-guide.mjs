@@ -19,13 +19,13 @@ function childrenOf(pages, parent) {
   }
 }
 
-// GitBook normalizes Markdown escaping and whitespace. Check every paragraph,
-// section and external link, not merely a few representative strings.
+// GitBook normalizes Markdown escaping, whitespace and list markers. Check every
+// paragraph, list item, section and external link.
 export function verifyArticle(actual, expected) {
   if (typeof actual !== "string") throw new Error("GitBook did not return imported Markdown");
-  const normalize = value => value.replace(/\\([*_\[\]()])/g, "$1").replace(/\s+/g, " ").trim();
+  const normalize = value => value.replace(/^\s*[-+*] /gm, "").replace(/\\([*_\[\]()])/g, "$1").replace(/\s+/g, " ").trim();
   const text = normalize(actual);
-  for (const block of expected.split(/\n\s*\n/)) {
+  for (const block of expected.split(/\n\s*\n|\n(?=\s*[-+*] )/)) {
     if (block.startsWith("<figure>")) {
       const alt = block.match(/alt="([^"]+)"/)?.[1];
       if (alt && !actual.includes(`alt="${alt}"`)) throw new Error("Imported cover alt text missing");
@@ -70,7 +70,7 @@ export async function publishBusinessGuide(api, { dryRun, commit, markdown, cove
         icon: "briefcase",
         title: TITLE,
         linkTitle: "Unigox for business",
-        description: "Explore Unigox business accounts, local payments, crypto processing, OTC, trading, branded apps and partner revenue.",
+        description: "Business products, use cases and ways to get started.",
         document: { markdown },
       },
     ],
