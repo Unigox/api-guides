@@ -1,6 +1,6 @@
 # How Unigox works for your business
 
-Unigox helps you receive and send business payments, build financial services into your product, and earn from your audience or business network. You can use one service for a specific task or combine several as your business grows.
+[Unigox](https://www.unigox.com/business) helps you receive and send business payments, build financial services into your product, and earn from your audience or business network. You can use one service for a specific task or combine several as your business grows.
 
 Choose the section that matches what you need to do:
 
