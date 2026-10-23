@@ -32,7 +32,9 @@ test("import verification rejects a missing paragraph or external link", () => {
   assert.throws(() => verifyArticle(markdown.replace('alt="Cover"', 'alt=""'), markdown), /alt text missing/);
 });
 
-test("publishing inserts a new page, checks the cover and preserves Introduction", async t => {
+for (const refresh of [false, true]) test(`publishing ${refresh ? "refreshes" : "inserts"} the article first with an icon and preserves Introduction`, async t => {
+  const liveTree = structuredClone(tree);
+  if (refresh) liveTree.pages[0].pages.push({ id: "new", path: PAGE_PATH, title: TITLE });
   const cover = Buffer.from("original image bytes");
   t.mock.method(globalThis, "fetch", async () => new Response(cover));
   let merged = false;
@@ -41,18 +43,21 @@ test("publishing inserts a new page, checks the cover and preserves Introduction
     if (method === "POST" && path.endsWith("/change-requests")) return { id: "cr", revision: "rev" };
     if (method === "POST" && path.includes("/content?")) {
       assert.equal(body.expectedRevision, "rev");
-      assert.deepEqual(body.changes.map(change => change.operation), ["insert_files", "insert_page"]);
+      assert.deepEqual(body.changes.map(change => change.operation), ["insert_files", refresh ? "update_page" : "insert_page"]);
       assert.equal(body.changes[1].into, "business");
-      assert.equal(body.changes[1].slug, "unigox-for-business");
+      assert.equal(body.changes[1].at, 0);
+      assert.equal(body.changes[1].icon, "briefcase");
+      if (refresh) assert.equal(body.changes[1].page, "new");
+      else assert.equal(body.changes[1].slug, "unigox-for-business");
       assert.equal(body.changes[0].files[0].url.includes(options.commit), true);
       return { insertedFiles: [{ id: "cover-id", name: "unigox-business-guide-cover.png", downloadURL: "https://example.org/cover-id.png" }] };
     }
     if (path.includes("introduction?")) return { id: "original", markdown: "Original untouched page" };
     if (path.includes("unigox-for-business?")) return { id: "new", markdown: markdown.replace("./assets/unigox-business-guide-cover.png", "https://example.org/cover-id.png") };
     if (method === "GET" && path.endsWith("/content")) {
-      if (!path.includes("change-requests")) return tree;
+      if (!path.includes("change-requests")) return liveTree;
       const draft = structuredClone(tree);
-      draft.pages[0].pages.push({ id: "new", path: PAGE_PATH, title: TITLE });
+      draft.pages[0].pages.unshift({ id: "new", path: PAGE_PATH, title: TITLE, icon: "briefcase" });
       return draft;
     }
     if (path.endsWith("/merge")) { merged = true; return { result: "merge", revision: "published" }; }
