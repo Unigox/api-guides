@@ -9887,10 +9887,13 @@ components:
           format: date-time
           nullable: true
           description: |
-            On-ramp only: the moment the order stops waiting for the customer's fiat. A transfer
-            that arrives after it is not matched to the order, and the order is cancelled
-            (`cancelled`, "Payment window expired"); the money stays on the customer's account and
-            can be used with `pay-from-balance` on a new order. Extended along with the window.
+            On-ramp only: the moment the order can be cancelled for want of the customer's fiat.
+            Tell the customer to pay before it. The order is cancelled shortly after it (`cancelled`,
+            "Payment window expired"): on your next read of the order, and an `own_account` order
+            within about 20 minutes even if nobody reads it. A transfer that arrives after this moment but before the cancellation may
+            still complete the order; that is possible, not guaranteed. One that arrives after the
+            cancellation stays on the customer's account and can be used with `pay-from-balance` on a
+            new order. Extended along with the window.
             Set while the order is `awaiting_fiat_transfer`, `null` otherwise — and always `null`
             on an off-ramp, and on an order held for manual handling (it does not expire). UTC.
           example: "2026-10-24T09:12:30Z"

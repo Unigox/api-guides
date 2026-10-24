@@ -303,10 +303,12 @@ the same amount are held for review rather than guessed between.
 
 The order waits for the transfer until `payment_deadline_at` (UTC), on the
 order and on its `order.status.changed` event. Show it to the customer as the
-time to pay by. A transfer that arrives after it is not matched: the order is
-cancelled and the money stays on the account, where
-[`pay-from-balance`](#paying-from-money-already-on-the-account) can use it for
-a new order.
+time to pay by. After it the order can be cancelled, and is: on your next read
+of the order, and in any case within about 20 minutes. A transfer that lands
+after the deadline but before the cancellation may still complete the order,
+but that is not guaranteed. One that lands after the cancellation stays on the
+account, where [`pay-from-balance`](#paying-from-money-already-on-the-account)
+can use it for a new order.
 
 ### Paying from money already on the account
 
