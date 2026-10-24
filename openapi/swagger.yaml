@@ -9892,7 +9892,7 @@ components:
             (`cancelled`, "Payment window expired"); the money stays on the customer's account and
             can be used with `pay-from-balance` on a new order. Extended along with the window.
             Set while the order is `awaiting_fiat_transfer`, `null` otherwise — and always `null`
-            on an off-ramp. UTC.
+            on an off-ramp, and on an order held for manual handling (it does not expire). UTC.
           example: "2026-10-24T09:12:30Z"
         recipient_context:
           allOf:
