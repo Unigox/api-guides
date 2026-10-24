@@ -301,6 +301,13 @@ Open the order first, then have the customer transfer. A deposit is matched to
 an open order of the same customer by amount, to the cent; two open orders for
 the same amount are held for review rather than guessed between.
 
+The order waits for the transfer until `payment_deadline_at` (UTC), on the
+order and on its `order.status.changed` event. Show it to the customer as the
+time to pay by. A transfer that arrives after it is not matched: the order is
+cancelled and the money stays on the account, where
+[`pay-from-balance`](#paying-from-money-already-on-the-account) can use it for
+a new order.
+
 ### Paying from money already on the account
 
 A deposit that arrives with no open order stays on the customer's account
