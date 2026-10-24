@@ -2,6 +2,10 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-24
+
+**On-ramp orders say when they stop waiting for the fiat.** Orders carry `payment_deadline_at` (UTC): while an on-ramp is `awaiting_fiat_transfer`, the moment after which it can be cancelled for want of the customer's transfer. Have the customer pay before it; the order is cancelled shortly after (on your next read; an `own_account` order within about 20 minutes even unread), and a transfer that lands in between may still complete it, without guarantee. `null` in every other status and on every off-ramp. The same value is on the on-ramp's `order.status.changed` event, where it is omitted when not set. See [Paying for an on-ramp from the account](./fiat-accounts.md#paying-for-an-on-ramp-from-the-account).
+
 ## 2026-10-20
 
 **Finding an order when the initiate response was lost.**
