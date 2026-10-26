@@ -284,6 +284,10 @@ These events come in the same envelope and with the same signature as
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
 no per-event subscription.
 
+Accounts of business customers send `fiat_account.deposit.received` too, with
+`holder_type: business` and a different `data`. See
+[Business customers: Webhooks](./api-reference/business-customers.md#webhooks).
+
 ## Paying for an on-ramp from the account
 
 When a customer holds an account in the order's currency, the on-ramp is funded

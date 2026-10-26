@@ -209,7 +209,7 @@ separately; one that is not answers `403 CAPABILITY_NOT_GRANTED`.
       "direction": "to_partner",
       "amount": "1500.00",
       "currency": "GBP",
-      "status": "completed",
+      "status": "confirmed",
       "replayed": false,
       "idempotency_key": "7d1f0c9e-2b44-4d3e-9a51-0f6c2a1b8e77"
     }
@@ -221,6 +221,57 @@ If the bank does not confirm a transfer in time, the answer is
 `504 BANKING_TIMEOUT_UNKNOWN`: the transfer may still have gone through. Do
 not retry with a new key. Contact Unigox support; the attempt is held for
 reconciliation.
+
+## Webhooks
+
+> **Not available yet.** These events are being rolled out; until then, read
+> `…/payments`.
+
+Every bank transfer in or out of a company's account is also pushed to your
+webhook, so you do not have to poll `…/payments`. The events come in the same
+envelope and with the same signature as `order.status.changed`
+(`X-Unigox-Signature`, `X-Unigox-Timestamp`), and are retried the same way until
+your endpoint answers `2xx`. Register the endpoint with
+`POST /api/v1/partner/webhooks`; there is no per-event subscription.
+
+| `event_type` | Fired when |
+| --- | --- |
+| `fiat_account.deposit.received` | Money arrived on a company's account. `holder_type` is `business`. |
+| `fiat_account.payment.sent` | Money left a company's account. |
+
+Both carry the same `data`:
+
+```json
+{
+  "event_id": "evt_fiat_account_deposit_received_5f0c…",
+  "event_type": "fiat_account.deposit.received",
+  "created_at": "2026-10-26T09:15:02Z",
+  "data": {
+    "fiat_account_id": "business_412",
+    "holder_type": "business",
+    "business_customer_id": "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b",
+    "holder_name": "HFWM LTD",
+    "payment_id": "5f0c…",
+    "direction": "incoming",
+    "amount": "14500.00",
+    "currency": "GBP",
+    "status": "confirmed",
+    "counterparty_name": "ACME LTD",
+    "counterparty_iban": "GB29NWBK60161331926819",
+    "reference": "INV 42",
+    "occurred_at": "2026-10-26T09:14:58Z"
+  }
+}
+```
+
+- `payment_id` is the `id` of the same transfer on `…/payments`.
+- `counterparty_*` is the payer on an incoming transfer and the beneficiary on
+  an outgoing one. `status`, `counterparty_*`, `reference` and `occurred_at` are
+  left out when the bank did not report them.
+- Delivery is at least once. `event_id` is the same for every delivery of one
+  transfer, so de-duplicate on it.
+- A transfer that happened while your webhook was off is not sent later. Use
+  `…/payments` to catch up.
 
 ## Your operating account
 
