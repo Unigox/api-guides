@@ -1427,7 +1427,7 @@ paths:
         '502':
           description: '`DEPOSIT_ADDRESSES_UNAVAILABLE` — saved addresses could not be read; this GET never allocates. Safe to retry.'
 
-  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chain_type}/allocate:
+  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chainType}/allocate:
     post:
       tags:
         - User Management
@@ -1466,7 +1466,7 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: chain_type
+        - name: chainType
           in: path
           required: true
           description: Address family; EVM addresses can support multiple configured networks.
@@ -1517,7 +1517,7 @@ paths:
         '409':
           description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
         '422':
-          description: '`INVALID_REQUEST` — unknown `chain_type`, or `count` above 50 or below 0. `WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          description: '`INVALID_REQUEST` — unknown `chainType`, or `count` above 50 or below 0. `WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
         '429':
           description: '`ADDRESS_CAP_REACHED` — allocating would take the customer past the limit for this chain type; `error.message` states the limit.'
         '502':
