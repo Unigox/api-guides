@@ -398,7 +398,10 @@ All the events on this page are listed. The retail
   `{"event_type": "fiat_account.deposit.received", "holder_type": "business"}`
   (or `fiat_account.payment.sent`, `fiat_account.payment.updated`,
   `business_customer.kyb.updated`, `order.status.changed`) it sends a signed
-  sample of that event, with an `evt_test_` id and `"test": true`.
+  sample of that event, with an `evt_test_` id and `"test": true`. The answer
+  is `200` with `"delivered": true` when your endpoint answered 2xx, and
+  `"delivered": false` with its `http_status` (or `null` if it did not answer)
+  otherwise.
 - In the sandbox (`https://api-staging.unigox.com`),
   `POST …/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/simulate-deposit`
   with `{"amount": "100.00", "sender_name": "ACME LTD", "reference": "INV 42"}`

@@ -6469,7 +6469,11 @@ paths:
                   holder_type: business
       responses:
         '200':
-          description: Test event delivered successfully
+          description: |
+            The test event was sent. `delivered` says whether your endpoint accepted it: `true`
+            for a 2xx answer, `false` for any other answer (its code in `http_status`) or none at
+            all (`http_status: null`). A `false` here is your endpoint's result, not an error of
+            the call, so it is a `200` too.
           content:
             application/json:
               schema:
@@ -6479,11 +6483,30 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/WebhookTestPingResponse'
-              example:
-                success: true
-                data:
-                  delivered: true
-                  http_status: 200
+              examples:
+                delivered:
+                  summary: Your endpoint answered 2xx
+                  value:
+                    success: true
+                    data:
+                      delivered: true
+                      http_status: 200
+                rejected:
+                  summary: Your endpoint answered non-2xx
+                  value:
+                    success: true
+                    data:
+                      delivered: false
+                      http_status: 401
+                      error: webhook endpoint answered non-2xx
+                unreachable:
+                  summary: No answer (DNS, TLS, connection or timeout)
+                  value:
+                    success: true
+                    data:
+                      delivered: false
+                      http_status: null
+                      error: webhook endpoint unreachable
         '400':
           description: Webhook URL not configured, malformed body, or an unsupported `event_type` / `holder_type`
           content:
@@ -6504,16 +6527,6 @@ paths:
                     error: "unsupported event_type; supported: business_customer.kyb.updated, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, order.status.changed, ping"
         '401':
           description: Unauthorized — invalid or missing API key
-        '502':
-          description: Webhook delivery failed — target endpoint returned non-2xx or timed out
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                success: false
-                data:
-                  error_key: "webhook delivery failed"
 
   /api/v1/partner/webhooks/events:
     get:
@@ -10641,8 +10654,15 @@ components:
           example: true
         http_status:
           type: integer
-          description: HTTP status code returned by the webhook endpoint
+          nullable: true
+          description: HTTP status code returned by the webhook endpoint; `null` when it did not answer
           example: 200
+        error:
+          type: string
+          description: Present when `delivered` is `false`
+          enum:
+            - webhook endpoint answered non-2xx
+            - webhook endpoint unreachable
 
     WebhookEventPayload:
       type: object

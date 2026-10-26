@@ -10,7 +10,7 @@ Notable changes to the Unigox partner API, newest first.
 - The new `fiat_account.payment.updated` for every status a transfer reaches: pending, held, refused, returned, refunded…
 - The new `business_customer.kyb.updated` for every change of a company's KYB status.
 - `GET /api/v1/partner/webhooks/events` lists the events raised for you since a time, with how each delivery went, and `POST …/webhooks/events/{event_id}/redeliver` sends one again.
-- `POST /api/v1/partner/webhooks/test` takes an optional `event_type` and sends a signed sample of it.
+- `POST /api/v1/partner/webhooks/test` takes an optional `event_type` and sends a signed sample of it. When your endpoint answers non-2xx or does not answer, the call now returns `200` with `"delivered": false` (and the code in `http_status`) instead of `502`.
 - In the sandbox, `POST …/fiat-accounts/{fiat_account_id}/simulate-deposit` makes a real sandbox bank transfer into a business customer's account.
 - The retail `fiat_account.deposit.received` now also carries `holder_type: retail`.
 
