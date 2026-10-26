@@ -344,9 +344,67 @@ that moment and does not change; follow later steps through
 
 - Delivery is at least once. `event_id` is the same for every delivery of one
   event, so de-duplicate on it.
-- An event raised while your webhook was off is not sent later. Use
-  `…/payments` and `GET …/business-customers/{business_customer_id}` to catch
-  up.
+- An event raised while your webhook was off is not sent on its own, but it is
+  kept: read it back, or have it sent again, as below.
+
+### Catching up
+
+`GET /api/v1/partner/webhooks/events?since=2026-10-25T10:00:00Z` lists the
+events raised for you since that time, oldest first, each exactly as it was
+signed, with how its delivery went:
+
+```json
+{
+  "success": true,
+  "data": {
+    "events": [
+      {
+        "event_id": "evt_fiat_account_payment_updated_5f0c…_blocked",
+        "event_type": "fiat_account.payment.updated",
+        "created_at": "2026-10-26T09:20:11Z",
+        "data": { "…": "as in the webhook" },
+        "delivery": {
+          "status": "failed",
+          "attempts": 10,
+          "delivered_at": null,
+          "last_http_status": 500,
+          "failure_reason": "http_error"
+        }
+      }
+    ],
+    "since": "2026-10-25T10:00:00Z",
+    "has_more": false,
+    "next_cursor": "MTc2…"
+  }
+}
+```
+
+- `since` defaults to 24 hours ago. Filter with `event_type`; page with `limit`
+  (50, up to 200) and `cursor` (the `next_cursor` of the previous page).
+- `delivery.status` is `pending`, `in_progress`, `delivered` or `failed`.
+  `failure_reason` is `webhook_disabled`, `webhook_url_not_set`, `http_error`,
+  `network_error` or `delivery_failed`.
+- Re-read with some overlap and de-duplicate on `event_id`.
+- `POST /api/v1/partner/webhooks/events/{event_id}/redeliver` sends one event
+  again (`409` while it is being delivered; `400` if your webhook is off or has
+  no URL).
+
+All the events on this page are listed. The retail
+`fiat_account.deposit.received` is not yet.
+
+### Testing
+
+- `POST /api/v1/partner/webhooks/test` with no body sends a signed `ping`. With
+  `{"event_type": "fiat_account.deposit.received", "holder_type": "business"}`
+  (or `fiat_account.payment.sent`, `fiat_account.payment.updated`,
+  `business_customer.kyb.updated`, `order.status.changed`) it sends a signed
+  sample of that event, with an `evt_test_` id and `"test": true`.
+- In the sandbox (`https://api-staging.unigox.com`),
+  `POST …/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/simulate-deposit`
+  with `{"amount": "100.00", "sender_name": "ACME LTD", "reference": "INV 42"}`
+  makes a real sandbox bank transfer into the account, so you receive the real
+  `fiat_account.deposit.received` and `fiat_account.payment.updated` and see the
+  payment on `…/payments`. It does not exist in production.
 
 ## Your operating account
 

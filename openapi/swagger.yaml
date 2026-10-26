@@ -6426,9 +6426,47 @@ paths:
         Send a signed test event to your configured webhook URL. Uses the same HMAC-SHA256
         signature scheme as production events. Use this to verify your endpoint is reachable
         and correctly validating signatures.
+
+        **No body** (or an empty one) sends a `ping` event with empty `data`, as it always has.
+
+        **With a body** `{"event_type": "..."}` it sends a sample of that real event instead, in
+        the exact shape your endpoint will receive in production, so you can test your handler
+        before real money moves. Supported `event_type` values:
+
+        | `event_type` | Sample |
+        | --- | --- |
+        | `ping` | Same as no body. |
+        | `order.status.changed` | A completed off-ramp order. |
+        | `fiat_account.deposit.received` | A credit on an issued account. `holder_type`: `retail` (default) or `business`. |
+        | `fiat_account.payment.sent` | Money leaving a business customer's account. |
+        | `fiat_account.payment.updated` | A status step of a business account payment (`status: pending`). |
+        | `business_customer.kyb.updated` | A business customer's KYB reaching `approved`. |
+
+        Any other value returns `400` with the supported list.
+
+        Every sample is clearly marked: `event_id` starts with `evt_test_` and the envelope carries
+        `"test": true` at the top level (inside the signed body, so signature verification is
+        unchanged). Ids inside `data` are placeholders (`00000000-0000-4000-8000-00000000000N`,
+        `business_0`) that match nothing in your account. A test event is sent once, is not
+        retried, and does not appear in `GET /api/v1/partner/webhooks/events`.
       operationId: testPingWebhook
       security:
         - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookTestRequest'
+            examples:
+              ping:
+                summary: Ping (same as no body)
+                value: {}
+              business_deposit:
+                summary: A business account deposit
+                value:
+                  event_type: fiat_account.deposit.received
+                  holder_type: business
       responses:
         '200':
           description: Test event delivered successfully
@@ -6447,15 +6485,23 @@ paths:
                   delivered: true
                   http_status: 200
         '400':
-          description: Webhook URL not configured
+          description: Webhook URL not configured, malformed body, or an unsupported `event_type` / `holder_type`
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                success: false
-                data:
-                  error_key: "webhook URL is not set"
+              examples:
+                url_not_set:
+                  summary: Webhook URL not configured
+                  value:
+                    success: false
+                    data:
+                      error_key: "webhook URL is not set"
+                unsupported_event:
+                  summary: Unsupported event_type
+                  value:
+                    success: false
+                    error: "unsupported event_type; supported: business_customer.kyb.updated, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, order.status.changed, ping"
         '401':
           description: Unauthorized — invalid or missing API key
         '502':
@@ -6469,6 +6515,308 @@ paths:
                 data:
                   error_key: "webhook delivery failed"
 
+  /api/v1/partner/webhooks/events:
+    get:
+      tags:
+        - Webhooks
+      summary: List webhook events (replay)
+      description: |
+        Read back the webhook events sent to you, oldest first, with how each delivery went.
+        Use it to catch up after your endpoint was down or your webhook was switched off, or to
+        reconcile what you processed against what was sent.
+
+        Each item is the event **exactly as it was signed and sent** (`event_id`, `event_type`,
+        `created_at`, `data`) with a `delivery` object added, so the same code that handles the
+        live webhook can process it. Deduplicate on `event_id`, as you do for live deliveries.
+
+        **Which events appear.** Events delivered through Unigox's retrying event queue:
+        `order.status.changed`, `order.refund.required`, `order.own_account_payout.updated`,
+        `user.kyc.updated`, `business_customer.kyb.updated`, `fiat_account.updated` when an account
+        is closed, and the business account events `fiat_account.deposit.received`,
+        `fiat_account.payment.sent` and `fiat_account.payment.updated`. The retail
+        `fiat_account.deposit.received`, `wallet.deposit.received`, other `fiat_account.updated`
+        notices and test events are sent once without the queue and do **not** appear here.
+
+        **Events from while your webhook was off are listed too.** They were never sent: their
+        `delivery.status` is `failed` with `failure_reason: webhook_disabled`. Read them here, or
+        ask for one to be sent with the redeliver endpoint once your webhook is on.
+
+        **Paging.** Pass `next_cursor` back as `cursor` for the next page. `next_cursor` is set
+        on every non-empty page, including the last one, so you can keep polling with it; an
+        empty page returns the cursor you sent. When `cursor` is sent without `since`, the cursor
+        alone is the starting point. An event is stamped when the change that raised it began, so
+        one can become visible slightly after a later-stamped one: when polling, re-read with a
+        small overlap (`since` a few minutes back) and deduplicate on `event_id`.
+      operationId: listWebhookEvents
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: |
+            RFC 3339 timestamp; events created at or after it. Default: 24 hours ago, or no lower
+            bound when `cursor` is sent.
+          schema:
+            type: string
+            format: date-time
+          example: "2026-10-25T00:00:00Z"
+        - name: event_type
+          in: query
+          required: false
+          description: Only events of this type (exact match).
+          schema:
+            type: string
+          example: order.status.changed
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Default 50, maximum 200 (larger values are read as 200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the previous page. Opaque; do not build it yourself.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of events
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookEventPage'
+              example:
+                success: true
+                data:
+                  events:
+                    - event_id: "evt_3c1f9a52-7d0e-4b8a-9f61-2a4d5e6f7a8b"
+                      event_type: "order.status.changed"
+                      created_at: "2026-10-26T09:14:02Z"
+                      data:
+                        order_id: "ord-2026-10-26-0001"
+                        status: "completed"
+                        user_id: "5f0c6b1e-2a3d-4e5f-8a9b-0c1d2e3f4a5b"
+                        crypto_amount: "100"
+                        crypto_currency: "USDT"
+                        fiat_amount: "92.50"
+                        fiat_currency: "EUR"
+                        provider: "licensed"
+                        payment_details_id: "812"
+                        partner_fee: "0"
+                        partner_fee_pct: 0
+                        order_type: "offramp"
+                      delivery:
+                        status: "delivered"
+                        attempts: 1
+                        delivered_at: "2026-10-26T09:14:03Z"
+                        last_http_status: 200
+                        failure_reason: null
+                    - event_id: "evt_fiat_account_payment_sent_9b1c2d3e"
+                      event_type: "fiat_account.payment.sent"
+                      created_at: "2026-10-26T09:20:11Z"
+                      data:
+                        fiat_account_id: "business_17"
+                        holder_type: "business"
+                        business_customer_id: "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b"
+                        payment_id: "9b1c2d3e"
+                        transaction_id: "9b1c2d3e"
+                        order_id: null
+                        direction: "outgoing"
+                        amount: "1000.00"
+                        currency: "EUR"
+                        status: "completed"
+                        rail: "sepa"
+                      delivery:
+                        status: "failed"
+                        attempts: 1
+                        delivered_at: null
+                        last_http_status: null
+                        failure_reason: "webhook_disabled"
+                  since: "2026-10-25T10:00:00Z"
+                  has_more: false
+                  next_cursor: "MTc2MTQ3MDQxMTAwMDAwMC40MjE"
+        '400':
+          description: Malformed `since`, `limit` or `cursor`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "since must be an RFC 3339 timestamp, e.g. 2026-10-26T00:00:00Z"
+        '401':
+          description: Unauthorized — invalid or missing API key
+
+  /api/v1/partner/webhooks/events/{event_id}/redeliver:
+    post:
+      tags:
+        - Webhooks
+      summary: Redeliver a webhook event
+      description: |
+        Send one of your events again: same `event_id`, same payload, a fresh signature and
+        timestamp, and the full retry schedule (up to 10 attempts with backoff), as for a new
+        event. Delivery happens within seconds; the response confirms it is queued, not that your
+        endpoint accepted it — read the event back with `GET /api/v1/partner/webhooks/events` to
+        follow it. The previous `delivered_at` / `last_http_status` stay until the new attempt
+        replaces them.
+
+        Your webhook must be registered and enabled; an event that is being delivered at this
+        moment returns `409`, retry a few seconds later.
+      operationId: redeliverWebhookEvent
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          description: The event's `event_id`.
+          schema:
+            type: string
+          example: "evt_fiat_account_payment_sent_9b1c2d3e"
+      responses:
+        '200':
+          description: Queued for delivery. The event as it now stands.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookEvent'
+              example:
+                success: true
+                data:
+                  event_id: "evt_fiat_account_payment_sent_9b1c2d3e"
+                  event_type: "fiat_account.payment.sent"
+                  created_at: "2026-10-26T09:20:11Z"
+                  data:
+                    fiat_account_id: "business_17"
+                    holder_type: "business"
+                    direction: "outgoing"
+                    amount: "1000.00"
+                    currency: "EUR"
+                  delivery:
+                    status: "pending"
+                    attempts: 0
+                    delivered_at: null
+                    last_http_status: null
+                    failure_reason: null
+        '400':
+          description: No webhook URL registered (`WEBHOOK_URL_NOT_SET`) or webhook switched off (`WEBHOOK_DISABLED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "WEBHOOK_DISABLED"
+        '401':
+          description: Unauthorized — invalid or missing API key
+        '404':
+          description: No such event for your account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Webhook event not found"
+        '409':
+          description: The event is being delivered right now; retry shortly
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Webhook event is being delivered right now; retry shortly"
+
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/simulate-deposit:
+    post:
+      tags:
+        - Business Customers
+      summary: Simulate an incoming bank transfer (sandbox only)
+      operationId: simulateBusinessFiatDeposit
+      description: |
+        Sandbox only (`https://api-staging.unigox.com`). Credits the account with a real sandbox bank
+        transfer, which then runs the whole live chain: `fiat_account.deposit.received`,
+        `fiat_account.payment.updated` and the payment on `…/payments`. Use it to test your webhook
+        handler end to end. Answers `404` in production.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+        - $ref: '#/components/parameters/BusinessFiatAccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: string
+                  example: "100.00"
+                sender_name:
+                  type: string
+                  example: ACME LTD
+                sender_iban:
+                  type: string
+                  example: GB29NWBK60161331926819
+                reference:
+                  type: string
+                  example: INV 42
+                rail:
+                  type: string
+                  example: faster_payments
+      responses:
+        '201':
+          description: The simulated payment, as `…/payments` shows it
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      payment:
+                        type: object
+                        description: Same shape as an item of `…/payments`.
+        '400':
+          description: A bad amount (`INVALID_AMOUNT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: Not the sandbox (`NOT_FOUND`), or no such account under this customer (`FIAT_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: The sandbox refused the deposit (`SIMULATION_REFUSED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
   # ============================================
   # FIAT ACCOUNTS (optional product)
   # Standard {success, data} envelope — see the Fiat Accounts tag.
@@ -11140,6 +11488,93 @@ components:
                   description: "`true` when this answer came from an earlier request with the same key."
                 idempotency_key:
                   type: string
+
+    WebhookTestRequest:
+      type: object
+      description: Optional body of `POST /api/v1/partner/webhooks/test`. Omit it to send `ping`.
+      properties:
+        event_type:
+          type: string
+          enum: [ping, order.status.changed, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, business_customer.kyb.updated]
+          description: The event to send a sample of. Empty or omitted is `ping`.
+        holder_type:
+          type: string
+          enum: [retail, business]
+          description: |
+            For `fiat_account.deposit.received` only: the retail (default) or business account
+            sample. `business` is also accepted for the `fiat_account.payment.*` events, which
+            exist only on business accounts.
+
+    WebhookEvent:
+      type: object
+      description: |
+        One event as it was signed and sent (`event_id`, `event_type`, `created_at`, `data`), with
+        `delivery` added. `data` is the event's own payload; see each event type.
+      properties:
+        event_id:
+          type: string
+        event_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+        delivery:
+          $ref: '#/components/schemas/WebhookEventDelivery'
+
+    WebhookEventDelivery:
+      type: object
+      description: How the delivery of one event stands.
+      properties:
+        status:
+          type: string
+          enum: [pending, in_progress, delivered, failed]
+          description: |
+            `pending`: waiting for its (next) attempt. `in_progress`: being sent now.
+            `delivered`: your endpoint answered 2xx. `failed`: no more attempts, or never sent
+            (see `failure_reason`).
+        attempts:
+          type: integer
+          description: Delivery attempts made so far (reset to 0 by redeliver).
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When your endpoint last accepted it.
+        last_http_status:
+          type: integer
+          nullable: true
+          description: Your endpoint's HTTP status on the last attempt; null when there was no answer.
+        failure_reason:
+          type: string
+          nullable: true
+          enum: [webhook_disabled, webhook_url_not_set, http_error, network_error, delivery_failed, null]
+          description: |
+            Why the last attempt did not succeed. `webhook_disabled` / `webhook_url_not_set`: the
+            event was never sent because of your webhook settings. `http_error`: your endpoint
+            answered non-2xx (see `last_http_status`). `network_error`: no answer (connect, TLS,
+            timeout). Null when delivered, or when requeued and not yet attempted.
+
+    WebhookEventPage:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEvent'
+        since:
+          type: string
+          format: date-time
+          description: The lower bound this page was read from (the default is shown when you sent none).
+        has_more:
+          type: boolean
+          description: More events match beyond this page.
+        next_cursor:
+          type: string
+          nullable: true
+          description: Pass as `cursor` for the next page. Set on every non-empty page.
 
     PartnerErrorResponse:
       type: object
