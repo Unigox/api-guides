@@ -145,7 +145,7 @@ tags:
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
       | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for a credit matched to exactly one off-ramp paid through that account, which `order.own_account_payout.updated` covers. A business customer's account sends it with `holder_type: business` |
       | `fiat_account.payment.sent` | Money left a business customer's account |
-      | `fiat_account.payment.updated` | A transfer on a business customer's account reached a new status (pending, held, refused, returned…) |
+      | `fiat_account.payment.updated` | A transfer on a business customer's account reached a new status (`pending`, `confirmed`, `sent`, `blocked`, `refused`, `refunded`…) |
       | `business_customer.kyb.updated` | A business customer's KYB status changed |
       | `order.own_account_payout.updated` | An off-ramp paid through the customer's own fiat account was sent on to the bank, or stopped on the account |
       | `wallet.linked` | An external-wallet customer linked their address |
