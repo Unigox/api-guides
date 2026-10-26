@@ -78,7 +78,7 @@ tags:
       4. Submit `address`, `message` and `signature` to `POST /api/v1/partner/users/{user_uuid}/wallet`.
          `GET` on that path returns the link status and XAI balances.
       5. Allocate deposit addresses and check their monitoring status before accepting payments.
-         Supported deposits are credited to the linked wallet on Unigox, on XAI (chain ID 660279).
+         Supported deposits are credited to the linked wallet on UNIGOX, on XAI (chain ID 660279).
          Register your partner webhook to receive `wallet.deposit.received` after a bridge credit.
 
       Enabling external-wallet customers controls new customer creation. Existing external-wallet
@@ -1356,7 +1356,7 @@ paths:
         The customer must belong to the authenticated partner. This request checks monitoring
         status for existing addresses; it never allocates another address.
         Complete the external-wallet customer creation and wallet-link steps in User Management first.
-        Deposits credit that linked wallet on Unigox, on XAI (chain ID 660279), and are reported
+        Deposits credit that linked wallet on UNIGOX, on XAI (chain ID 660279), and are reported
         by the `wallet.deposit.received` partner webhook.
 
         After an allocation returns `503 DEPOSIT_ADDRESS_NOT_WATCHED`, repeat this GET to check
@@ -1437,7 +1437,7 @@ paths:
         The customer must belong to the authenticated partner. Supported address families are
         `evm`, `svm` (Solana), `tvm` (Tron) and `ton`. The configured address cap also applies.
         First create an `external_wallet` customer and complete the wallet challenge/link flow.
-        The linked address receives the supported settlement token on Unigox, on XAI (chain ID 660279).
+        The linked address receives the supported settlement token on UNIGOX, on XAI (chain ID 660279).
         `wallet.deposit.received` reports the amount and token actually credited.
 
         `201` confirms allocation; use each address's `monitoring` fields to select a confirmed
