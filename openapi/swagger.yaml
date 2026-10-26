@@ -78,7 +78,7 @@ tags:
       4. Submit `address`, `message` and `signature` to `POST /api/v1/partner/users/{user_uuid}/wallet`.
          `GET` on that path returns the link status and XAI balances.
       5. Allocate deposit addresses and check their monitoring status before accepting payments.
-         Supported deposits are credited to the linked wallet on UNIGOX, on XAI (chain ID 660279).
+         Supported deposits are credited to the linked wallet on Unigox, on XAI (chain ID 660279).
          Register your partner webhook to receive `wallet.deposit.received` after a bridge credit.
 
       Enabling external-wallet customers controls new customer creation. Existing external-wallet
@@ -130,7 +130,7 @@ tags:
     x-page-icon: receipt
   - name: Webhooks
     description: |
-      Real-time notifications for order and KYC status changes.
+      Signed notifications for orders, KYC/KYB, fiat accounts, business customers and wallet deposits.
       The system sends a signed HTTP POST to your configured webhook URL on every relevant event.
 
       **Event model**
@@ -141,7 +141,7 @@ tags:
       |---|---|
       | `order.status.changed` | An order transitions to a new status |
       | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
-      | `user.kyc.updated` | A user's KYC verification is approved or declined |
+      | `user.kyc.updated` | A user's KYC verification is approved, declined or put on manual review |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
       | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for a credit matched to exactly one off-ramp paid through that account, which `order.own_account_payout.updated` covers. A business customer's account sends it with `holder_type: business` |
       | `fiat_account.payment.sent` | Money left a business customer's account |
@@ -231,7 +231,7 @@ tags:
 
       ```json
       {
-        "event_id": "evt_own_account_payout_8412_sent_to_bank_3f9a1c0b7d2e4a55",
+        "event_id": "evt_own_account_payout_1234_sent_to_bank_3f9a1c0b7d2e4a55",
         "event_type": "order.own_account_payout.updated",
         "created_at": "2026-10-16T12:00:00Z",
         "data": {
@@ -273,6 +273,8 @@ tags:
         }
       }
       ```
+
+      `user_id` is the customer's `user_uuid`.
 
       **Payload shape — `order.refund.required`**
 
@@ -316,7 +318,7 @@ tags:
 
       **Payload shape — `user.kyc.updated`**
 
-      Fired when a user's KYC status changes — to `verified`, `rejected`, or to a manual compliance
+      Fired when a user's KYC status changes — to `VERIFIED`, `REJECTED`, or to a manual compliance
       review hold (`UNDER_REVIEW`). Use this event to unlock order creation for the user on your side
       (only on `VERIFIED`; `UNDER_REVIEW` is not cleared).
 
@@ -397,9 +399,11 @@ tags:
       | `created` | Order created |
       | `awaiting_liquidity_provider` | Waiting for vendor match |
       | `awaiting_crypto_transfer_authorization` | Partner must authorize crypto transfer |
+      | `crypto_transfer_authorization_pending` | Authorization submitted, awaiting on-chain confirmation |
+      | `price_changed_requote_needed` | Slippage exceeded at initiation; create a new quote |
       | `crypto_received` | Crypto received in escrow |
       | `fiat_payment_started` | Buyer submitted fiat payment proof |
-      | `fiat_payment_review_started` | Payment proof under admin review |
+      | `fiat_payment_review_started` | Payment proof under review |
       | `awaiting_fiat_received_confirmation` | Proof approved, awaiting seller confirmation |
       | `completed` | Order completed, crypto released |
       | `cancelled` | Order cancelled or payment declined |
@@ -407,6 +411,12 @@ tags:
       | `dispute_started` | Dispute opened |
       | `settlement_in_progress` | Delayed settlement (T+1): the release of the crypto has started or is confirmed, and the fiat has not arrived |
       | `returned` | Delayed settlement (T+1): the bank sent the payout back and no new attempt has been approved yet |
+      | `awaiting_vendor_escrow_funding` | On-ramp: vendor accepted, funding escrow with crypto |
+      | `awaiting_fiat_transfer` | On-ramp: crypto locked in escrow, waiting for the fiat payment |
+      | `fiat_transfer_pending` | On-ramp: fiat payment confirmed, awaiting vendor confirmation of receipt |
+      | `send_out_pending` | On-ramp send-out: cross-chain transfer in progress |
+      | `send_out_completed` | On-ramp send-out: delivered on the destination chain |
+      | `send_out_failed` | On-ramp send-out: cross-chain transfer failed; the on-ramp itself stays completed |
 
       **Fiat-anchored safety bound failure**
 
@@ -1346,7 +1356,7 @@ paths:
         The customer must belong to the authenticated partner. This request checks monitoring
         status for existing addresses; it never allocates another address.
         Complete the external-wallet customer creation and wallet-link steps in User Management first.
-        Deposits credit that linked wallet on UNIGOX, on XAI (chain ID 660279), and are reported
+        Deposits credit that linked wallet on Unigox, on XAI (chain ID 660279), and are reported
         by the `wallet.deposit.received` partner webhook.
 
         After an allocation returns `503 DEPOSIT_ADDRESS_NOT_WATCHED`, repeat this GET to check
@@ -1417,7 +1427,7 @@ paths:
         '502':
           description: '`DEPOSIT_ADDRESSES_UNAVAILABLE` — saved addresses could not be read; this GET never allocates. Safe to retry.'
 
-  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chainType}/allocate:
+  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chain_type}/allocate:
     post:
       tags:
         - User Management
@@ -1427,7 +1437,7 @@ paths:
         The customer must belong to the authenticated partner. Supported address families are
         `evm`, `svm` (Solana), `tvm` (Tron) and `ton`. The configured address cap also applies.
         First create an `external_wallet` customer and complete the wallet challenge/link flow.
-        The linked address receives the supported settlement token on UNIGOX, on XAI (chain ID 660279).
+        The linked address receives the supported settlement token on Unigox, on XAI (chain ID 660279).
         `wallet.deposit.received` reports the amount and token actually credited.
 
         `201` confirms allocation; use each address's `monitoring` fields to select a confirmed
@@ -1456,7 +1466,7 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: chainType
+        - name: chain_type
           in: path
           required: true
           description: Address family; EVM addresses can support multiple configured networks.
@@ -1507,7 +1517,7 @@ paths:
         '409':
           description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
         '422':
-          description: '`INVALID_REQUEST` — unknown `chainType`, or `count` above 50 or below 0. `WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          description: '`INVALID_REQUEST` — unknown `chain_type`, or `count` above 50 or below 0. `WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
         '429':
           description: '`ADDRESS_CAP_REACHED` — allocating would take the customer past the limit for this chain type; `error.message` states the limit.'
         '502':
@@ -3648,7 +3658,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '502':
-          description: '`INTERNAL_ERROR` from the gateway — trades could not be reached or failed. The payment may have been taken: read the order (`GET /api/v1/partner/orders/{order_id}`) before retrying; a retry never takes the money twice.'
+          description: '`INTERNAL_ERROR` from the gateway — the order service could not be reached or failed. The payment may have been taken: read the order (`GET /api/v1/partner/orders/{order_id}`) before retrying; a retry never takes the money twice.'
           content:
             application/json:
               schema:
@@ -3665,7 +3675,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '504':
-          description: '`INTERNAL_ERROR` from the gateway — trades did not answer within 90 s. The payment may still have been taken: read the order before retrying; a retry never takes the money twice.'
+          description: '`INTERNAL_ERROR` from the gateway — the order service did not answer within 90 s. The payment may still have been taken: read the order before retrying; a retry never takes the money twice.'
           content:
             application/json:
               schema:
@@ -3756,7 +3766,7 @@ paths:
         **Response includes:**
         - `forward_request` — pre-filled EIP-712 ForwardRequest object to sign
         - `eip712_domain` — domain parameters for EIP-712 signing
-        - `quote_id` — Relay quote ID embedded in the transfer calldata
+        - `quote_id` — bridge quote ID embedded in the transfer calldata
         - `to_amount` — estimated USDT amount to be received on the destination chain (atomic units)
         - `forwarder_nonce` — current on-chain nonce for your partner wallet
       operationId: getBridgeAuthorizationParameters
@@ -3784,7 +3794,7 @@ paths:
           description: Recipient address on the destination chain, in that chain's format
           schema:
             type: string
-          example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+          example: "0x5555555555555555555555555555555555555555"
       responses:
         '200':
           description: Authorization parameters returned successfully
@@ -3798,8 +3808,8 @@ paths:
                   rpc_url: "https://xai-chain.net/rpc"
                   token_address: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
                   forwarder_address: "0x6fFCF38bEc8c733b096958fcd2a8E31A00530EDC"
-                  solver_address: "0x00A72adEB6542916F53dc2d78450CD436320868B"
-                  sender_address: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                  solver_address: "0x6666666666666666666666666666666666666666"
+                  sender_address: "0x4444444444444444444444444444444444444444"
                   amount_atomic: "10100"
                   amount_human: "0.010100"
                   crypto_currency: "USDT"
@@ -3811,7 +3821,7 @@ paths:
                   quote_id: "0x9b0539b1..."
                   to_amount: "10100"
                   destination_chain: "Arbitrum One"
-                  destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+                  destination_address: "0x5555555555555555555555555555555555555555"
                   expires_at: "2026-04-03T17:13:12Z"
                   authorization_path: "/api/v1/partner/orders/ce3cfd6a-1234-5678-abcd-ef1234567890/authorize-bridge"
         '400':
@@ -3866,8 +3876,8 @@ paths:
 
         Call `GET bridge-authorization-parameters` first to get the parameters to sign.
 
-        After submission the order transitions to `send_out_pending`. A background worker
-        monitors the Relay bridge and updates the status to `send_out_completed` or
+        After submission the order transitions to `send_out_pending`. Unigox
+        monitors the bridge transfer and updates the status to `send_out_completed` or
         `send_out_failed` when the transfer settles. The partner receives a webhook for
         each transition.
 
@@ -3903,7 +3913,7 @@ paths:
                 destination_address:
                   type: string
                   description: Recipient address on the destination chain, in that chain's format
-                  example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+                  example: "0x5555555555555555555555555555555555555555"
                 forward_request:
                   type: object
                   description: EIP-712 ForwardRequest object (values from bridge-authorization-parameters)
@@ -3911,7 +3921,7 @@ paths:
                   properties:
                     from:
                       type: string
-                      example: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                      example: "0x4444444444444444444444444444444444444444"
                     to:
                       type: string
                       example: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
@@ -3936,9 +3946,9 @@ paths:
                   example: "0xc9a69a67..."
             example:
               destination_chain: Arbitrum One
-              destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+              destination_address: "0x5555555555555555555555555555555555555555"
               forward_request:
-                from: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                from: "0x4444444444444444444444444444444444444444"
                 to: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
                 value: "0"
                 gas: "500000"
@@ -5030,7 +5040,7 @@ paths:
         '409':
           description: >-
             Quote expired, already used, slippage exceeded, or — for a third-party payout — the
-            payout agent has not confirmed recipient-context support, in which case no order is
+            payout route has not confirmed recipient-context support, in which case no order is
             created and the quote is left untouched. `WALLET_NOT_LINKED` — an `external_wallet` customer with no
             linked address.
 
@@ -5256,7 +5266,7 @@ paths:
           know fiat has been received.
         - Do not wait for `next_action` if you already have confirmation from your
           own banking or payment systems.
-        - On a delayed order implement `settlement-consent` instead, and treat `completed` as
+        - On a delayed order do not call `confirm-fiat-received`, and treat `completed` as
           meaning the fiat actually reached the customer.
 
         **Possible statuses:** see `PartnerOrderStatus`. Off-ramp: `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `fiat_payment_review_started`, `dispute_started`, `awaiting_fiat_received_confirmation`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`, plus `settlement_in_progress` and `returned` on a delayed order. On-ramp: `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer`, `fiat_transfer_pending`, `send_out_pending`, `send_out_completed`, `send_out_failed`.
@@ -5506,7 +5516,7 @@ paths:
                     `0x` prefix recommended; a signature without it is accepted.
             example:
               forward_request:
-                from: "0x674b16054290b4f06D7Ba8e3Ac379E3B0a359a16"
+                from: "0x4444444444444444444444444444444444444444"
                 to: "0x2222222222222222222222222222222222222222"
                 value: "0"
                 gas: "500000"
@@ -5543,7 +5553,7 @@ paths:
                   code: INSUFFICIENT_BALANCE
                   message: "insufficient USDC balance: wallet 0x... has 1928961 but 3000000 is required"
         '502':
-          description: '`TRANSACTOR_ERROR` — the relay did not accept a request that passed every check. Retry.'
+          description: '`TRANSACTOR_ERROR` — the transaction could not be submitted, although the request passed every check. Retry.'
 
   /api/v1/partner/orders/{order_id}/refund-authorization-parameters:
     get:
@@ -5673,10 +5683,10 @@ paths:
                 data:
                   order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                   status: "refund_pending"
-                  escrow_address: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
-                  signer_address: "0xd1c06c202D613594189d119Cad36E2D777b02071"
-                  recipient_address: "0xd1c06c202D613594189d119Cad36E2D777b02071"
-                  amount_human: "666.666667"
+                  escrow_address: "0x3333333333333333333333333333333333333333"
+                  signer_address: "0x4444444444444444444444444444444444444444"
+                  recipient_address: "0x4444444444444444444444444444444444444444"
+                  amount_human: "250.5"
                   crypto_currency: "USDT"
                   crypto_decimals: 6
                   direction: "to_seller"
@@ -5693,7 +5703,7 @@ paths:
                     nonce: "0"
                   domain:
                     chainId: 660279
-                    verifyingContract: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
+                    verifyingContract: "0x3333333333333333333333333333333333333333"
                   types:
                     SafeTx:
                       - name: "to"
@@ -5871,9 +5881,7 @@ paths:
 
         Not for delayed settlement (T+1) orders. On such an order, whatever its status, this
         answers `409 INVALID_STATUS` ("this order settles T+1: the payout is confirmed by the
-        provider, not with confirm-fiat-received"). Sign the release with
-        `POST /api/v1/partner/orders/{order_id}/settlement-consent` instead while the order
-        offers it.
+        provider, not with confirm-fiat-received").
       operationId: confirmFiatReceived
       security:
         - ApiKeyAuth: []
@@ -6008,7 +6016,7 @@ paths:
             already submitted. Read the order: `allowed_actions` says whether `cancel` is still offered.
             On a delayed order a consent call that is still running, or one cut off before its
             signature was stored, also refuses the cancel, for up to two minutes after that call while
-            `allowed_actions` still offers `cancel` (see `settlement-consent`).
+            `allowed_actions` still offers `cancel`.
           content:
             application/json:
               schema:
@@ -6139,7 +6147,7 @@ paths:
           schema:
             type: string
             maxLength: 255
-          example: "parse-order-000123"
+          example: "your-order-000123"
         - name: page
           in: query
           required: false
@@ -6547,8 +6555,9 @@ paths:
         `user.kyc.updated`, `business_customer.kyb.updated`, `fiat_account.updated` when an account
         is closed, and the business account events `fiat_account.deposit.received`,
         `fiat_account.payment.sent` and `fiat_account.payment.updated`. The retail
-        `fiat_account.deposit.received`, `wallet.deposit.received`, other `fiat_account.updated`
-        notices and test events are sent once without the queue and do **not** appear here.
+        `fiat_account.deposit.received`, other `fiat_account.updated` notices and test events are
+        sent once and are not retried. `wallet.deposit.received` is retried on its own schedule
+        (see Webhooks). None of these appear here.
 
         **Events from while your webhook was off are listed too.** They were never sent: their
         `delivery.status` is `failed` with `failure_reason: webhook_disabled`. Read them here, or
@@ -7718,7 +7727,7 @@ components:
           type: string
           enum: [submitted, bridging, completed, failed, needs_review]
           description: |
-            `submitted` — accepted for relay; `bridging` — executed on XAI, on its way to the destination chain;
+            `submitted` — accepted for submission; `bridging` — executed on XAI, on its way to the destination chain;
             `completed` — arrived; `failed` — did not take effect on XAI (reverted, or not executed before the quote's
             deadline), the funds are still on the customer's address; `needs_review` — could not be settled automatically (for example the bridge
             failed after the funds left XAI, or still open after 24 hours), Unigox reconciles it.
@@ -9863,7 +9872,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/PartnerComplianceCase'
           nullable: true
-          description: Durable case shown in Compliance admin for third-party payout.
+          description: Durable case in Unigox compliance review for a third-party payout.
         payout_via_own_account:
           type: boolean
           description: |
@@ -9924,17 +9933,14 @@ components:
               itself confirms the payment; there is nothing to call. If the money is already on the account,
               `pay-from-balance` is in `allowed_actions` and pays the order from it
             - `sign_settlement_consent` — a **delayed settlement (T+1)** order remains at `crypto_received`
-              and nobody has signed the release yet. Call
-              `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
-              `POST /api/v1/partner/orders/{order_id}/settlement-consent`
+              and nobody has signed the release yet
             - `submit_source_of_funds` — consent is stored and a required source-of-funds case is
-              incomplete, including an existing case below the current threshold. See the case endpoints
+              incomplete, including an existing case below the current threshold
             - `await_review` — consent is stored and the order is waiting for Unigox document review,
               the licensed partner's payment check, or release processing. Do not submit another signature
             - absent — no required action (waiting for buyer or system). On a funded delayed order awaiting release
               the key is absent when the order is held for review, or a payout of yours failed and a
-              refund is under way: both consent endpoints then answer
-              `409 OPERATION_NOT_ALLOWED`
+              refund is under way
 
             Once consent_deadline_at has passed, these reads no longer request a consent signature,
             even if the order status has not changed yet.
@@ -10170,7 +10176,7 @@ components:
           description: |
             Destination-chain transaction hash after a send-out completes.
             Present only for on-ramp orders with `send_out_completed` status.
-          example: "0xd413bf3b8fe3b1d86b1e6d4c40a82eb8c94824202ff9a010161301400ab1552d"
+          example: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         payment_deadline_at:
           type: string
           format: date-time
@@ -10615,7 +10621,7 @@ components:
             order whose crypto is stuck in escrow awaiting your signature, `order.own_account_payout.updated`
             for the onward payment of an off-ramp paid through the customer's own fiat account (see the
             Webhooks section).
-          enum: [order.status.changed, order.refund.required, order.own_account_payout.updated, fiat_account.updated, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, business_customer.kyb.updated, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
+          enum: [order.status.changed, order.refund.required, order.own_account_payout.updated, user.kyc.updated, fiat_account.updated, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, business_customer.kyb.updated, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
           example: "order.status.changed"
         created_at:
           type: string
@@ -10638,7 +10644,7 @@ components:
                 user_id:
                   type: string
                   format: uuid
-                  description: Public UUID of the end-user (from user creation)
+                  description: "`user_id` is the customer's `user_uuid` (from user creation)."
                   example: "550e8400-e29b-41d4-a716-446655440000"
                 crypto_amount:
                   type: string
@@ -11580,7 +11586,7 @@ components:
                 - `UNAUTHORIZED` — authentication failed
                 - `INTERNAL_ERROR` — unexpected server error
                 - `INVALID_STATUS` — order is not in the correct status for the requested action
-                - `TRANSACTOR_ERROR` — (502) the relay did not accept a signed request that passed every check, or a refund could not be executed; retry
+                - `TRANSACTOR_ERROR` — (502) the transaction could not be submitted, although the signed request passed every check, or a refund could not be executed; retry
                 - `INSUFFICIENT_BALANCE` — the funding wallet (your partner wallet, or the `external_wallet` customer's address) lacks tokens for the escrow or withdrawal
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
@@ -11615,6 +11621,9 @@ components:
                 `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`,
                 `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY`, `CURRENCY_NOT_PERMITTED`,
                 `CURRENCY_NOT_PRICED`, `RECORD_FAILED`, `BANKING_ERROR`, `BANKING_UNAVAILABLE`.
+
+                Business customer endpoints (`/partner/business-customers`) can also answer
+                `KYB_UNAVAILABLE` or `SERVICE_UNAVAILABLE` (5xx): try again shortly.
 
                 This list is not closed: codes are added as endpoints grow. Treat a code you do not recognise
                 as an error of the kind its HTTP status says, rather than rejecting the response.
@@ -11741,19 +11750,19 @@ components:
         iban:
           type: string
           description: Euro (SEPA) accounts. Pay-in detail.
-          example: "NL91ABNA0417164300"
+          example: "NL02EXMP0123456789"
         bic:
           type: string
           description: Euro (SEPA) accounts. Pay-in detail.
-          example: ABNANL2A
+          example: EXMPNL2A
         account_number:
           type: string
           description: Sterling (Faster Payments) accounts. Pay-in detail.
-          example: "25976129"
+          example: "12345678"
         sort_code:
           type: string
           description: Sterling (Faster Payments) accounts. Pay-in detail.
-          example: "23-08-01"
+          example: "00-00-00"
         iban_last4:
           type: string
           description: List views, where the full identifier does not travel.
@@ -11765,11 +11774,11 @@ components:
         bank_name:
           type: string
           description: The bank to show the customer.
-          example: ABN AMRO
+          example: Example Bank
         holder_name:
           type: string
           description: The name the account is held in.
-          example: Maria ZALISHCHUK
+          example: Jane DOE
         balances:
           type: array
           description: Single-account view only.

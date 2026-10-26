@@ -1,7 +1,7 @@
 # Fiat accounts
 
-The how-to. The endpoint-by-endpoint reference is the **Fiat Accounts** section
-of the API reference.
+This guide shows how to use fiat accounts. The endpoint-by-endpoint reference is
+the **Fiat Accounts** section of the API reference.
 
 Give your customers an account of their own, in their own name, for them to be
 paid into — and read what lands on it.
@@ -78,12 +78,14 @@ own answers `404`, indistinguishable from one that does not exist.
 
 ## End to end
 
-1. Create and KYC-verify a customer (`POST /api/v1/partner/users`, then the KYC
-   flow). Reuse a verified customer if you have one.
-2. Check what you can offer: `GET /fiat-accounts/config`.
-3. Check the customer is ready: `GET /users/{user_uuid}`.
-4. Open the account: `POST /fiat-accounts`.
-5. Wait for `active`, then show the customer where to pay in.
+First create and KYC-verify a customer (`POST /api/v1/partner/users`, then the
+KYC flow), or reuse a verified customer you already have. Then:
+
+1. Check what you can offer: `GET /fiat-accounts/config`.
+2. Check the customer is ready: `GET /users/{user_uuid}`.
+3. Open the account: `POST /fiat-accounts`.
+4. Wait for `active`.
+5. Show the customer where to pay in.
 6. Read what arrives: `GET /fiat-accounts/{fiat_account_id}/transactions`.
 
 ### 1. See what you can offer
@@ -169,10 +171,10 @@ onto that record.
     "issuer_country": "NL",
     "status": "active",
     "created": true,
-    "iban": "NL91ABNA0417164300",
-    "bic": "ABNANL2A",
-    "bank_name": "ABN AMRO",
-    "holder_name": "Maria ZALISHCHUK",
+    "iban": "NL02EXMP0123456789",
+    "bic": "EXMPNL2A",
+    "bank_name": "Example Bank",
+    "holder_name": "Jane DOE",
     "created_at": "2026-09-18T10:00:00Z"
   }
 }
@@ -184,8 +186,7 @@ customer may hold accounts in several currencies, and in several jurisdictions
 of the same currency.
 
 Registering the person with the bank happens behind this call, from the identity
-Unigox verified. There is nothing to submit and no second record to keep in
-step.
+Unigox verified.
 
 - The customer is not verified: `422 KYC_NOT_CLEARED`.
 - The bank needs a field the KYC record does not have: `422
@@ -195,9 +196,8 @@ step.
 
 ### 4. Wait for `active`
 
-An account is `pending` until the bank has opened it, and it carries no pay-in
-details while it is: an account that is not open has nowhere to receive money,
-and a customer sent to it loses the transfer to a bounce.
+An account is `pending` until the bank has opened it. Pending accounts have no
+pay-in details.
 
 | `status` | What it means |
 | --- | --- |
@@ -273,7 +273,9 @@ To serve the customer again, open a new account with the usual request
 ## Webhooks
 
 These events come in the same envelope and with the same signature as
-`order.status.changed`.
+`order.status.changed`. The retail `fiat_account.deposit.received` and
+`fiat_account.updated` (except when an account is closed) are sent once and are
+not retried.
 
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
@@ -459,7 +461,7 @@ the order for them. It does not change the order's `status`.
 
 ```json
 {
-  "event_id": "evt_own_account_payout_8412_sent_to_bank_3f9a1c0b7d2e4a55",
+  "event_id": "evt_own_account_payout_1234_sent_to_bank_3f9a1c0b7d2e4a55",
   "event_type": "order.own_account_payout.updated",
   "created_at": "2026-10-16T12:00:00Z",
   "data": {

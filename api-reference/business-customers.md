@@ -18,13 +18,13 @@ Business customers are enabled per partner. If your calls answer
 `403 CAPABILITY_NOT_GRANTED`, ask Unigox to switch them on.
 {% endhint %}
 
-## Who onboards with UNIGOX
+## Who onboards with Unigox
 
 B2B clients can use their own front end as technology providers, while their
-customers onboard directly with UNIGOX. Anyone with access to a customer's bank
-account must also onboard with UNIGOX. To initiate fund movements on a
+customers onboard directly with Unigox. Anyone with access to a customer's bank
+account must also onboard with Unigox. To initiate fund movements on a
 customer's behalf, the B2B client must obtain power of attorney from that
-customer. This does not replace direct onboarding with UNIGOX; nested flows are
+customer. This does not replace direct onboarding with Unigox; nested flows are
 not permitted.
 
 ## What you can and cannot do
@@ -157,7 +157,7 @@ the call answers `409 CURRENCY_ALREADY_ISSUED`. Before approval it answers
       "holder_name": "NORTHWIND TRADING LTD",
       "bank_holder_name": "NORTHWIND TRADING LTD",
       "account_number": "12345678",
-      "sort_code": "040004",
+      "sort_code": "000000",
       "bank_name": "…",
       "balances": [],
       "balance_known": true,
@@ -182,7 +182,8 @@ name the bank has on file, which is what a payer sees. It can differ from
   `bank_transfer`, `conversion`, `internal_transfer`, `crypto_transfer`, `fee`
   or `other`, with `balance_after` when the bank reports it.
 - `GET …/payments?page=1` lists the bank transfers in (`incoming`) and out
-  (`outgoing`), with the counterparty.
+  (`outgoing`), with the counterparty. A transfer whose direction the bank does
+  not report reads `other`.
 
 Both pages carry `has_more`.
 
@@ -263,7 +264,7 @@ The three `fiat_account.*` events carry the same `data`:
     "transaction_id": "5f0c…",
     "order_id": null,
     "direction": "incoming",
-    "amount": "14500.00",
+    "amount": "2500.00",
     "currency": "GBP",
     "status": "confirmed",
     "rail": "faster_payments",
@@ -392,7 +393,7 @@ signed, with how its delivery went:
   no URL).
 
 All the events on this page are listed. The retail
-`fiat_account.deposit.received` is not yet.
+`fiat_account.deposit.received` is not listed here yet.
 
 ### Testing
 
