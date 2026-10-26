@@ -18,13 +18,13 @@ Business customers are enabled per partner. If your calls answer
 `403 CAPABILITY_NOT_GRANTED`, ask Unigox to switch them on.
 {% endhint %}
 
-## Who onboards with UNIGOX
+## Who onboards with Unigox
 
 B2B clients can use their own front end as technology providers, while their
-customers onboard directly with UNIGOX. Anyone with access to a customer's bank
-account must also onboard with UNIGOX. To initiate fund movements on a
+customers onboard directly with Unigox. Anyone with access to a customer's bank
+account must also onboard with Unigox. To initiate fund movements on a
 customer's behalf, the B2B client must obtain power of attorney from that
-customer. This does not replace direct onboarding with UNIGOX; nested flows are
+customer. This does not replace direct onboarding with Unigox; nested flows are
 not permitted.
 
 ## What you can and cannot do
@@ -73,10 +73,10 @@ X-API-Key: <your key>
 Content-Type: application/json
 
 {
-  "legal_name": "HFWM LTD",
+  "legal_name": "NORTHWIND TRADING LTD",
   "country_of_incorporation": "GB",
   "registration_number": "12345678",
-  "representative_email": "director@hfwm.example",
+  "representative_email": "director@northwind.example",
   "external_ref": "crm-8812",
   "invitation_expiry_days": 7
 }
@@ -99,7 +99,7 @@ then `expires_at` says when it does, and otherwise it is `null`.
       "status": "not_started",
       "can_open_accounts": false,
       "external_ref": "crm-8812",
-      "company": { "legal_name": "HFWM LTD", "country_of_incorporation": "GB", "registration_number": "12345678" }
+      "company": { "legal_name": "NORTHWIND TRADING LTD", "country_of_incorporation": "GB", "registration_number": "12345678" }
     },
     "onboarding_link": {
       "url": "https://unigox.com/kyb/onboarding/…",
@@ -127,6 +127,9 @@ case stands:
 - `identity_verifications`: each director's or owner's identity check, with
   `verification_url` to resend if they lost it.
 
+Every change of `status` is also pushed to your webhook as
+`business_customer.kyb.updated` (see [Webhooks](#webhooks)).
+
 ### 3. Issue an account
 
 ```http
@@ -151,10 +154,10 @@ the call answers `409 CURRENCY_ALREADY_ISSUED`. Before approval it answers
       "business_customer_id": "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b",
       "currency": "GBP",
       "status": "active",
-      "holder_name": "HFWM LTD",
-      "bank_holder_name": "HFWM LTD",
+      "holder_name": "NORTHWIND TRADING LTD",
+      "bank_holder_name": "NORTHWIND TRADING LTD",
       "account_number": "12345678",
-      "sort_code": "040004",
+      "sort_code": "000000",
       "bank_name": "…",
       "balances": [],
       "balance_known": true,
@@ -179,7 +182,8 @@ name the bank has on file, which is what a payer sees. It can differ from
   `bank_transfer`, `conversion`, `internal_transfer`, `crypto_transfer`, `fee`
   or `other`, with `balance_after` when the bank reports it.
 - `GET …/payments?page=1` lists the bank transfers in (`incoming`) and out
-  (`outgoing`), with the counterparty.
+  (`outgoing`), with the counterparty. A transfer whose direction the bank does
+  not report reads `other`.
 
 Both pages carry `has_more`.
 
@@ -221,6 +225,186 @@ If the bank does not confirm a transfer in time, the answer is
 `504 BANKING_TIMEOUT_UNKNOWN`: the transfer may still have gone through. Do
 not retry with a new key. Contact Unigox support; the attempt is held for
 reconciliation.
+
+## Webhooks
+
+What happens to your business customers is pushed to your webhook, so you do
+not have to poll. The events come in the same envelope and with the same
+signature as `order.status.changed` (`X-Unigox-Signature`,
+`X-Unigox-Timestamp`), and are retried the same way (up to 10 attempts over
+about 3.5 days) until your endpoint answers `2xx`. Register the endpoint with
+`POST /api/v1/partner/webhooks`; there is no per-event subscription.
+
+| `event_type` | Fired when |
+| --- | --- |
+| `fiat_account.deposit.received` | Money arrived on a company's account (`status` `confirmed`). `holder_type` is `business`. |
+| `fiat_account.payment.sent` | Money left a company's account (`status` `sent`). |
+| `fiat_account.payment.updated` | A transfer in or out reached a new status (see [Statuses](#statuses) below). One event per status. |
+| `business_customer.kyb.updated` | A company's KYB `status` changed. |
+
+Moves you make yourself with `transfer-to-partner` or `fund` are not bank
+transfers and do not send the `fiat_account.*` events; read them on
+`…/ledger`.
+
+### Transfers
+
+The three `fiat_account.*` events carry the same `data`:
+
+```json
+{
+  "event_id": "evt_fiat_account_deposit_received_5f0c…",
+  "event_type": "fiat_account.deposit.received",
+  "created_at": "2026-10-26T09:15:02Z",
+  "data": {
+    "fiat_account_id": "business_412",
+    "holder_type": "business",
+    "business_customer_id": "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b",
+    "holder_name": "NORTHWIND TRADING LTD",
+    "payment_id": "5f0c…",
+    "transaction_id": "5f0c…",
+    "order_id": null,
+    "direction": "incoming",
+    "amount": "2500.00",
+    "currency": "GBP",
+    "status": "confirmed",
+    "rail": "faster_payments",
+    "counterparty_name": "ACME LTD",
+    "counterparty_iban": "GB29NWBK60161331926819",
+    "description": "INV 42",
+    "occurred_at": "2026-10-26T09:14:58Z"
+  }
+}
+```
+
+- `payment_id` is the `id` of the same transfer on `…/payments`.
+  `transaction_id` repeats it and `order_id` is always `null`, so a handler
+  written for the retail `fiat_account.deposit.received` reads these too. Branch
+  on `holder_type` (`retail` or `business`).
+- `amount` is always positive; `direction` (`incoming` or `outgoing`) says
+  which way the money moved.
+- `rail` is the payment scheme: `faster_payments`, `sepa`, `sepa_instant`,
+  `swift`.
+- `counterparty_*` is the payer on an incoming transfer and the beneficiary on
+  an outgoing one. `holder_name`, `rail`, `counterparty_*`, `description` and
+  `occurred_at` are left out when blank or not reported.
+
+#### Statuses
+
+`fiat_account.payment.updated` is sent once for every status a
+transfer reaches, so you can follow it end to end:
+
+| `status` | Meaning |
+| --- | --- |
+| `pending` | The bank has the transfer; not yet credited or sent. |
+| `confirmed` | Incoming: credited to the account. Same moment as `fiat_account.deposit.received`. |
+| `settled` | Incoming: final settlement with the sending bank. |
+| `sent` | Outgoing: left the account. Same moment as `fiat_account.payment.sent`. |
+| `blocked` | Held for review by the bank. |
+| `refused`, `failed`, `expired` | Did not go through. |
+| `processing_refund`, `refunded` | Returned to the sender. |
+
+Other values the bank reports are passed on as they are. `blocked`, `refused`,
+`refunded` and `expired` can take up to about a minute to arrive; the others
+arrive as soon as the bank reports them. The `status` on
+`fiat_account.deposit.received` and `fiat_account.payment.sent` is the status at
+that moment and does not change; follow later steps through
+`fiat_account.payment.updated`, or read `…/payments`.
+
+### KYB
+
+```json
+{
+  "event_id": "evt_kyb_3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b_approved_1793009730123",
+  "event_type": "business_customer.kyb.updated",
+  "created_at": "2026-10-26T10:15:30.123Z",
+  "data": {
+    "business_customer_id": "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b",
+    "external_ref": "ER-CUST-77",
+    "status": "approved",
+    "previous_status": "manual_review",
+    "can_open_accounts": true,
+    "action_owner": "none",
+    "action_type": "decided",
+    "action_reason": "Approved",
+    "decided_at": "2026-10-26T10:15:30.000Z",
+    "updated_at": "2026-10-26T10:15:30.123Z"
+  }
+}
+```
+
+- One event per change of `status` (the values listed in
+  [Follow the KYB](#2-follow-the-kyb)), including the review steps, so a
+  submission often sends `submitted`, `automated_review` and `manual_review`
+  within seconds.
+- `external_ref`, `previous_status`, `action_*` and `decided_at` are left out
+  when not set. Read `GET …/business-customers/{business_customer_id}` for the
+  open `information_requests`.
+
+### Delivery
+
+- Delivery is at least once. `event_id` is the same for every delivery of one
+  event, so de-duplicate on it.
+- An event raised while your webhook was off is not sent on its own, but it is
+  kept: read it back, or have it sent again, as below.
+- Webhooks are not sent from fixed IP addresses, so do not allowlist by IP.
+  Verify `X-Unigox-Signature` with your webhook secret and reject a request
+  whose `X-Unigox-Timestamp` is more than a few minutes old.
+
+### Catching up
+
+`GET /api/v1/partner/webhooks/events?since=2026-10-25T10:00:00Z` lists the
+events raised for you since that time, oldest first, each exactly as it was
+signed, with how its delivery went:
+
+```json
+{
+  "success": true,
+  "data": {
+    "events": [
+      {
+        "event_id": "evt_fiat_account_payment_updated_5f0c…_blocked",
+        "event_type": "fiat_account.payment.updated",
+        "created_at": "2026-10-26T09:20:11Z",
+        "data": { "…": "as in the webhook" },
+        "delivery": {
+          "status": "failed",
+          "attempts": 10,
+          "delivered_at": null,
+          "last_http_status": 500,
+          "failure_reason": "http_error"
+        }
+      }
+    ],
+    "since": "2026-10-25T10:00:00Z",
+    "has_more": false,
+    "next_cursor": "MTc2…"
+  }
+}
+```
+
+- `since` defaults to 24 hours ago. Filter with `event_type`; page with `limit`
+  (50, up to 200) and `cursor` (the `next_cursor` of the previous page).
+- `delivery.status` is `pending`, `in_progress`, `delivered` or `failed`.
+  `failure_reason` is `webhook_disabled`, `webhook_url_not_set`, `http_error`,
+  `network_error` or `delivery_failed`.
+- Re-read with some overlap and de-duplicate on `event_id`.
+- `POST /api/v1/partner/webhooks/events/{event_id}/redeliver` sends one event
+  again (`409` while it is being delivered; `400` if your webhook is off or has
+  no URL).
+
+All the events on this page are listed. The retail
+`fiat_account.deposit.received` is not listed here yet.
+
+### Testing
+
+- `POST /api/v1/partner/webhooks/test` with no body sends a signed `ping`. With
+  `{"event_type": "fiat_account.deposit.received", "holder_type": "business"}`
+  (or `fiat_account.payment.sent`, `fiat_account.payment.updated`,
+  `business_customer.kyb.updated`, `order.status.changed`) it sends a signed
+  sample of that event, with an `evt_test_` id and `"test": true`. The answer
+  is `200` with `"delivered": true` when your endpoint answered 2xx, and
+  `"delivered": false` with its `http_status` (or `null` if it did not answer)
+  otherwise.
 
 ## Your operating account
 

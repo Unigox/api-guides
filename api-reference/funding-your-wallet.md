@@ -29,7 +29,7 @@ payout**, not just the next one. Keep the wallet funded ahead of demand.
 Sign in to unigox.com with your partner account and open **My Wallet**. It shows
 your balance and your wallet address. The address does not change, and it is the
 same address returned as `sender_address` by the authorization endpoints above.
-If those two ever disagree, stop and contact us rather than sending to either.
+If those two ever disagree, stop and contact Unigox rather than sending to either.
 
 ## The wallet lives on XAI
 
@@ -43,8 +43,8 @@ order cannot be funded by a USDT balance.
 
 You do not have to source USDC on XAI yourself.
 
-We provision a deposit address for your account on each supported chain and
-monitor it. A deposit that lands there is moved to your XAI wallet automatically
+Unigox provisions a deposit address for your account on each supported chain and
+monitors it. A deposit that lands there is moved to your XAI wallet automatically
 and credited 1:1 with no fee, usually within minutes; a deposit held for a
 compliance check is credited after review.
 

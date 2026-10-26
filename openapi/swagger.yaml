@@ -78,7 +78,7 @@ tags:
       4. Submit `address`, `message` and `signature` to `POST /api/v1/partner/users/{user_uuid}/wallet`.
          `GET` on that path returns the link status and XAI balances.
       5. Allocate deposit addresses and check their monitoring status before accepting payments.
-         Supported deposits are credited to the linked wallet on UNIGOX, on XAI (chain ID 660279).
+         Supported deposits are credited to the linked wallet on Unigox, on XAI (chain ID 660279).
          Register your partner webhook to receive `wallet.deposit.received` after a bridge credit.
 
       Enabling external-wallet customers controls new customer creation. Existing external-wallet
@@ -130,7 +130,7 @@ tags:
     x-page-icon: receipt
   - name: Webhooks
     description: |
-      Real-time notifications for order and KYC status changes.
+      Signed notifications for orders, KYC/KYB, fiat accounts, business customers and wallet deposits.
       The system sends a signed HTTP POST to your configured webhook URL on every relevant event.
 
       **Event model**
@@ -141,9 +141,12 @@ tags:
       |---|---|
       | `order.status.changed` | An order transitions to a new status |
       | `order.refund.required` | An order's crypto is stuck in escrow and only your signature can return it |
-      | `user.kyc.updated` | A user's KYC verification is approved or declined |
+      | `user.kyc.updated` | A user's KYC verification is approved, declined or put on manual review |
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
-      | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for a credit matched to exactly one off-ramp paid through that account, which `order.own_account_payout.updated` covers |
+      | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for a credit matched to exactly one off-ramp paid through that account, which `order.own_account_payout.updated` covers. A business customer's account sends it with `holder_type: business` |
+      | `fiat_account.payment.sent` | Money left a business customer's account |
+      | `fiat_account.payment.updated` | A transfer on a business customer's account reached a new status (`pending`, `confirmed`, `sent`, `blocked`, `refused`, `refunded`…) |
+      | `business_customer.kyb.updated` | A business customer's KYB status changed |
       | `order.own_account_payout.updated` | An off-ramp paid through the customer's own fiat account was sent on to the bank, or stopped on the account |
       | `wallet.linked` | An external-wallet customer linked their address |
       | `wallet.deposit.received` | A bridge payment was credited to a linked customer wallet on XAI |
@@ -198,6 +201,7 @@ tags:
         "created_at": "2026-09-18T10:04:23Z",
         "data": {
           "fiat_account_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+          "holder_type": "retail",
           "user_uuid": "550e8400-e29b-41d4-a716-446655440000",
           "transaction_id": "5f1b2c9a-1d44-4f0e-9c1a-2b5f0d7e9a31",
           "amount": "500.00",
@@ -213,6 +217,9 @@ tags:
       that money instead. Any other credit still sends it, including one held for review because it
       cannot be tied to a single order.
       `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`.
+      A business customer's account sends `fiat_account.deposit.received` (with `holder_type: business`)
+      and `fiat_account.payment.sent` / `fiat_account.payment.updated` with a different `data`; see
+      Business customers, Webhooks.
 
       **Payload shape — `order.own_account_payout.updated`**
 
@@ -224,7 +231,7 @@ tags:
 
       ```json
       {
-        "event_id": "evt_own_account_payout_8412_sent_to_bank_3f9a1c0b7d2e4a55",
+        "event_id": "evt_own_account_payout_1234_sent_to_bank_3f9a1c0b7d2e4a55",
         "event_type": "order.own_account_payout.updated",
         "created_at": "2026-10-16T12:00:00Z",
         "data": {
@@ -266,6 +273,8 @@ tags:
         }
       }
       ```
+
+      `user_id` is the customer's `user_uuid`.
 
       **Payload shape — `order.refund.required`**
 
@@ -309,7 +318,7 @@ tags:
 
       **Payload shape — `user.kyc.updated`**
 
-      Fired when a user's KYC status changes — to `verified`, `rejected`, or to a manual compliance
+      Fired when a user's KYC status changes — to `VERIFIED`, `REJECTED`, or to a manual compliance
       review hold (`UNDER_REVIEW`). Use this event to unlock order creation for the user on your side
       (only on `VERIFIED`; `UNDER_REVIEW` is not cleared).
 
@@ -390,9 +399,11 @@ tags:
       | `created` | Order created |
       | `awaiting_liquidity_provider` | Waiting for vendor match |
       | `awaiting_crypto_transfer_authorization` | Partner must authorize crypto transfer |
+      | `crypto_transfer_authorization_pending` | Authorization submitted, awaiting on-chain confirmation |
+      | `price_changed_requote_needed` | Slippage exceeded at initiation; create a new quote |
       | `crypto_received` | Crypto received in escrow |
       | `fiat_payment_started` | Buyer submitted fiat payment proof |
-      | `fiat_payment_review_started` | Payment proof under admin review |
+      | `fiat_payment_review_started` | Payment proof under review |
       | `awaiting_fiat_received_confirmation` | Proof approved, awaiting seller confirmation |
       | `completed` | Order completed, crypto released |
       | `cancelled` | Order cancelled or payment declined |
@@ -400,6 +411,12 @@ tags:
       | `dispute_started` | Dispute opened |
       | `settlement_in_progress` | Delayed settlement (T+1): the release of the crypto has started or is confirmed, and the fiat has not arrived |
       | `returned` | Delayed settlement (T+1): the bank sent the payout back and no new attempt has been approved yet |
+      | `awaiting_vendor_escrow_funding` | On-ramp: vendor accepted, funding escrow with crypto |
+      | `awaiting_fiat_transfer` | On-ramp: crypto locked in escrow, waiting for the fiat payment |
+      | `fiat_transfer_pending` | On-ramp: fiat payment confirmed, awaiting vendor confirmation of receipt |
+      | `send_out_pending` | On-ramp send-out: cross-chain transfer in progress |
+      | `send_out_completed` | On-ramp send-out: delivered on the destination chain |
+      | `send_out_failed` | On-ramp send-out: cross-chain transfer failed; the on-ramp itself stays completed |
 
       **Fiat-anchored safety bound failure**
 
@@ -1339,7 +1356,7 @@ paths:
         The customer must belong to the authenticated partner. This request checks monitoring
         status for existing addresses; it never allocates another address.
         Complete the external-wallet customer creation and wallet-link steps in User Management first.
-        Deposits credit that linked wallet on UNIGOX, on XAI (chain ID 660279), and are reported
+        Deposits credit that linked wallet on Unigox, on XAI (chain ID 660279), and are reported
         by the `wallet.deposit.received` partner webhook.
 
         After an allocation returns `503 DEPOSIT_ADDRESS_NOT_WATCHED`, repeat this GET to check
@@ -1410,7 +1427,7 @@ paths:
         '502':
           description: '`DEPOSIT_ADDRESSES_UNAVAILABLE` — saved addresses could not be read; this GET never allocates. Safe to retry.'
 
-  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chainType}/allocate:
+  /api/v1/partner/users/{user_uuid}/deposit-addresses/{chain_type}/allocate:
     post:
       tags:
         - User Management
@@ -1420,7 +1437,7 @@ paths:
         The customer must belong to the authenticated partner. Supported address families are
         `evm`, `svm` (Solana), `tvm` (Tron) and `ton`. The configured address cap also applies.
         First create an `external_wallet` customer and complete the wallet challenge/link flow.
-        The linked address receives the supported settlement token on UNIGOX, on XAI (chain ID 660279).
+        The linked address receives the supported settlement token on Unigox, on XAI (chain ID 660279).
         `wallet.deposit.received` reports the amount and token actually credited.
 
         `201` confirms allocation; use each address's `monitoring` fields to select a confirmed
@@ -1449,7 +1466,7 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: chainType
+        - name: chain_type
           in: path
           required: true
           description: Address family; EVM addresses can support multiple configured networks.
@@ -1500,7 +1517,7 @@ paths:
         '409':
           description: '`WALLET_NOT_LINKED` — the customer has no linked address yet.'
         '422':
-          description: '`INVALID_REQUEST` — unknown `chainType`, or `count` above 50 or below 0. `WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
+          description: '`INVALID_REQUEST` — unknown `chain_type`, or `count` above 50 or below 0. `WALLET_TYPE_MISMATCH` — the customer is a `partner_wallet` customer.'
         '429':
           description: '`ADDRESS_CAP_REACHED` — allocating would take the customer past the limit for this chain type; `error.message` states the limit.'
         '502':
@@ -3641,7 +3658,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '502':
-          description: '`INTERNAL_ERROR` from the gateway — trades could not be reached or failed. The payment may have been taken: read the order (`GET /api/v1/partner/orders/{order_id}`) before retrying; a retry never takes the money twice.'
+          description: '`INTERNAL_ERROR` from the gateway — the order service could not be reached or failed. The payment may have been taken: read the order (`GET /api/v1/partner/orders/{order_id}`) before retrying; a retry never takes the money twice.'
           content:
             application/json:
               schema:
@@ -3658,7 +3675,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
         '504':
-          description: '`INTERNAL_ERROR` from the gateway — trades did not answer within 90 s. The payment may still have been taken: read the order before retrying; a retry never takes the money twice.'
+          description: '`INTERNAL_ERROR` from the gateway — the order service did not answer within 90 s. The payment may still have been taken: read the order before retrying; a retry never takes the money twice.'
           content:
             application/json:
               schema:
@@ -3749,7 +3766,7 @@ paths:
         **Response includes:**
         - `forward_request` — pre-filled EIP-712 ForwardRequest object to sign
         - `eip712_domain` — domain parameters for EIP-712 signing
-        - `quote_id` — Relay quote ID embedded in the transfer calldata
+        - `quote_id` — bridge quote ID embedded in the transfer calldata
         - `to_amount` — estimated USDT amount to be received on the destination chain (atomic units)
         - `forwarder_nonce` — current on-chain nonce for your partner wallet
       operationId: getBridgeAuthorizationParameters
@@ -3777,7 +3794,7 @@ paths:
           description: Recipient address on the destination chain, in that chain's format
           schema:
             type: string
-          example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+          example: "0x5555555555555555555555555555555555555555"
       responses:
         '200':
           description: Authorization parameters returned successfully
@@ -3791,8 +3808,8 @@ paths:
                   rpc_url: "https://xai-chain.net/rpc"
                   token_address: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
                   forwarder_address: "0x6fFCF38bEc8c733b096958fcd2a8E31A00530EDC"
-                  solver_address: "0x00A72adEB6542916F53dc2d78450CD436320868B"
-                  sender_address: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                  solver_address: "0x6666666666666666666666666666666666666666"
+                  sender_address: "0x4444444444444444444444444444444444444444"
                   amount_atomic: "10100"
                   amount_human: "0.010100"
                   crypto_currency: "USDT"
@@ -3804,7 +3821,7 @@ paths:
                   quote_id: "0x9b0539b1..."
                   to_amount: "10100"
                   destination_chain: "Arbitrum One"
-                  destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+                  destination_address: "0x5555555555555555555555555555555555555555"
                   expires_at: "2026-04-03T17:13:12Z"
                   authorization_path: "/api/v1/partner/orders/ce3cfd6a-1234-5678-abcd-ef1234567890/authorize-bridge"
         '400':
@@ -3859,8 +3876,8 @@ paths:
 
         Call `GET bridge-authorization-parameters` first to get the parameters to sign.
 
-        After submission the order transitions to `send_out_pending`. A background worker
-        monitors the Relay bridge and updates the status to `send_out_completed` or
+        After submission the order transitions to `send_out_pending`. Unigox
+        monitors the bridge transfer and updates the status to `send_out_completed` or
         `send_out_failed` when the transfer settles. The partner receives a webhook for
         each transition.
 
@@ -3896,7 +3913,7 @@ paths:
                 destination_address:
                   type: string
                   description: Recipient address on the destination chain, in that chain's format
-                  example: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+                  example: "0x5555555555555555555555555555555555555555"
                 forward_request:
                   type: object
                   description: EIP-712 ForwardRequest object (values from bridge-authorization-parameters)
@@ -3904,7 +3921,7 @@ paths:
                   properties:
                     from:
                       type: string
-                      example: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                      example: "0x4444444444444444444444444444444444444444"
                     to:
                       type: string
                       example: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
@@ -3929,9 +3946,9 @@ paths:
                   example: "0xc9a69a67..."
             example:
               destination_chain: Arbitrum One
-              destination_address: "0x9B61e9b3aed5bbFa66d778854E3dE7AF3241F021"
+              destination_address: "0x5555555555555555555555555555555555555555"
               forward_request:
-                from: "0x6b14951552EA9fCE8f58EC52B909C14CB0619Af2"
+                from: "0x4444444444444444444444444444444444444444"
                 to: "0xf86Cc81F4E480CF54Eb013FFe6929a0C2Ad5EdCA"
                 value: "0"
                 gas: "500000"
@@ -5023,7 +5040,7 @@ paths:
         '409':
           description: >-
             Quote expired, already used, slippage exceeded, or — for a third-party payout — the
-            payout agent has not confirmed recipient-context support, in which case no order is
+            payout route has not confirmed recipient-context support, in which case no order is
             created and the quote is left untouched. `WALLET_NOT_LINKED` — an `external_wallet` customer with no
             linked address.
 
@@ -5249,7 +5266,7 @@ paths:
           know fiat has been received.
         - Do not wait for `next_action` if you already have confirmation from your
           own banking or payment systems.
-        - On a delayed order implement `settlement-consent` instead, and treat `completed` as
+        - On a delayed order do not call `confirm-fiat-received`, and treat `completed` as
           meaning the fiat actually reached the customer.
 
         **Possible statuses:** see `PartnerOrderStatus`. Off-ramp: `created`, `awaiting_liquidity_provider`, `awaiting_crypto_transfer_authorization`, `crypto_transfer_authorization_pending`, `crypto_received`, `fiat_payment_started`, `fiat_payment_review_started`, `dispute_started`, `awaiting_fiat_received_confirmation`, `completed`, `cancelled`, `failed`, `price_changed_requote_needed`, plus `settlement_in_progress` and `returned` on a delayed order. On-ramp: `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer`, `fiat_transfer_pending`, `send_out_pending`, `send_out_completed`, `send_out_failed`.
@@ -5499,7 +5516,7 @@ paths:
                     `0x` prefix recommended; a signature without it is accepted.
             example:
               forward_request:
-                from: "0x674b16054290b4f06D7Ba8e3Ac379E3B0a359a16"
+                from: "0x4444444444444444444444444444444444444444"
                 to: "0x2222222222222222222222222222222222222222"
                 value: "0"
                 gas: "500000"
@@ -5536,7 +5553,7 @@ paths:
                   code: INSUFFICIENT_BALANCE
                   message: "insufficient USDC balance: wallet 0x... has 1928961 but 3000000 is required"
         '502':
-          description: '`TRANSACTOR_ERROR` — the relay did not accept a request that passed every check. Retry.'
+          description: '`TRANSACTOR_ERROR` — the transaction could not be submitted, although the request passed every check. Retry.'
 
   /api/v1/partner/orders/{order_id}/refund-authorization-parameters:
     get:
@@ -5666,10 +5683,10 @@ paths:
                 data:
                   order_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                   status: "refund_pending"
-                  escrow_address: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
-                  signer_address: "0xd1c06c202D613594189d119Cad36E2D777b02071"
-                  recipient_address: "0xd1c06c202D613594189d119Cad36E2D777b02071"
-                  amount_human: "666.666667"
+                  escrow_address: "0x3333333333333333333333333333333333333333"
+                  signer_address: "0x4444444444444444444444444444444444444444"
+                  recipient_address: "0x4444444444444444444444444444444444444444"
+                  amount_human: "250.5"
                   crypto_currency: "USDT"
                   crypto_decimals: 6
                   direction: "to_seller"
@@ -5686,7 +5703,7 @@ paths:
                     nonce: "0"
                   domain:
                     chainId: 660279
-                    verifyingContract: "0x9f8eF448C2c0694383B848e32D4d2857eBAEdB94"
+                    verifyingContract: "0x3333333333333333333333333333333333333333"
                   types:
                     SafeTx:
                       - name: "to"
@@ -5864,9 +5881,7 @@ paths:
 
         Not for delayed settlement (T+1) orders. On such an order, whatever its status, this
         answers `409 INVALID_STATUS` ("this order settles T+1: the payout is confirmed by the
-        provider, not with confirm-fiat-received"). Sign the release with
-        `POST /api/v1/partner/orders/{order_id}/settlement-consent` instead while the order
-        offers it.
+        provider, not with confirm-fiat-received").
       operationId: confirmFiatReceived
       security:
         - ApiKeyAuth: []
@@ -6001,7 +6016,7 @@ paths:
             already submitted. Read the order: `allowed_actions` says whether `cancel` is still offered.
             On a delayed order a consent call that is still running, or one cut off before its
             signature was stored, also refuses the cancel, for up to two minutes after that call while
-            `allowed_actions` still offers `cancel` (see `settlement-consent`).
+            `allowed_actions` still offers `cancel`.
           content:
             application/json:
               schema:
@@ -6132,7 +6147,7 @@ paths:
           schema:
             type: string
             maxLength: 255
-          example: "parse-order-000123"
+          example: "your-order-000123"
         - name: page
           in: query
           required: false
@@ -6419,12 +6434,54 @@ paths:
         Send a signed test event to your configured webhook URL. Uses the same HMAC-SHA256
         signature scheme as production events. Use this to verify your endpoint is reachable
         and correctly validating signatures.
+
+        **No body** (or an empty one) sends a `ping` event with empty `data`, as it always has.
+
+        **With a body** `{"event_type": "..."}` it sends a sample of that real event instead, in
+        the exact shape your endpoint will receive in production, so you can test your handler
+        before real money moves. Supported `event_type` values:
+
+        | `event_type` | Sample |
+        | --- | --- |
+        | `ping` | Same as no body. |
+        | `order.status.changed` | A completed off-ramp order. |
+        | `fiat_account.deposit.received` | A credit on an issued account. `holder_type`: `retail` (default) or `business`. |
+        | `fiat_account.payment.sent` | Money leaving a business customer's account. |
+        | `fiat_account.payment.updated` | A status step of a business account payment (`status: pending`). |
+        | `business_customer.kyb.updated` | A business customer's KYB reaching `approved`. |
+
+        Any other value returns `400` with the supported list.
+
+        Every sample is clearly marked: `event_id` starts with `evt_test_` and the envelope carries
+        `"test": true` at the top level (inside the signed body, so signature verification is
+        unchanged). Ids inside `data` are placeholders (`00000000-0000-4000-8000-00000000000N`,
+        `business_0`) that match nothing in your account. A test event is sent once, is not
+        retried, and does not appear in `GET /api/v1/partner/webhooks/events`.
       operationId: testPingWebhook
       security:
         - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookTestRequest'
+            examples:
+              ping:
+                summary: Ping (same as no body)
+                value: {}
+              business_deposit:
+                summary: A business account deposit
+                value:
+                  event_type: fiat_account.deposit.received
+                  holder_type: business
       responses:
         '200':
-          description: Test event delivered successfully
+          description: |
+            The test event was sent. `delivered` says whether your endpoint accepted it: `true`
+            for a 2xx answer, `false` for any other answer (its code in `http_status`) or none at
+            all (`http_status: null`). A `false` here is your endpoint's result, not an error of
+            the call, so it is a `200` too.
           content:
             application/json:
               schema:
@@ -6434,38 +6491,279 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/WebhookTestPingResponse'
+              examples:
+                delivered:
+                  summary: Your endpoint answered 2xx
+                  value:
+                    success: true
+                    data:
+                      delivered: true
+                      http_status: 200
+                rejected:
+                  summary: Your endpoint answered non-2xx
+                  value:
+                    success: true
+                    data:
+                      delivered: false
+                      http_status: 401
+                      error: webhook endpoint answered non-2xx
+                unreachable:
+                  summary: No answer (DNS, TLS, connection or timeout)
+                  value:
+                    success: true
+                    data:
+                      delivered: false
+                      http_status: null
+                      error: webhook endpoint unreachable
+        '400':
+          description: Webhook URL not configured, malformed body, or an unsupported `event_type` / `holder_type`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                url_not_set:
+                  summary: Webhook URL not configured
+                  value:
+                    success: false
+                    data:
+                      error_key: "webhook URL is not set"
+                unsupported_event:
+                  summary: Unsupported event_type
+                  value:
+                    success: false
+                    error: "unsupported event_type; supported: business_customer.kyb.updated, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, order.status.changed, ping"
+        '401':
+          description: Unauthorized — invalid or missing API key
+
+  /api/v1/partner/webhooks/events:
+    get:
+      tags:
+        - Webhooks
+      summary: List webhook events (replay)
+      description: |
+        Read back the webhook events sent to you, oldest first, with how each delivery went.
+        Use it to catch up after your endpoint was down or your webhook was switched off, or to
+        reconcile what you processed against what was sent.
+
+        Each item is the event **exactly as it was signed and sent** (`event_id`, `event_type`,
+        `created_at`, `data`) with a `delivery` object added, so the same code that handles the
+        live webhook can process it. Deduplicate on `event_id`, as you do for live deliveries.
+
+        **Which events appear.** Events delivered through Unigox's retrying event queue:
+        `order.status.changed`, `order.refund.required`, `order.own_account_payout.updated`,
+        `user.kyc.updated`, `business_customer.kyb.updated`, `fiat_account.updated` when an account
+        is closed, and the business account events `fiat_account.deposit.received`,
+        `fiat_account.payment.sent` and `fiat_account.payment.updated`. The retail
+        `fiat_account.deposit.received`, other `fiat_account.updated` notices and test events are
+        sent once and are not retried. `wallet.deposit.received` is retried on its own schedule
+        (see Webhooks). None of these appear here.
+
+        **Events from while your webhook was off are listed too.** They were never sent: their
+        `delivery.status` is `failed` with `failure_reason: webhook_disabled`. Read them here, or
+        ask for one to be sent with the redeliver endpoint once your webhook is on.
+
+        **Paging.** Pass `next_cursor` back as `cursor` for the next page. `next_cursor` is set
+        on every non-empty page, including the last one, so you can keep polling with it; an
+        empty page returns the cursor you sent. When `cursor` is sent without `since`, the cursor
+        alone is the starting point. An event is stamped when the change that raised it began, so
+        one can become visible slightly after a later-stamped one: when polling, re-read with a
+        small overlap (`since` a few minutes back) and deduplicate on `event_id`.
+      operationId: listWebhookEvents
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: |
+            RFC 3339 timestamp; events created at or after it. Default: 24 hours ago, or no lower
+            bound when `cursor` is sent.
+          schema:
+            type: string
+            format: date-time
+          example: "2026-10-25T00:00:00Z"
+        - name: event_type
+          in: query
+          required: false
+          description: Only events of this type (exact match).
+          schema:
+            type: string
+          example: order.status.changed
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Default 50, maximum 200 (larger values are read as 200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the previous page. Opaque; do not build it yourself.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of events
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookEventPage'
               example:
                 success: true
                 data:
-                  delivered: true
-                  http_status: 200
+                  events:
+                    - event_id: "evt_3c1f9a52-7d0e-4b8a-9f61-2a4d5e6f7a8b"
+                      event_type: "order.status.changed"
+                      created_at: "2026-10-26T09:14:02Z"
+                      data:
+                        order_id: "ord-2026-10-26-0001"
+                        status: "completed"
+                        user_id: "5f0c6b1e-2a3d-4e5f-8a9b-0c1d2e3f4a5b"
+                        crypto_amount: "100"
+                        crypto_currency: "USDT"
+                        fiat_amount: "92.50"
+                        fiat_currency: "EUR"
+                        provider: "licensed"
+                        payment_details_id: "812"
+                        partner_fee: "0"
+                        partner_fee_pct: 0
+                        order_type: "offramp"
+                      delivery:
+                        status: "delivered"
+                        attempts: 1
+                        delivered_at: "2026-10-26T09:14:03Z"
+                        last_http_status: 200
+                        failure_reason: null
+                    - event_id: "evt_fiat_account_payment_sent_9b1c2d3e"
+                      event_type: "fiat_account.payment.sent"
+                      created_at: "2026-10-26T09:20:11Z"
+                      data:
+                        fiat_account_id: "business_17"
+                        holder_type: "business"
+                        business_customer_id: "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b"
+                        payment_id: "9b1c2d3e"
+                        transaction_id: "9b1c2d3e"
+                        order_id: null
+                        direction: "outgoing"
+                        amount: "1000.00"
+                        currency: "EUR"
+                        status: "completed"
+                        rail: "sepa"
+                      delivery:
+                        status: "failed"
+                        attempts: 1
+                        delivered_at: null
+                        last_http_status: null
+                        failure_reason: "webhook_disabled"
+                  since: "2026-10-25T10:00:00Z"
+                  has_more: false
+                  next_cursor: "MTc2MTQ3MDQxMTAwMDAwMC40MjE"
         '400':
-          description: Webhook URL not configured
+          description: Malformed `since`, `limit` or `cursor`
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/WebhookErrorResponse'
               example:
                 success: false
-                data:
-                  error_key: "webhook URL is not set"
+                error: "since must be an RFC 3339 timestamp, e.g. 2026-10-26T00:00:00Z"
         '401':
           description: Unauthorized — invalid or missing API key
-        '502':
-          description: Webhook delivery failed — target endpoint returned non-2xx or timed out
+
+  /api/v1/partner/webhooks/events/{event_id}/redeliver:
+    post:
+      tags:
+        - Webhooks
+      summary: Redeliver a webhook event
+      description: |
+        Send one of your events again: same `event_id`, same payload, a fresh signature and
+        timestamp, and the full retry schedule (up to 10 attempts with backoff), as for a new
+        event. Delivery happens within seconds; the response confirms it is queued, not that your
+        endpoint accepted it — read the event back with `GET /api/v1/partner/webhooks/events` to
+        follow it. The previous `delivered_at` / `last_http_status` stay until the new attempt
+        replaces them.
+
+        Your webhook must be registered and enabled; an event that is being delivered at this
+        moment returns `409`, retry a few seconds later.
+      operationId: redeliverWebhookEvent
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          description: The event's `event_id`.
+          schema:
+            type: string
+          example: "evt_fiat_account_payment_sent_9b1c2d3e"
+      responses:
+        '200':
+          description: Queued for delivery. The event as it now stands.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                allOf:
+                  - $ref: '#/components/schemas/APIResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WebhookEvent'
+              example:
+                success: true
+                data:
+                  event_id: "evt_fiat_account_payment_sent_9b1c2d3e"
+                  event_type: "fiat_account.payment.sent"
+                  created_at: "2026-10-26T09:20:11Z"
+                  data:
+                    fiat_account_id: "business_17"
+                    holder_type: "business"
+                    direction: "outgoing"
+                    amount: "1000.00"
+                    currency: "EUR"
+                  delivery:
+                    status: "pending"
+                    attempts: 0
+                    delivered_at: null
+                    last_http_status: null
+                    failure_reason: null
+        '400':
+          description: No webhook URL registered (`WEBHOOK_URL_NOT_SET`) or webhook switched off (`WEBHOOK_DISABLED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookErrorResponse'
               example:
                 success: false
-                data:
-                  error_key: "webhook delivery failed"
-
-  # ============================================
-  # FIAT ACCOUNTS (optional product)
-  # Standard {success, data} envelope — see the Fiat Accounts tag.
-  # ============================================
+                error: "WEBHOOK_DISABLED"
+        '401':
+          description: Unauthorized — invalid or missing API key
+        '404':
+          description: No such event for your account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookErrorResponse'
+              example:
+                success: false
+                error: "Webhook event not found"
+        '409':
+          description: The event is being delivered right now; retry shortly
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookErrorResponse'
+              example:
+                success: false
+                error: "Webhook event is being delivered right now; retry shortly"
 
   /api/v1/partner/fiat-accounts/config:
     get:
@@ -7429,7 +7727,7 @@ components:
           type: string
           enum: [submitted, bridging, completed, failed, needs_review]
           description: |
-            `submitted` — accepted for relay; `bridging` — executed on XAI, on its way to the destination chain;
+            `submitted` — accepted for submission; `bridging` — executed on XAI, on its way to the destination chain;
             `completed` — arrived; `failed` — did not take effect on XAI (reverted, or not executed before the quote's
             deadline), the funds are still on the customer's address; `needs_review` — could not be settled automatically (for example the bridge
             failed after the funds left XAI, or still open after 24 hours), Unigox reconciles it.
@@ -9574,7 +9872,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/PartnerComplianceCase'
           nullable: true
-          description: Durable case shown in Compliance admin for third-party payout.
+          description: Durable case in Unigox compliance review for a third-party payout.
         payout_via_own_account:
           type: boolean
           description: |
@@ -9635,17 +9933,14 @@ components:
               itself confirms the payment; there is nothing to call. If the money is already on the account,
               `pay-from-balance` is in `allowed_actions` and pays the order from it
             - `sign_settlement_consent` — a **delayed settlement (T+1)** order remains at `crypto_received`
-              and nobody has signed the release yet. Call
-              `GET /api/v1/partner/orders/{order_id}/settlement-consent-parameters`, then
-              `POST /api/v1/partner/orders/{order_id}/settlement-consent`
+              and nobody has signed the release yet
             - `submit_source_of_funds` — consent is stored and a required source-of-funds case is
-              incomplete, including an existing case below the current threshold. See the case endpoints
+              incomplete, including an existing case below the current threshold
             - `await_review` — consent is stored and the order is waiting for Unigox document review,
               the licensed partner's payment check, or release processing. Do not submit another signature
             - absent — no required action (waiting for buyer or system). On a funded delayed order awaiting release
               the key is absent when the order is held for review, or a payout of yours failed and a
-              refund is under way: both consent endpoints then answer
-              `409 OPERATION_NOT_ALLOWED`
+              refund is under way
 
             Once consent_deadline_at has passed, these reads no longer request a consent signature,
             even if the order status has not changed yet.
@@ -9881,7 +10176,7 @@ components:
           description: |
             Destination-chain transaction hash after a send-out completes.
             Present only for on-ramp orders with `send_out_completed` status.
-          example: "0xd413bf3b8fe3b1d86b1e6d4c40a82eb8c94824202ff9a010161301400ab1552d"
+          example: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         payment_deadline_at:
           type: string
           format: date-time
@@ -10301,8 +10596,15 @@ components:
           example: true
         http_status:
           type: integer
-          description: HTTP status code returned by the webhook endpoint
+          nullable: true
+          description: HTTP status code returned by the webhook endpoint; `null` when it did not answer
           example: 200
+        error:
+          type: string
+          description: Present when `delivered` is `false`
+          enum:
+            - webhook endpoint answered non-2xx
+            - webhook endpoint unreachable
 
     WebhookEventPayload:
       type: object
@@ -10319,7 +10621,7 @@ components:
             order whose crypto is stuck in escrow awaiting your signature, `order.own_account_payout.updated`
             for the onward payment of an off-ramp paid through the customer's own fiat account (see the
             Webhooks section).
-          enum: [order.status.changed, order.refund.required, order.own_account_payout.updated, fiat_account.updated, fiat_account.deposit.received, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
+          enum: [order.status.changed, order.refund.required, order.own_account_payout.updated, user.kyc.updated, fiat_account.updated, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, business_customer.kyb.updated, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
           example: "order.status.changed"
         created_at:
           type: string
@@ -10342,7 +10644,7 @@ components:
                 user_id:
                   type: string
                   format: uuid
-                  description: Public UUID of the end-user (from user creation)
+                  description: "`user_id` is the customer's `user_uuid` (from user creation)."
                   example: "550e8400-e29b-41d4-a716-446655440000"
                 crypto_amount:
                   type: string
@@ -10794,7 +11096,7 @@ components:
       properties:
         legal_name:
           type: string
-          example: "HFWM LTD"
+          example: "NORTHWIND TRADING LTD"
         trade_name:
           type: string
         country_of_incorporation:
@@ -11156,6 +11458,107 @@ components:
                 idempotency_key:
                   type: string
 
+    WebhookTestRequest:
+      type: object
+      description: Optional body of `POST /api/v1/partner/webhooks/test`. Omit it to send `ping`.
+      properties:
+        event_type:
+          type: string
+          enum: [ping, order.status.changed, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, business_customer.kyb.updated]
+          description: The event to send a sample of. Empty or omitted is `ping`.
+        holder_type:
+          type: string
+          enum: [retail, business]
+          description: |
+            For `fiat_account.deposit.received` only: the retail (default) or business account
+            sample. `business` is also accepted for the `fiat_account.payment.*` events, which
+            exist only on business accounts.
+
+    WebhookEvent:
+      type: object
+      description: |
+        One event as it was signed and sent (`event_id`, `event_type`, `created_at`, `data`), with
+        `delivery` added. `data` is the event's own payload; see each event type.
+      properties:
+        event_id:
+          type: string
+        event_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+        delivery:
+          $ref: '#/components/schemas/WebhookEventDelivery'
+
+    WebhookEventDelivery:
+      type: object
+      description: How the delivery of one event stands.
+      properties:
+        status:
+          type: string
+          enum: [pending, in_progress, delivered, failed]
+          description: |
+            `pending`: waiting for its (next) attempt. `in_progress`: being sent now.
+            `delivered`: your endpoint answered 2xx. `failed`: no more attempts, or never sent
+            (see `failure_reason`).
+        attempts:
+          type: integer
+          description: Delivery attempts made so far (reset to 0 by redeliver).
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When your endpoint last accepted it.
+        last_http_status:
+          type: integer
+          nullable: true
+          description: Your endpoint's HTTP status on the last attempt; null when there was no answer.
+        failure_reason:
+          type: string
+          nullable: true
+          enum: [webhook_disabled, webhook_url_not_set, http_error, network_error, delivery_failed, null]
+          description: |
+            Why the last attempt did not succeed. `webhook_disabled` / `webhook_url_not_set`: the
+            event was never sent because of your webhook settings. `http_error`: your endpoint
+            answered non-2xx (see `last_http_status`). `network_error`: no answer (connect, TLS,
+            timeout). Null when delivered, or when requeued and not yet attempted.
+
+    WebhookEventPage:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEvent'
+        since:
+          type: string
+          format: date-time
+          description: The lower bound this page was read from (the default is shown when you sent none).
+        has_more:
+          type: boolean
+          description: More events match beyond this page.
+        next_cursor:
+          type: string
+          nullable: true
+          description: Pass as `cursor` for the next page. Set on every non-empty page.
+
+    WebhookErrorResponse:
+      type: object
+      description: The error shape the partner webhook endpoints answer with.
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "since must be an RFC 3339 timestamp, e.g. 2026-10-26T00:00:00Z"
+
     PartnerErrorResponse:
       type: object
       required: [success, error]
@@ -11183,7 +11586,7 @@ components:
                 - `UNAUTHORIZED` — authentication failed
                 - `INTERNAL_ERROR` — unexpected server error
                 - `INVALID_STATUS` — order is not in the correct status for the requested action
-                - `TRANSACTOR_ERROR` — (502) the relay did not accept a signed request that passed every check, or a refund could not be executed; retry
+                - `TRANSACTOR_ERROR` — (502) the transaction could not be submitted, although the signed request passed every check, or a refund could not be executed; retry
                 - `INSUFFICIENT_BALANCE` — the funding wallet (your partner wallet, or the `external_wallet` customer's address) lacks tokens for the escrow or withdrawal
                 - `OPERATION_NOT_ALLOWED` — action is not permitted for the current order state
                 - `KYC_NOT_CLEARED` — the customer is not KYC-cleared for this transaction; `error.details.kyc_status` carries their current partner-facing status
@@ -11218,6 +11621,9 @@ components:
                 `ISSUANCE_NOT_GRANTED`, `ISSUANCE_DISABLED`, `PROVISIONING_IN_PROGRESS`,
                 `UNSUPPORTED_CURRENCY`, `UNSUPPORTED_ISSUER_COUNTRY`, `CURRENCY_NOT_PERMITTED`,
                 `CURRENCY_NOT_PRICED`, `RECORD_FAILED`, `BANKING_ERROR`, `BANKING_UNAVAILABLE`.
+
+                Business customer endpoints (`/partner/business-customers`) can also answer
+                `KYB_UNAVAILABLE` or `SERVICE_UNAVAILABLE` (5xx): try again shortly.
 
                 This list is not closed: codes are added as endpoints grow. Treat a code you do not recognise
                 as an error of the kind its HTTP status says, rather than rejecting the response.
@@ -11344,19 +11750,19 @@ components:
         iban:
           type: string
           description: Euro (SEPA) accounts. Pay-in detail.
-          example: "NL91ABNA0417164300"
+          example: "NL02EXMP0123456789"
         bic:
           type: string
           description: Euro (SEPA) accounts. Pay-in detail.
-          example: ABNANL2A
+          example: EXMPNL2A
         account_number:
           type: string
           description: Sterling (Faster Payments) accounts. Pay-in detail.
-          example: "25976129"
+          example: "12345678"
         sort_code:
           type: string
           description: Sterling (Faster Payments) accounts. Pay-in detail.
-          example: "23-08-01"
+          example: "00-00-00"
         iban_last4:
           type: string
           description: List views, where the full identifier does not travel.
@@ -11368,11 +11774,11 @@ components:
         bank_name:
           type: string
           description: The bank to show the customer.
-          example: ABN AMRO
+          example: Example Bank
         holder_name:
           type: string
           description: The name the account is held in.
-          example: Maria ZALISHCHUK
+          example: Jane DOE
         balances:
           type: array
           description: Single-account view only.

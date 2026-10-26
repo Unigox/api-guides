@@ -4,17 +4,15 @@ Use this section for schema-level documentation, request and response payloads, 
 
 Reference groups:
 
-- [Health](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/health)
-- [Supported Resources](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/supported-resources)
-- [Exchange Pairs](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/exchange-pairs)
-- [User Management](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/user-management)
-- [On-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/on-ramp)
-- [Off-Ramp](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/off-ramp)
+- [Health](https://developers.unigox.com/api-reference/health)
+- [Supported Resources](https://developers.unigox.com/api-reference/supported-resources)
+- [Exchange Pairs](https://developers.unigox.com/api-reference/exchange-pairs)
+- [User Management](https://developers.unigox.com/api-reference/user-management)
+- [On-Ramp](https://developers.unigox.com/api-reference/on-ramp)
+- [Off-Ramp](https://developers.unigox.com/api-reference/off-ramp)
 - [Funding your wallet](./funding-your-wallet.md)
 - [Third-party payouts](./third-party-payouts.md)
 - [Business customers](./business-customers.md)
 - [Bridge payment addresses and credited webhooks](./bridge-payments.md)
-- [Orders](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/orders)
-- [Webhooks](https://unigox.gitbook.io/unigox-api/api-documentation/api-reference/webhooks)
-
-This page exists only to make the API reference tree visible in the same left sidebar as the guide pages.
+- [Orders](https://developers.unigox.com/api-reference/orders)
+- [Webhooks](https://developers.unigox.com/api-reference/webhooks)

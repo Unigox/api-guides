@@ -9,21 +9,21 @@ customers through a shared shell user. Unigox evaluates recipient fan-out,
 payment value and velocity, relationship/purpose coherence, and screening
 results for every sender.
 
-## Funding: you pre-fund, we debit
+## Funding: you pre-fund, Unigox debits
 
-Payouts are funded from **your own crypto balance**, not from your customer's.
-Your customer never sends crypto to you through Unigox — how they pay you, if at
+Payouts are funded from your own crypto balance, not from your customer's.
+Your customer never sends crypto to you through Unigox. How they pay you, if at
 all, is outside this API.
 
-Your partner wallet signs the transfer into each order's escrow, so **an empty
-balance stops every payout**, not just the next one. This is for `partner_wallet`
+Your partner wallet signs the transfer into each order's escrow, so an empty
+balance stops every payout, not just the next one. This is for `partner_wallet`
 senders. An `external_wallet` sender funds from their own address and signs the
 transfer themselves; see [Non-custodial customers](../non-custodial-customers.md). Your
 partner wallet also receives on-ramp crypto for your `partner_wallet` customers.
 
 See [Funding your wallet](./funding-your-wallet.md) for the address, the chains
-and tokens you can fund from, and the deposit addresses we monitor on your
-behalf.
+and tokens you can fund from, and the deposit addresses Unigox monitors for
+you.
 
 ## End-to-end flow
 
@@ -39,9 +39,9 @@ behalf.
    business that buys your crypto and pays the recipient; order statuses call it
    the liquidity provider. A new order starts at
    `awaiting_liquidity_provider` and has no escrow yet, so
-   `transfer-authorization-parameters` answers `409 INVALID_STATUS` ("no
-   liquidity provider has accepted it"). Poll `GET /orders/{order_id}` — or take
-   a webhook — until `next_action` becomes `authorize_crypto_transfer`.
+   `transfer-authorization-parameters` returns `409 INVALID_STATUS` ("no
+   liquidity provider has accepted it"). Poll `GET /orders/{order_id}`, or wait
+   for a webhook, until `next_action` becomes `authorize_crypto_transfer`.
 7. Fund the order's escrow from your balance:
    `GET /api/v1/partner/orders/{order_id}/transfer-authorization-parameters`,
    sign the returned ForwardRequest, then
@@ -109,14 +109,13 @@ Content-Type: application/json
 
 All five top-level fields are required on every rail: `country_code`,
 `currency`, `rail`, `institution_id` and `details`. A request missing one, or a
-body that is not JSON, answers `400 INVALID_REQUEST` with the message `invalid
+body that is not JSON, returns `400 INVALID_REQUEST` with the message `invalid
 recipient destination request body`, which does not say which field is missing.
 
-`rail` and `institution_id` are partner-facing slugs — take `rail` from
+`rail` and `institution_id` are partner-facing slugs. Take `rail` from
 [`/api/v1/supported/payment-rails`](./README.md) and `institution_id` from
-`/api/v1/supported/institutions`. Unigox resolves them to the platform's
-payment network and payment method IDs and stores those, so the route is a real
-reference rather than a string.
+`/api/v1/supported/institutions`. Unigox resolves them to its payment network
+and payment method IDs and stores those.
 
 Query the rails with all three parameters:
 
@@ -124,23 +123,26 @@ Query the rails with all three parameters:
 GET /api/v1/supported/payment-rails?country=CN&currency=CNY&direction=offramp
 ```
 
-`direction` is required (`offramp` for a payout); without it the call answers
+`direction` is required (`offramp` for a payout); without it the call returns
 `400`. The country parameter is `country`, not `country_code`.
 
-`/api/v1/supported/institutions` is **paginated**: `limit` defaults to `20` and
-caps at `100` (a larger value is a `400`, not a silent clamp), and `offset`
-defaults to `0` — read `pagination.total` to know how far to page. On a corridor
-like CNY/CNAPS, which lists hundreds of banks, do not conclude a bank is missing
-from the first page: filter with `search` (matches name or slug, case-insensitive
-partial), `code` (the institution's own bank code), or `institution_id` (exact
-slug) instead of paging through everything. Only institutions that are live on
-the queried rail are listed, so an institution absent from the response cannot be
-paid — creating a destination on it is refused.
+`/api/v1/supported/institutions` is paginated:
+
+- `limit` defaults to `20` and caps at `100`; a larger value is a `400`, not a
+  silent clamp. `offset` defaults to `0`. Read `pagination.total` to know how
+  far to page.
+- A corridor like CNY/CNAPS lists hundreds of banks, so a bank missing from the
+  first page may be on a later one. Filter with `search` (matches name or slug,
+  case-insensitive partial), `code` (the institution's own bank code), or
+  `institution_id` (exact slug) instead of paging through everything.
+- Only institutions that are live on the queried rail are listed. An
+  institution absent from the response cannot be paid, and creating a
+  destination on it is refused.
 
 ### `details` field names come from the rail
 
 `details` is validated against the selected rail's configuration, and its keys
-are that rail's own field names — the same ones
+are that rail's own field names: the same ones
 `/api/v1/supported/payment-rails` advertises for the format you are using. Do
 not invent generic names such as `account_holder_name`: they are rejected.
 
@@ -148,21 +150,21 @@ not invent generic names such as `account_holder_name`: they are rejected.
 several formats, and the one your `details` is validated against is decided by
 the institution you chose:
 
-1. take the institution from `/api/v1/supported/institutions` — each carries an
+1. take the institution from `/api/v1/supported/institutions`; each carries an
    `institution_type`;
 2. find the rail format whose `institution_types` contains that type;
 3. send that format's `fields`.
 
 Formats also carry `has_liquidity` when the query names both `country` and
 `currency`. A format with `has_liquidity: false` cannot currently be settled in
-that corridor — do not build against it. The flag is omitted when the query
+that corridor; do not build against it. The flag is omitted when the query
 leaves out the country or the currency, or when liquidity could not be
 determined: an absent flag means unknown, not `false`. Check the endpoint rather
 than any table in this guide.
 
 ### The Chinese wallets are their own rails
 
-Alipay and WeChat Pay are **not** formats of `cnaps`. `cnaps` carries the two
+Alipay and WeChat Pay are not formats of `cnaps`. `cnaps` carries the two
 bank formats only; each wallet is a rail of its own:
 
 | `rail` | Wallet | `institution_id` |
@@ -173,11 +175,11 @@ bank formats only; each wallet is a rail of its own:
 A wallet rail carries exactly one institution, and its format asks for no bank
 field, so `/api/v1/supported/payment-rails` reports `institution_required:
 false`. A recipient destination still needs `institution_id`: send the rail's
-own institution from the table. Leaving it out answers `400 INVALID_REQUEST`
+own institution from the table. Leaving it out returns `400 INVALID_REQUEST`
 (`invalid recipient destination request body`).
 
-Both wallet rails take the same four fields — the wallet is identified by the
-rail, so there is no Chinese name and no national ID:
+Both wallet rails take the same four fields. The rail identifies the wallet, so
+there is no Chinese name and no national ID:
 
 | Required `details` |
 | --- |
@@ -201,7 +203,7 @@ a wallet destination. For a `business` recipient the destination is refused with
 ### Who may be paid on a Chinese wallet
 
 Both wallets verify the account holder against a Chinese national ID, so the
-beneficiary must be a **Chinese national**. A foreign resident's Alipay or WeChat
+beneficiary must be a Chinese national. A foreign resident's Alipay or WeChat
 account cannot be paid over this rail, whatever name the account shows. Pay a
 foreign resident in China over a bank format instead.
 
@@ -214,28 +216,27 @@ Both wallets settle exactly two kinds of payment, and no others:
 
 That is the whole list, on `alipay-wallet` and on `wechat-wallet` alike. A
 wallet destination quoted as `supplier`, `employee`, `friend` or anything else
-is refused with `422 THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` **at the quote** —
-before your customer funds anything, so it costs a corrected retry rather than
-an order for us to unwind. Pay a supplier or an employee in China over a bank
-format instead.
+is refused with `422 THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` at the quote,
+before your customer funds anything. Pay a supplier or an employee in China
+over a bank format instead.
 
 `purpose_of_payment` must likewise be one this corridor can declare to the
 wallet. For a payment to a family member that is `family_support`; `education`,
-`medical`, `donation` and `other` are the rest of what a personal payment
-normally is. A purpose the corridor has no code for is refused with `400
-INVALID_REQUEST` naming the alternatives — it does not quietly become "other".
+`medical`, `donation` and `other` are the other accepted personal purposes. A
+purpose the corridor has no code for is refused with `400 INVALID_REQUEST`
+naming the alternatives; it is not mapped to `other`.
 
-Because the remitter has to be your own paying customer (see *The sender on
-consumer-to-consumer rails*), a payment to the sender themselves is only possible
-when that customer is Chinese. A `family` payment is not: your customer may be of
+Because the remitter has to be your own paying customer (see
+[The sender on consumer-to-consumer rails](#the-sender-on-consumer-to-consumer-rails)),
+a payment to the sender themselves is only possible when that customer is
+Chinese. A `family` payment is not limited this way: your customer may be of
 any nationality, as long as the beneficiary is Chinese.
 
 ### Where an Alipay payment may be sent from
 
-Alipay screens the country the money is sent **from**, not only who receives it.
-Your customer's own country of residence — the one on their verified identity —
-decides whether they may pay an Alipay wallet at all, and the answer is the same
-for every beneficiary they name.
+Alipay screens the country the money is sent from, not only who receives it.
+Your customer's country of residence on their verified identity decides whether
+they may pay an Alipay wallet at all, for every beneficiary they name.
 
 These countries cannot send an Alipay payment:
 
@@ -244,44 +245,41 @@ North Korea, Oman, Pakistan, Palestine, Qatar, Russia, Somalia, South Sudan,
 Syria, Yemen.
 
 A quote for an Alipay destination from one of them is refused with `422
-THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED`, naming the country. The refusal is
-Alipay's and applies to that rail only: the same customer pays the same
-beneficiary's **bank account** over `cnaps` normally, and WeChat Pay is not
-covered by it.
+THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED`, naming the country. The rule applies
+to Alipay only: the same customer can pay the same beneficiary's bank account
+over `cnaps`, and WeChat Pay is not covered by it.
 
-Nothing about the sender's file changes this — a completed verification, a
-different purpose or a different relationship all fail identically. Use a bank
-format instead.
+A completed verification, another purpose or another relationship does not
+change this. Use a bank format instead.
 
-The receiving wallet may additionally ask the beneficiary to evidence the
-relationship that was declared before it credits the funds: proof of income when
-the payment is to the sender themselves, proof of the relationship when it is to
-family. A relationship the beneficiary cannot evidence is what leaves a payment
-sitting inside the wallet, so declare the one that is true rather than the one
-that is easiest.
+The receiving wallet may also ask the beneficiary to evidence the declared
+relationship before it credits the funds: proof of income when the payment is
+to the sender themselves, proof of the relationship when it is to family. If
+the beneficiary cannot, the payment can stay inside the wallet. Declare the
+relationship that is true.
 
-Paying a Chinese company from your company (B2C) is not available on this rail
+Paying a Chinese company from your company (B2B) is not available on this rail
 yet.
 
 ### Dollars to China, Hong Kong and Singapore: not yet
 
-The catalog can list three USD bank rails — `usd-wire-china`, `usd-wire-hong-kong` and
-`usd-wire-singapore` — and a recipient may hold a destination on one of them. Paying
+The catalog can list three USD bank rails, `usd-wire-china`, `usd-wire-hong-kong` and
+`usd-wire-singapore`, and a recipient may hold a destination on one of them. Paying
 it is not available on this API yet: a quote or an initiate for a USD payout on any of
-the three answers `400 INVALID_REQUEST` with `provider_confirmation_pending` in the
+the three returns `400 INVALID_REQUEST` with `provider_confirmation_pending` in the
 message, before any money moves.
 
-Read that as "not offered", not as a fault to retry. When USD payouts open to partners,
-it will be announced here and in the changelog.
+Do not retry. When USD payouts open to partners, it will be announced here and
+in the changelog.
 
 ### Paying a company: the recipient's kind
 
 A format may have a business sibling (`cnaps-bank` ↔ `cnaps-bank_business`) that
-applies to the **same** institutions but collects a company's details instead of
-a person's. The sibling is not selected by the institution, and not by anything
-in the destination request: it is selected by the `recipient_kind` the recipient
-was registered with. A `business` recipient's destinations are validated against
-the business format, an `individual` recipient's against the individual format.
+applies to the same institutions but collects a company's details instead of
+a person's. The sibling is selected by the `recipient_kind` the recipient was
+registered with, not by the institution or anything in the destination request.
+A `business` recipient's destinations are validated against the business
+format, an `individual` recipient's against the individual format.
 
 `details.beneficiary_type` does not choose the format on a destination. Whatever
 you send, it is replaced by the recipient's kind and returned that way, so the
@@ -323,7 +321,7 @@ in full so you can tell two destinations apart:
   `account_number`, `bank_account_number`, `iban`, `card_number`, `id_number`,
   `national_id`, `tax_id`, `mobile_number`, `phone_number`, `msisdn`;
 - returned in full: names, `bank_name`, `province`, `branch`, routing codes,
-  `beneficiary_type`, and every identifier we issued (`id`,
+  `beneficiary_type`, and every identifier Unigox issued (`id`,
   `payment_method_id`, `payment_network_id`, `created_at`).
 
 `kind` comes back lowercase (`individual` | `business`), matching the
@@ -332,8 +330,8 @@ in full so you can tell two destinations apart:
 ## 3. Request a quote
 
 A third-party payout is routed by `recipient_destination_id`, so
-`payment_details_id` must be **omitted**. Sending both is rejected with `400
-INVALID_REQUEST` rather than one silently winning.
+`payment_details_id` must be omitted. Sending both is rejected with `400
+INVALID_REQUEST`.
 
 ```http
 POST /api/v1/partner/offramp/quote
@@ -376,47 +374,67 @@ wallet's rail, `family`, and a purpose the wallet accepts:
 }
 ```
 
-The wallet rails have a floor of **CNY 55.00**. Below it nothing can serve the
-payment and the quote comes back `409 NO_OFFERS_AVAILABLE`.
+The wallet rails have a floor of CNY 55.00. Below it nothing can serve the
+payment and the quote returns `409 NO_OFFERS_AVAILABLE`.
 
-`crypto_currency` and the amount are not decoration: a pair no licensed partner
-serves, or an amount above what the corridor can currently serve, returns
-`409 NO_OFFERS_AVAILABLE`. Call `/api/v1/partner/liquidity` or
-`/api/v1/partner/offramp/estimate` first — both are public — instead of
-discovering the ceiling from a failed quote. Send `"recipient_payout": true` to
-the estimate: it then prices only on the licensed partners a recipient payout
-can be matched to.
+`user_uuid` and `sender_id` must identify the same real, KYC-verified sender.
+The destination currency must exactly equal `fiat_currency`; this flow does not
+support cross-currency recipients. A CNY destination receives CNY. A quote whose
+`fiat_currency` is not the destination's currency is refused with `422
+THIRD_PARTY_CONTEXT_INVALID` (`recipient destination does not support the payout
+corridor`); if `fiat_currency` is not open to recipient payouts at all, the
+`400 INVALID_REQUEST` for that currency comes first. See also
+[Delayed settlement not enabled](#delayed-settlement-not-enabled).
 
-The liquidity bands include T+1 offers by default, so their ceiling can be one
-only a delayed settlement (T+1) order reaches. If delayed settlement is not
-enabled for you, call `/api/v1/partner/liquidity?exclude_delayed_settlement=true`
-for the instant bands. Either way the bands also count offers of licensed
-partners that cannot pay a recipient, so a band can reach above what a recipient
-payout can match. To check an amount, send the estimate with your API key and
-the payout's `recipient_id` and `recipient_destination_id`, as shown below: it
-is matched as your quote is, and answers `409 NO_OFFERS_AVAILABLE` for an amount
-the quote cannot match. If it answers this at every amount, the currency or rail
-may not be open to your recipient payouts, for example one that only delayed
-(T+1) offers serve while delayed settlement is not enabled for you. The quote
-then answers `400 INVALID_REQUEST` or `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` (see
-[Compliance in v1](#compliance-in-v1)), and a retry does not change that.
+`rail` is optional on a third-party quote: the route comes from the destination.
+If you send it, it must be the destination's rail; any other value is refused
+with `422 THIRD_PARTY_CONTEXT_INVALID` (`rail does not match the recipient
+destination`). `RAIL_ROUTE_MISMATCH` belongs to self-payouts with
+`payment_details_id` and is never returned here.
 
-To see the rate the quote will give, also name the destination: send
-`recipient_id` and `recipient_destination_id` with your API key. The estimate is
+At quote time Unigox checks that the recipient and the destination are yours
+and active, their screening, the route and currency, the sender's eligibility,
+the relationship and the purpose. The quote keeps an unchangeable copy of what
+it checked.
+
+### Checking the amount before you quote
+
+A pair no licensed partner serves, or an amount above what the corridor can
+currently serve, returns `409 NO_OFFERS_AVAILABLE`. Check first with
+`/api/v1/partner/liquidity` or `/api/v1/partner/offramp/estimate`; both are
+public.
+
+- The liquidity bands include T+1 offers by default. If delayed settlement is
+  not enabled for you, call
+  `/api/v1/partner/liquidity?exclude_delayed_settlement=true` for the instant
+  bands. The bands also count offers of licensed partners that cannot pay a
+  recipient, so a band can reach above what a recipient payout can match.
+- Send `"recipient_payout": true` to the estimate: it then prices only on the
+  licensed partners a recipient payout can be matched to.
+- To check an amount, send the estimate with your API key and the payout's
+  `recipient_id` and `recipient_destination_id`, as shown below. It is matched
+  as your quote is, and returns `409 NO_OFFERS_AVAILABLE` for an amount the
+  quote cannot match. If it returns this at every amount, the currency or rail
+  may not be open to your recipient payouts; see
+  [Delayed settlement not enabled](#delayed-settlement-not-enabled).
+
+Naming the destination also shows the rate the quote will give. The estimate is
 then priced on the destination's own bank or wallet method, rail and country,
 exactly as the quote is, so a fee a licensed partner charges for that bank is
-included. Without the destination the bank is unknown, that fee cannot be
-included, and the estimate can show a better rate than the quote. Do not send
+included. Without the destination that fee cannot be included, and the
+estimate can show a better rate than the quote. Do not send
 `payment_method_slug`, `payment_network_slug` or `country_code` with a
-destination; if they differ from the destination's, the estimate answers `400
+destination; if they differ from the destination's, the estimate returns `400
 INVALID_REQUEST`. The estimate only reads the destination; it binds nothing.
 
-Its checks on the destination are not the quote's. An unknown recipient or
-destination answers `404 RECIPIENT_NOT_FOUND`, where the quote answers either
-with `422 THIRD_PARTY_CONTEXT_INVALID`. A destination in
-another currency than `fiat_currency` answers `400 INVALID_REQUEST`, where the
-quote answers `422`. Screening, the relationship and the purpose are not
-checked, so an estimate that prices does not mean the quote will.
+The estimate does not check the destination the way the quote does:
+
+- An unknown recipient or destination returns `404 RECIPIENT_NOT_FOUND`, where
+  the quote returns `422 THIRD_PARTY_CONTEXT_INVALID`.
+- A destination in another currency than `fiat_currency` returns `400
+  INVALID_REQUEST`, where the quote returns `422`.
+- Screening, the relationship and the purpose are not checked, so an estimate
+  that prices does not mean the quote will.
 
 ```bash
 curl -X POST https://api.unigox.com/api/v1/partner/offramp/estimate \
@@ -431,27 +449,20 @@ curl -X POST https://api.unigox.com/api/v1/partner/offramp/estimate \
   }'
 ```
 
-`user_uuid` and `sender_id` must identify the same real, KYC-verified sender.
-The destination currency must exactly equal `fiat_currency`; this flow does not
-support cross-currency recipients. A CNY destination receives CNY. A quote whose
-`fiat_currency` is not the destination's currency is refused with `422
-THIRD_PARTY_CONTEXT_INVALID` (`recipient destination does not support the payout
-corridor`); if `fiat_currency` is not open to recipient payouts at all, the
-`400 INVALID_REQUEST` for that currency comes first. Until delayed settlement is
-enabled for you, a currency that only delayed (T+1) offers serve counts as not
-open, with the same `400`, and a rail that only they serve is refused with
-`409 THIRD_PARTY_RAIL_NOT_SUPPORTED`.
+### Delayed settlement not enabled
 
-`rail` is optional on a third-party quote: the route comes from the destination.
-If you send it, it must be the destination's rail; any other value is refused
-with `422 THIRD_PARTY_CONTEXT_INVALID` (`rail does not match the recipient
-destination`). `RAIL_ROUTE_MISMATCH` belongs to self-payouts with
-`payment_details_id` and is never returned here.
+Until delayed settlement is enabled for you, offers that settle T+1 do not
+count for your recipient payouts. A currency, rail or amount that only T+1
+offers serve is refused:
 
-At quote time Unigox checks that the recipient and the destination are yours
-and active, their screening, the route and currency, the sender's eligibility,
-the relationship and the purpose. The quote keeps an unchangeable copy of what
-it checked.
+| Only T+1 offers serve | Quote returns |
+| --- | --- |
+| the currency | `400 INVALID_REQUEST` (`third-party recipient payout is not available for {CURRENCY}`) |
+| the rail | `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` |
+| the amount | `409 NO_OFFERS_AVAILABLE` |
+
+A retry does not change this. Ask Unigox to enable delayed settlement, or use a
+currency, rail or amount that instant offers serve.
 
 ## 4. Initiate the payout
 
@@ -459,7 +470,7 @@ Initiate the returned quote through the standard off-ramp initiate endpoint.
 Unigox revalidates the frozen quote, applies sender-level controls, and sends
 reviewable payouts to the shared Compliance queue before execution.
 
-A created order answers `200` (not `201`) with the order in `data`, starting at
+A created order returns `200` (not `201`) with the order in `data`, starting at
 `awaiting_liquidity_provider`. The response includes:
 
 - `recipient_context`: partner-visible sender, recipient, destination,
@@ -480,44 +491,64 @@ path.
 
 ## Compliance in v1
 
-Controls are enforced BEFORE the order exists, not as a partner-visible review
-state machine. A payout that fails a control does not come back as a "held"
-order — the request is rejected, and you act on the error:
+Controls run before the order exists. A payout that fails a control is rejected
+with an error; it does not come back as a held order.
 
 | Error code | HTTP | Meaning | Partner action |
 | --- | --- | ---: | --- |
 | `KYC_NOT_CLEARED` | 422 | The sender's KYC is not cleared for this partner. | Complete the sender's KYC; do not substitute another user. |
-| `SENDER_IDENTITY_REQUIRED` | 422 | The corridor settles consumer-to-consumer and the sender's record cannot name them on the wire. `details.kyc_fields` is what you can supply. | `PATCH /api/v1/partner/users/{user_uuid}/kyc` with those fields, then retry. See below. |
-| `THIRD_PARTY_CONTEXT_INVALID` | 422 | The sender, recipient or destination cannot be used for this quote: the sender, recipient or destination not found for this partner, or archived (`sender not found or not eligible`, `recipient not found or not eligible`, `recipient destination not found or not eligible`), screening not `cleared`, incomplete route, `sender_id` ≠ `user_uuid`, a `rail` that is not the destination's (`rail does not match the recipient destination`), or a destination currency that is not `fiat_currency` (`recipient destination does not support the payout corridor`). On initiate: the recipient changed or stopped being cleared since the quote. | Read the message. Fix the `rail` or `fiat_currency`, re-check the recipient, or wait for screening; after a change since the quote, request a new quote. |
-| `INVALID_REQUEST` | 400 | The payload is wrong — a missing required third-party field, `payment_details_id` sent alongside `recipient_destination_id`, a relationship or `purpose_of_payment` the corridor cannot declare, or a currency no third-party-enabled payout route serves (`third-party recipient payout is not available for {CURRENCY}`). A currency served only by delayed (T+1) offers reads as not available, with that message, until delayed settlement is enabled for you. On the destination endpoint: a `details` field the rail does not accept. The message names what to fix. | Fix the request. If the message says the currency is not available and delayed settlement is not enabled for you, ask us to enable it. |
-| `RECIPIENT_NOT_FOUND` | 404 | No recipient with that id belongs to your partner account, or it was archived. Returned by the recipient endpoints, and by the estimate when its `recipient_id` or `recipient_destination_id` names no recipient or destination of yours. A quote answers the same case `422 THIRD_PARTY_CONTEXT_INVALID`. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
-| `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | Returned by the recipient endpoints: the recipient directory could not be reached. Nothing about your request was wrong. | Retry with backoff. |
-| `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over the rail this destination settles on (`third-party recipient payout is not available for {CURRENCY} over {rail}`). A corridor is priced per rail, so "CNY is available" and "this Alipay account can be paid" are different answers. A rail served only by delayed (T+1) offers reads as not open until delayed settlement is enabled for you. | Use a destination on a rail that is open, or ask us to open this one; if delayed settlement is not enabled for you, ask us to enable it. A retry does not change it. |
-| `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | The rail refuses that beneficiary: a Chinese wallet pays the sender themselves or a family member and nobody else. The value is well-formed and other rails accept it. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
-| `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` | 422 | The rail refuses money sent from the country on your customer's verified identity. Alipay bars a list of sending countries whoever the beneficiary is. The message names the country. | Pay this beneficiary over a bank format (`cnaps`). No change to the sender's record opens the wallet rail, and a retry fails identically. |
-| `NO_OFFERS_AVAILABLE` | 409 | No licensed partner can currently serve this corridor and amount. | Retry later, or use a different amount. If delayed settlement is not enabled for you, an amount that only a delayed (T+1) offer covers gets this answer on every retry. Price the amount first with `POST /api/v1/partner/offramp/estimate`, sent with your API key, `recipient_id` and `recipient_destination_id`: it is matched as your quote is and answers the same 409 for an amount the quote cannot match. Or ask us to enable delayed settlement. If the estimate answers 409 at every amount, the currency or rail may not be open to your recipient payouts, for example one that only delayed (T+1) offers serve while delayed settlement is not enabled for you: the quote then answers `400 INVALID_REQUEST` or `409 THIRD_PARTY_RAIL_NOT_SUPPORTED` (see those rows), and a retry does not change that. |
-| `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The licensed partner's connection to its payout provider cannot yet pass on the relationship and purpose of each payment, so no third-party CNY order may be created. Your quote is untouched and stays valid. | Do not retry in a loop — this clears on our side, not yours. Contact support if it persists. |
-| `THIRD_PARTY_PAYOUT_UNDER_REVIEW` | 422 | Returned on initiate. Compliance put this payout in review — someone looks at it on our side. | Do not retry the same payout; wait for the outcome. |
-| `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it outright, with nothing pending: a breached sender limit, a hold, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |
-
-`THIRD_PARTY_PAYOUT_AGENT_NOT_READY` is a deliberate stop, not a fault: until
-that connection passes on each payment's own relationship and purpose, a
-payout would be sent with fixed values instead.
+| `SENDER_IDENTITY_REQUIRED` | 422 | The corridor settles consumer-to-consumer and the sender's record cannot name them on the wire. `details.kyc_fields` is what you can supply. | `PATCH /api/v1/partner/users/{user_uuid}/kyc` with those fields, then retry. See [below](#the-sender-on-consumer-to-consumer-rails). |
+| `THIRD_PARTY_CONTEXT_INVALID` | 422 | The sender, recipient or destination cannot be used for this quote, or on initiate the recipient changed or stopped being cleared since the quote. The message says which; see [causes](#what-each-refusal-means). | Fix what the message names, or wait for screening. After a change since the quote, request a new quote. |
+| `INVALID_REQUEST` | 400 | The request is wrong, or the currency is not open to recipient payouts (`third-party recipient payout is not available for {CURRENCY}`). The message names what to fix; see [causes](#what-each-refusal-means). | Fix the request. For an unavailable currency, see [Delayed settlement not enabled](#delayed-settlement-not-enabled). |
+| `RECIPIENT_NOT_FOUND` | 404 | No recipient or destination with that id belongs to your partner account, or it was archived. Returned by the recipient endpoints and by the estimate; a quote returns `422 THIRD_PARTY_CONTEXT_INVALID` instead. | Re-create the recipient, or use one from `GET /api/v1/partner/recipients`. |
+| `RECIPIENT_SERVICE_UNAVAILABLE` | 503 | Returned by the recipient endpoints: the recipient directory could not be reached. Your request was not at fault. | Retry with backoff. |
+| `THIRD_PARTY_RAIL_NOT_SUPPORTED` | 409 | The currency is open to recipient payouts, but not over this destination's rail (`third-party recipient payout is not available for {CURRENCY} over {rail}`). A corridor is priced per rail. | Use a destination on an open rail, or ask Unigox to open this one. A retry does not change it; see [Delayed settlement not enabled](#delayed-settlement-not-enabled). |
+| `THIRD_PARTY_RELATIONSHIP_NOT_SUPPORTED` | 422 | A Chinese wallet pays only the sender themselves or a family member. Other rails accept the value. | Quote `self` or `family`, or pay this beneficiary over a bank format. |
+| `THIRD_PARTY_SENDER_COUNTRY_NOT_SUPPORTED` | 422 | Alipay refuses money sent from the country on your customer's verified identity. The message names the country. | Pay this beneficiary over a bank format (`cnaps`). A retry or a change to the sender's record does not help. |
+| `NO_OFFERS_AVAILABLE` | 409 | No licensed partner can currently serve this corridor and amount. | Retry later, or use a different amount. Check the amount with the estimate first; see [Checking the amount](#checking-the-amount-before-you-quote) and [Delayed settlement not enabled](#delayed-settlement-not-enabled). |
+| `THIRD_PARTY_PAYOUT_AGENT_NOT_READY` | 409 | The licensed partner cannot yet pass on each payment's relationship and purpose, so no third-party CNY order may be created. Your quote stays valid. | Do not retry in a loop; this clears on the Unigox side. Contact support if it persists. |
+| `THIRD_PARTY_PAYOUT_UNDER_REVIEW` | 422 | Returned on initiate. Compliance put this payout in review. | Do not retry the same payout; wait for the outcome. |
+| `THIRD_PARTY_PAYOUT_DECLINED` | 422 | Returned on initiate. Compliance refused it, with nothing pending: a breached sender limit, a hold, or another initiation for the same sender still in flight. | An identical retry fails identically. Change the payout, or retry the in-flight case after the other one settles. |
 
 Unigox reviews payouts on its side. In v1, value, velocity and fan-out holds are
 not shown to you as order states.
 
+### What each refusal means
+
+`THIRD_PARTY_CONTEXT_INVALID` is returned when:
+
+- the sender, recipient or destination is not found for this partner, or was
+  archived: `sender not found or not eligible`, `recipient not found or not
+  eligible`, `recipient destination not found or not eligible`;
+- the recipient's screening is not `cleared`;
+- the route is incomplete;
+- `sender_id` ≠ `user_uuid`;
+- `rail` is not the destination's (`rail does not match the recipient
+  destination`);
+- the destination currency is not `fiat_currency` (`recipient destination does
+  not support the payout corridor`);
+- on initiate, the recipient changed or stopped being cleared since the quote.
+
+`INVALID_REQUEST` is returned for:
+
+- a missing required third-party field;
+- `payment_details_id` sent alongside `recipient_destination_id`;
+- a relationship or `purpose_of_payment` the corridor cannot declare;
+- a currency no third-party-enabled payout route serves (`third-party recipient
+  payout is not available for {CURRENCY}`), including one that only T+1 offers
+  serve while delayed settlement is not enabled for you;
+- on the destination endpoint, a `details` field the rail does not accept.
+
 ### The sender on consumer-to-consumer rails
 
 Chinese mobile wallets (the `alipay-wallet` and `wechat-wallet` rails) settle
-person to person. The receiving wallet shows a remitter, and on those
-rails it has to be **your customer**, with their own document, address and phone.
-It cannot be Unigox and it cannot be your company: a payout whose remitter does
-not match the person behind it is what the rail's identity check exists to catch.
+person to person. The receiving wallet shows a remitter, and on those rails it
+has to be your customer, with their own document, address and phone. It cannot
+be Unigox or your company.
 
-Everything else on this page is about the recipient. This is the one control that
-looks at the sender, and it is a property of the corridor, not of the recipient —
-the same recipient paid over a bank format does not trigger it.
+This is the one control that looks at the sender. It belongs to the corridor,
+not the recipient: the same recipient paid over a bank format does not trigger
+it.
 
 `POST /api/v1/partner/offramp/initiate` refuses with `422 SENDER_IDENTITY_REQUIRED`
 when the sender's KYC record cannot name them. No order is created and the quote
@@ -540,28 +571,23 @@ is reverted, so the same customer can retry:
 ```
 
 `details.kyc_fields` is the request body of
-`PATCH /api/v1/partner/users/{user_uuid}/kyc` — send those keys, then retry the
+`PATCH /api/v1/partner/users/{user_uuid}/kyc`. Send those keys, then retry the
 initiate with a fresh quote. The full set a wallet payout can ask for is `dob`,
 `phone_number`, `address`, `city`, `postal_code`, `id_type`, `id_number`,
 `id_issue_country`, `gender`, `nationality` and `source_of_funds`.
 
 ### A field can be listed because it is too long
 
-`missing_fields` names a field the corridor could not answer, and a value the
-payout rail would refuse for its length counts as unanswered. The rail rejects
-the whole payment rather than the one field, and it does so at payout, after the
-customer has funded — so the value is refused here instead, where a retry is
-still free.
+`missing_fields` also lists a field whose value is too long for the payout
+rail. Such a value is refused at initiate, where a retry is still free, instead
+of failing the whole payment at payout.
 
 `details.field_limits` is the ceiling on any listed field that has one, keyed the
 way you write it in the KYC patch. It is absent when no listed field has a
-ceiling. Without it a field that is present but too long is indistinguishable
-from one that was never set: you would patch the same value again and see the
-same field come back.
+ceiling.
 
-Today the Chinese wallet corridor publishes these, counted in **characters**, not
-bytes — a Chinese address is three bytes per character and would otherwise fail a
-byte count it passes on the wire:
+Today the Chinese wallet corridor publishes these, counted in characters, not
+bytes (a Chinese address is three bytes per character):
 
 | Field | Maximum |
 | --- | --- |
@@ -571,31 +597,29 @@ byte count it passes on the wire:
 | `id_number` | 30 |
 
 `postal_code` has no published ceiling on this corridor, and `phone_number`
-needs none: the format it already has to be in (`+`, then 8 to 15 digits) is
-shorter than what the rail accepts. Read the limits from `field_limits` rather
-than hard-coding this table: they are the payout provider's, they differ per corridor,
-and a new corridor will bring its own.
+needs none: its required format (`+`, then 8 to 15 digits) is shorter than what
+the rail accepts. Read the limits from `field_limits` rather than hard-coding
+this table: they differ per corridor.
 
 That patch is all-or-nothing: one rejected value writes none of the others, and
-the `error_key` names which one — `invalid_gender`, `invalid_country_code`,
+the `error_key` names which one: `invalid_gender`, `invalid_country_code`,
 `invalid_source_of_funds`, `invalid_date_of_birth`, `underage_not_allowed`, or
 `invalid_field_value` when a value arrives as an object or an array instead of a
 string. A recognised field sent blank is not an error and not a write: the
 response is `200` with that field absent from `updated_fields`, so a patch whose
-recognised fields are all blank answers `{"updated_fields": []}` and the payout
+recognised fields are all blank returns `{"updated_fields": []}` and the payout
 still refuses. Read `updated_fields` before retrying the initiate.
 
 When `kyc_fields` is shorter than `missing_fields`, the difference is what only
-verification can supply — the name as printed on the document, the country of
-residence. Those are not editable over the KYC update plane by design, so the
+verification can supply: the name as printed on the document, the country of
+residence. Those cannot be changed with the KYC update endpoint, so the
 customer has to complete or redo KYC before that payout can go out.
 
 ## Updates and deletion
 
 - Reuse an active recipient instead of creating duplicates.
 - Update identity with `PATCH /api/v1/partner/recipients/{recipient_id}`. This
-  bumps `version` and resets `screening_status` to `pending`, because the
-  identity that was screened is no longer the identity on file. A quote for that
+  bumps `version` and resets `screening_status` to `pending`. A quote for that
   recipient returns `THIRD_PARTY_CONTEXT_INVALID` until screening clears again,
   so do not PATCH immediately before quoting.
 - List destinations with
