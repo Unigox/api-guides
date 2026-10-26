@@ -238,7 +238,7 @@ about 3.5 days) until your endpoint answers `2xx`. Register the endpoint with
 | --- | --- |
 | `fiat_account.deposit.received` | Money arrived on a company's account (`status` `confirmed`). `holder_type` is `business`. |
 | `fiat_account.payment.sent` | Money left a company's account (`status` `sent`). |
-| `fiat_account.payment.updated` | A transfer in or out reached a new status: pending, held, refused, returned… One event per status. |
+| `fiat_account.payment.updated` | A transfer in or out reached a new status (see [Statuses](#statuses) below). One event per status. |
 | `business_customer.kyb.updated` | A company's KYB `status` changed. |
 
 Moves you make yourself with `transfer-to-partner` or `fund` are not bank
@@ -287,7 +287,9 @@ The three `fiat_account.*` events carry the same `data`:
   an outgoing one. `holder_name`, `rail`, `counterparty_*`, `description` and
   `occurred_at` are left out when blank or not reported.
 
-**Statuses.** `fiat_account.payment.updated` is sent once for every status a
+#### Statuses
+
+`fiat_account.payment.updated` is sent once for every status a
 transfer reaches, so you can follow it end to end:
 
 | `status` | Meaning |
@@ -300,8 +302,8 @@ transfer reaches, so you can follow it end to end:
 | `refused`, `failed`, `expired` | Did not go through. |
 | `processing_refund`, `refunded` | Returned to the sender. |
 
-Other values the bank reports are passed on as they are. `held`, `refused` and
-`returned` steps are picked up from the bank within about a minute; the others
+Other values the bank reports are passed on as they are. `blocked`, `refused`,
+`refunded` and `expired` can take up to about a minute to arrive; the others
 arrive as soon as the bank reports them. The `status` on
 `fiat_account.deposit.received` and `fiat_account.payment.sent` is the status at
 that moment and does not change; follow later steps through
