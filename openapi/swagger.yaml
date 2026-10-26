@@ -10171,6 +10171,21 @@ components:
             Destination-chain transaction hash after a send-out completes.
             Present only for on-ramp orders with `send_out_completed` status.
           example: "0xd413bf3b8fe3b1d86b1e6d4c40a82eb8c94824202ff9a010161301400ab1552d"
+        payment_deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            On-ramp only: the moment the order can be cancelled for want of the customer's fiat.
+            Tell the customer to pay before it. The order is cancelled shortly after it (`cancelled`,
+            "Payment window expired"): on your next read of the order, and an `own_account` order
+            within about 20 minutes even if nobody reads it. A transfer that arrives after this moment but before the cancellation may
+            still complete the order; that is possible, not guaranteed. One that arrives after the
+            cancellation stays on the customer's account and can be used with `pay-from-balance` on a
+            new order. Extended along with the window.
+            Set while the order is `awaiting_fiat_transfer`, `null` otherwise — and always `null`
+            on an off-ramp, and on an order held for manual handling (it does not expire). UTC.
+          example: "2026-10-24T09:12:30Z"
         recipient_context:
           allOf:
             - $ref: '#/components/schemas/PartnerRecipientContext'
@@ -10673,6 +10688,13 @@ components:
                     it is always `""`. On an order with `payout_via_own_account: true` it is the payment
                     details you named, the bank the money is sent on to.
                   example: "987"
+                payment_deadline_at:
+                  type: string
+                  format: date-time
+                  description: >-
+                    `order.status.changed` for an on-ramp at `awaiting_fiat_transfer`: the same
+                    `payment_deadline_at` as the order. Omitted on every other event.
+                  example: "2026-10-24T09:12:30Z"
                 payout_via_own_account:
                   type: boolean
                   description: >-
