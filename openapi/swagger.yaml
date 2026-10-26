@@ -6650,7 +6650,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/WebhookErrorResponse'
               example:
                 success: false
                 error: "since must be an RFC 3339 timestamp, e.g. 2026-10-26T00:00:00Z"
@@ -6718,7 +6718,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/WebhookErrorResponse'
               example:
                 success: false
                 error: "WEBHOOK_DISABLED"
@@ -6729,7 +6729,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/WebhookErrorResponse'
               example:
                 success: false
                 error: "Webhook event not found"
@@ -6738,7 +6738,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/WebhookErrorResponse'
               example:
                 success: false
                 error: "Webhook event is being delivered right now; retry shortly"
@@ -11575,6 +11575,20 @@ components:
           type: string
           nullable: true
           description: Pass as `cursor` for the next page. Set on every non-empty page.
+
+    WebhookErrorResponse:
+      type: object
+      description: The error shape the partner webhook endpoints answer with.
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "since must be an RFC 3339 timestamp, e.g. 2026-10-26T00:00:00Z"
 
     PartnerErrorResponse:
       type: object
