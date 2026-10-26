@@ -278,14 +278,14 @@ These events come in the same envelope and with the same signature as
 | `event_type` | Fired when | `data` |
 | --- | --- | --- |
 | `fiat_account.updated` | The account's status changed. No money moved. | `fiat_account_id`, `user_uuid`, `status`, `currency` |
-| `fiat_account.deposit.received` | Money arrived on the account. Not sent for a credit matched to exactly one off-ramp paid through the account (see `order.own_account_payout.updated`). | `fiat_account_id`, `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
+| `fiat_account.deposit.received` | Money arrived on the account. Not sent for a credit matched to exactly one off-ramp paid through the account (see `order.own_account_payout.updated`). | `fiat_account_id`, `holder_type` (`retail`), `user_uuid`, `transaction_id`, `amount`, `currency`, `order_id` (nullable) |
 | `order.own_account_payout.updated` | An off-ramp paid through the account was sent on to the bank, or stopped on the account. See [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account). | `order_id`, `user_uuid`, `own_account_payout_status`, `fiat_account_id` (omitted when none), `amount`, `currency` |
 
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
 no per-event subscription.
 
 Accounts of business customers send `fiat_account.deposit.received` too, with
-`holder_type: business` and a different `data`. See
+`holder_type: business`, and `fiat_account.payment.sent` when money leaves. See
 [Business customers: Webhooks](./api-reference/business-customers.md#webhooks).
 
 ## Paying for an on-ramp from the account

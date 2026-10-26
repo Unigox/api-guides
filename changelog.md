@@ -4,7 +4,7 @@ Notable changes to the Unigox partner API, newest first.
 
 ## Unreleased
 
-**Webhooks for business customers' accounts.** Every bank transfer in or out of a company's account is pushed to your webhook: `fiat_account.deposit.received` (with `holder_type: business`) for money in, and the new `fiat_account.payment.sent` for money out. Both carry `payment_id`, the same `id` as on `…/payments`, plus amount, currency, counterparty and reference. They are signed and retried like order events. See [Business customers: Webhooks](./api-reference/business-customers.md#webhooks).
+**Webhooks for business customers' accounts.** Every bank transfer in or out of a company's account is pushed to your webhook: `fiat_account.deposit.received` (with `holder_type: business`) for money in, and the new `fiat_account.payment.sent` for money out. Both carry `payment_id`, the same `id` as on `…/payments`, plus amount, currency, counterparty and description. They are signed and retried like order events. The retail `fiat_account.deposit.received` now also carries `holder_type: retail`. See [Business customers: Webhooks](./api-reference/business-customers.md#webhooks).
 
 ## 2026-10-20
 

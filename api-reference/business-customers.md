@@ -73,10 +73,10 @@ X-API-Key: <your key>
 Content-Type: application/json
 
 {
-  "legal_name": "HFWM LTD",
+  "legal_name": "NORTHWIND TRADING LTD",
   "country_of_incorporation": "GB",
   "registration_number": "12345678",
-  "representative_email": "director@hfwm.example",
+  "representative_email": "director@northwind.example",
   "external_ref": "crm-8812",
   "invitation_expiry_days": 7
 }
@@ -99,7 +99,7 @@ then `expires_at` says when it does, and otherwise it is `null`.
       "status": "not_started",
       "can_open_accounts": false,
       "external_ref": "crm-8812",
-      "company": { "legal_name": "HFWM LTD", "country_of_incorporation": "GB", "registration_number": "12345678" }
+      "company": { "legal_name": "NORTHWIND TRADING LTD", "country_of_incorporation": "GB", "registration_number": "12345678" }
     },
     "onboarding_link": {
       "url": "https://unigox.com/kyb/onboarding/…",
@@ -151,8 +151,8 @@ the call answers `409 CURRENCY_ALREADY_ISSUED`. Before approval it answers
       "business_customer_id": "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b",
       "currency": "GBP",
       "status": "active",
-      "holder_name": "HFWM LTD",
-      "bank_holder_name": "HFWM LTD",
+      "holder_name": "NORTHWIND TRADING LTD",
+      "bank_holder_name": "NORTHWIND TRADING LTD",
       "account_number": "12345678",
       "sort_code": "040004",
       "bank_name": "…",
@@ -209,7 +209,7 @@ separately; one that is not answers `403 CAPABILITY_NOT_GRANTED`.
       "direction": "to_partner",
       "amount": "1500.00",
       "currency": "GBP",
-      "status": "confirmed",
+      "status": "completed",
       "replayed": false,
       "idempotency_key": "7d1f0c9e-2b44-4d3e-9a51-0f6c2a1b8e77"
     }
@@ -230,9 +230,14 @@ reconciliation.
 Every bank transfer in or out of a company's account is also pushed to your
 webhook, so you do not have to poll `…/payments`. The events come in the same
 envelope and with the same signature as `order.status.changed`
-(`X-Unigox-Signature`, `X-Unigox-Timestamp`), and are retried the same way until
-your endpoint answers `2xx`. Register the endpoint with
-`POST /api/v1/partner/webhooks`; there is no per-event subscription.
+(`X-Unigox-Signature`, `X-Unigox-Timestamp`), and are retried the same way
+(up to 10 attempts over about 3.5 days) until your endpoint answers `2xx`.
+Register the endpoint with `POST /api/v1/partner/webhooks`; there is no
+per-event subscription. `POST /api/v1/partner/webhooks/test` sends a signed test
+event.
+
+Moves you make yourself with `transfer-to-partner` or `fund` are not bank
+transfers and do not send these events; read them on `…/ledger`.
 
 | `event_type` | Fired when |
 | --- | --- |
@@ -250,24 +255,33 @@ Both carry the same `data`:
     "fiat_account_id": "business_412",
     "holder_type": "business",
     "business_customer_id": "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b",
-    "holder_name": "HFWM LTD",
+    "holder_name": "NORTHWIND TRADING LTD",
     "payment_id": "5f0c…",
+    "transaction_id": "5f0c…",
+    "order_id": null,
     "direction": "incoming",
     "amount": "14500.00",
     "currency": "GBP",
     "status": "confirmed",
     "counterparty_name": "ACME LTD",
     "counterparty_iban": "GB29NWBK60161331926819",
-    "reference": "INV 42",
+    "description": "INV 42",
     "occurred_at": "2026-10-26T09:14:58Z"
   }
 }
 ```
 
 - `payment_id` is the `id` of the same transfer on `…/payments`.
+  `transaction_id` repeats it and `order_id` is always `null`, so a handler
+  written for the retail `fiat_account.deposit.received` reads these too. Branch
+  on `holder_type` (`retail` or `business`).
+- `amount` is always positive; `direction` (`incoming` or `outgoing`) says
+  which way the money moved.
 - `counterparty_*` is the payer on an incoming transfer and the beneficiary on
-  an outgoing one. `status`, `counterparty_*`, `reference` and `occurred_at` are
-  left out when the bank did not report them.
+  an outgoing one. `holder_name`, `status`, `counterparty_*`, `description` and
+  `occurred_at` are left out when blank or not reported.
+- `status` is the bank's status when the event was sent, and is not updated
+  later. Read the final status on `…/payments`.
 - Delivery is at least once. `event_id` is the same for every delivery of one
   transfer, so de-duplicate on it.
 - A transfer that happened while your webhook was off is not sent later. Use
