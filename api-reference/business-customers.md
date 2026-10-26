@@ -227,9 +227,6 @@ reconciliation.
 
 ## Webhooks
 
-> **Not available yet.** These events are being rolled out; until then, read
-> `…/payments` and `GET …/business-customers/{business_customer_id}`.
-
 What happens to your business customers is pushed to your webhook, so you do
 not have to poll. The events come in the same envelope and with the same
 signature as `order.status.changed` (`X-Unigox-Signature`,
@@ -405,12 +402,6 @@ All the events on this page are listed. The retail
   is `200` with `"delivered": true` when your endpoint answered 2xx, and
   `"delivered": false` with its `http_status` (or `null` if it did not answer)
   otherwise.
-- In the sandbox (`https://api-staging.unigox.com`),
-  `POST …/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/simulate-deposit`
-  with `{"amount": "100.00", "sender_name": "ACME LTD", "reference": "INV 42"}`
-  makes a real sandbox bank transfer into the account, so you receive the real
-  `fiat_account.deposit.received` and `fiat_account.payment.updated` and see the
-  payment on `…/payments`. It does not exist in production.
 
 ## Your operating account
 
