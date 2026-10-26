@@ -145,6 +145,8 @@ tags:
       | `fiat_account.updated` | An issued fiat account changes status. No money moved. |
       | `fiat_account.deposit.received` | Money arrived on an issued fiat account. Not sent for a credit matched to exactly one off-ramp paid through that account, which `order.own_account_payout.updated` covers. A business customer's account sends it with `holder_type: business` |
       | `fiat_account.payment.sent` | Money left a business customer's account |
+      | `fiat_account.payment.updated` | A transfer on a business customer's account reached a new status (pending, held, refused, returned…) |
+      | `business_customer.kyb.updated` | A business customer's KYB status changed |
       | `order.own_account_payout.updated` | An off-ramp paid through the customer's own fiat account was sent on to the bank, or stopped on the account |
       | `wallet.linked` | An external-wallet customer linked their address |
       | `wallet.deposit.received` | A bridge payment was credited to a linked customer wallet on XAI |
@@ -216,7 +218,8 @@ tags:
       cannot be tied to a single order.
       `fiat_account.updated` carries `fiat_account_id`, `user_uuid`, `status` and `currency`.
       A business customer's account sends `fiat_account.deposit.received` (with `holder_type: business`)
-      and `fiat_account.payment.sent` with a different `data`; see Business customers, Webhooks.
+      and `fiat_account.payment.sent` / `fiat_account.payment.updated` with a different `data`; see
+      Business customers, Webhooks.
 
       **Payload shape — `order.own_account_payout.updated`**
 
@@ -10308,7 +10311,7 @@ components:
             order whose crypto is stuck in escrow awaiting your signature, `order.own_account_payout.updated`
             for the onward payment of an off-ramp paid through the customer's own fiat account (see the
             Webhooks section).
-          enum: [order.status.changed, order.refund.required, order.own_account_payout.updated, fiat_account.updated, fiat_account.deposit.received, fiat_account.payment.sent, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
+          enum: [order.status.changed, order.refund.required, order.own_account_payout.updated, fiat_account.updated, fiat_account.deposit.received, fiat_account.payment.sent, fiat_account.payment.updated, business_customer.kyb.updated, wallet.linked, wallet.deposit.received, wallet.withdrawal.status.changed]
           example: "order.status.changed"
         created_at:
           type: string

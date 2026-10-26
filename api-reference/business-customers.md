@@ -127,6 +127,9 @@ case stands:
 - `identity_verifications`: each director's or owner's identity check, with
   `verification_url` to resend if they lost it.
 
+Every change of `status` is also pushed to your webhook as
+`business_customer.kyb.updated` (see [Webhooks](#webhooks)).
+
 ### 3. Issue an account
 
 ```http
@@ -225,26 +228,29 @@ reconciliation.
 ## Webhooks
 
 > **Not available yet.** These events are being rolled out; until then, read
-> `…/payments`.
+> `…/payments` and `GET …/business-customers/{business_customer_id}`.
 
-Every bank transfer in or out of a company's account is also pushed to your
-webhook, so you do not have to poll `…/payments`. The events come in the same
-envelope and with the same signature as `order.status.changed`
-(`X-Unigox-Signature`, `X-Unigox-Timestamp`), and are retried the same way
-(up to 10 attempts over about 3.5 days) until your endpoint answers `2xx`.
-Register the endpoint with `POST /api/v1/partner/webhooks`; there is no
-per-event subscription. `POST /api/v1/partner/webhooks/test` sends a signed test
-event.
-
-Moves you make yourself with `transfer-to-partner` or `fund` are not bank
-transfers and do not send these events; read them on `…/ledger`.
+What happens to your business customers is pushed to your webhook, so you do
+not have to poll. The events come in the same envelope and with the same
+signature as `order.status.changed` (`X-Unigox-Signature`,
+`X-Unigox-Timestamp`), and are retried the same way (up to 10 attempts over
+about 3.5 days) until your endpoint answers `2xx`. Register the endpoint with
+`POST /api/v1/partner/webhooks`; there is no per-event subscription.
 
 | `event_type` | Fired when |
 | --- | --- |
-| `fiat_account.deposit.received` | Money arrived on a company's account. `holder_type` is `business`. |
-| `fiat_account.payment.sent` | Money left a company's account. |
+| `fiat_account.deposit.received` | Money arrived on a company's account (`status` `confirmed`). `holder_type` is `business`. |
+| `fiat_account.payment.sent` | Money left a company's account (`status` `sent`). |
+| `fiat_account.payment.updated` | A transfer in or out reached a new status: pending, held, refused, returned… One event per status. |
+| `business_customer.kyb.updated` | A company's KYB `status` changed. |
 
-Both carry the same `data`:
+Moves you make yourself with `transfer-to-partner` or `fund` are not bank
+transfers and do not send the `fiat_account.*` events; read them on
+`…/ledger`.
+
+### Transfers
+
+The three `fiat_account.*` events carry the same `data`:
 
 ```json
 {
@@ -263,6 +269,7 @@ Both carry the same `data`:
     "amount": "14500.00",
     "currency": "GBP",
     "status": "confirmed",
+    "rail": "faster_payments",
     "counterparty_name": "ACME LTD",
     "counterparty_iban": "GB29NWBK60161331926819",
     "description": "INV 42",
@@ -277,15 +284,69 @@ Both carry the same `data`:
   on `holder_type` (`retail` or `business`).
 - `amount` is always positive; `direction` (`incoming` or `outgoing`) says
   which way the money moved.
+- `rail` is the payment scheme: `faster_payments`, `sepa`, `sepa_instant`,
+  `swift`.
 - `counterparty_*` is the payer on an incoming transfer and the beneficiary on
-  an outgoing one. `holder_name`, `status`, `counterparty_*`, `description` and
+  an outgoing one. `holder_name`, `rail`, `counterparty_*`, `description` and
   `occurred_at` are left out when blank or not reported.
-- `status` is the bank's status when the event was sent, and is not updated
-  later. Read the final status on `…/payments`.
+
+**Statuses.** `fiat_account.payment.updated` is sent once for every status a
+transfer reaches, so you can follow it end to end:
+
+| `status` | Meaning |
+| --- | --- |
+| `pending` | The bank has the transfer; not yet credited or sent. |
+| `confirmed` | Incoming: credited to the account. Same moment as `fiat_account.deposit.received`. |
+| `settled` | Incoming: final settlement with the sending bank. |
+| `sent` | Outgoing: left the account. Same moment as `fiat_account.payment.sent`. |
+| `blocked` | Held for review by the bank. |
+| `refused`, `failed`, `expired` | Did not go through. |
+| `processing_refund`, `refunded` | Returned to the sender. |
+
+Other values the bank reports are passed on as they are. `held`, `refused` and
+`returned` steps are picked up from the bank within about a minute; the others
+arrive as soon as the bank reports them. The `status` on
+`fiat_account.deposit.received` and `fiat_account.payment.sent` is the status at
+that moment and does not change; follow later steps through
+`fiat_account.payment.updated`, or read `…/payments`.
+
+### KYB
+
+```json
+{
+  "event_id": "evt_kyb_3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b_approved_1793009730123",
+  "event_type": "business_customer.kyb.updated",
+  "created_at": "2026-10-26T10:15:30.123Z",
+  "data": {
+    "business_customer_id": "3f6b2a10-9c1e-4d7a-8b2f-1c2d3e4f5a6b",
+    "external_ref": "ER-CUST-77",
+    "status": "approved",
+    "previous_status": "manual_review",
+    "can_open_accounts": true,
+    "action_owner": "none",
+    "action_type": "decided",
+    "action_reason": "Approved",
+    "decided_at": "2026-10-26T10:15:30.000Z",
+    "updated_at": "2026-10-26T10:15:30.123Z"
+  }
+}
+```
+
+- One event per change of `status` (the values listed in
+  [Follow the KYB](#2-follow-the-kyb)), including the review steps, so a
+  submission often sends `submitted`, `automated_review` and `manual_review`
+  within seconds.
+- `external_ref`, `previous_status`, `action_*` and `decided_at` are left out
+  when not set. Read `GET …/business-customers/{business_customer_id}` for the
+  open `information_requests`.
+
+### Delivery
+
 - Delivery is at least once. `event_id` is the same for every delivery of one
-  transfer, so de-duplicate on it.
-- A transfer that happened while your webhook was off is not sent later. Use
-  `…/payments` to catch up.
+  event, so de-duplicate on it.
+- An event raised while your webhook was off is not sent later. Use
+  `…/payments` and `GET …/business-customers/{business_customer_id}` to catch
+  up.
 
 ## Your operating account
 
