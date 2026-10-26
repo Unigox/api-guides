@@ -346,6 +346,9 @@ that moment and does not change; follow later steps through
   event, so de-duplicate on it.
 - An event raised while your webhook was off is not sent on its own, but it is
   kept: read it back, or have it sent again, as below.
+- Webhooks are not sent from fixed IP addresses, so do not allowlist by IP.
+  Verify `X-Unigox-Signature` with your webhook secret and reject a request
+  whose `X-Unigox-Timestamp` is more than a few minutes old.
 
 ### Catching up
 
