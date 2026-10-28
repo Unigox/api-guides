@@ -3366,7 +3366,7 @@ paths:
         - **`payment_request` on-ramp** (`payment_request: true` in the order response): required. The vendor
           sends a payment request (e.g. M-Pesa push) to the end-user, so the end-user's account details must be
           submitted first. Accepted while the order is `awaiting_vendor_escrow_funding`.
-        - **Regular on-ramp**: optional. The end-user sends the transfer to the account in `vendor_payment_details`.
+        - **Regular on-ramp**, currently THB only: optional. The end-user sends the transfer to the account in `vendor_payment_details`.
           If you know the bank account the end-user will pay from, submit it here: the incoming transfer is then
           matched to the order by the sender's account, so two customers paying the same amount at the same time
           are still told apart. Without it, matching works as before. Accepted while the order is
