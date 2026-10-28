@@ -3249,6 +3249,8 @@ paths:
             example:
               quote_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
               reference_id: "your-internal-order-id"
+              payer_account:
+                account_number: "1822611806"
       responses:
         '200':
           description: >-
@@ -9813,6 +9815,26 @@ components:
             the nearest whole hour and never below `1`. `null` on an instant quote.
           example: 24
 
+    PayerAccount:
+      type: object
+      description: |
+        On-ramp only, optional. The bank account the customer pays FROM, as you know it in your app.
+        When present, the incoming transfer is matched to the order by this account first, so two
+        customers paying the same amount at the same time are not confused. Without it the transfer is
+        matched by the exact amount only. Must be the customer's own account the transfer will come
+        from; a transfer from a different account is not matched to the order on amount.
+      required: [account_number]
+      properties:
+        account_number:
+          type: string
+          description: Account number. Spaces and dashes are ignored; 6 to 20 digits.
+          example: "182-2-61180-6"
+        bank_code:
+          type: string
+          maxLength: 32
+          description: Optional bank identifier, for your own reference.
+          example: "kbank"
+
     PartnerInitiateRequest:
       type: object
       required: [quote_id]
@@ -9826,10 +9848,16 @@ components:
           type: string
           description: Optional partner-supplied external reference ID (e.g. your internal order ID). Stored on the order and echoed back in responses.
           example: "your-internal-order-id"
+        payer_account:
+          $ref: '#/components/schemas/PayerAccount'
 
     PartnerInitiateResponse:
       type: object
       properties:
+        payer_account:
+          allOf:
+            - $ref: '#/components/schemas/PayerAccount'
+          description: On-ramp only. The declared sending account as stored (digits only). Omitted when none was declared.
         order_id:
           type: string
           format: uuid
@@ -9906,6 +9934,10 @@ components:
     PartnerOrderResponse:
       type: object
       properties:
+        payer_account:
+          allOf:
+            - $ref: '#/components/schemas/PayerAccount'
+          description: On-ramp only. The declared sending account as stored (digits only). Omitted when none was declared.
         order_id:
           type: string
           format: uuid
@@ -10937,7 +10969,16 @@ components:
       description: |
         Submit the payer's payment details for a `payment_request` on-ramp order.
         Provide exactly one of `payment_details_id` (saved profile) or `payment_details` (inline object).
+
+        On any on-ramp order you can instead (or additionally) send `payer_account`: the customer's
+        sending bank account, used to match their transfer. Accepted while the order is still awaiting
+        the transfer (`created`, `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer`,
+        `fiat_transfer_pending`).
       oneOf:
+        - required: [payer_account]
+          properties:
+            payer_account:
+              $ref: '#/components/schemas/PayerAccount'
         - required: [payment_details_id]
           properties:
             payment_details_id:

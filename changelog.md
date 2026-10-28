@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-28
+
+**Declare the customer's sending account on an on-ramp.** On-ramp orders take an optional `payer_account` (`account_number`, optional `bank_code`).
+
+- Send it on `POST /api/v1/partner/onramp/initiate`, or later with `POST /api/v1/partner/orders/{order_id}/submit-payer-details` while the order still awaits the customer's transfer.
+- The customer's transfer is then matched to the order by the account it comes from, so two customers paying the same amount at the same time are not confused. Without it, the transfer is matched by the exact amount only, as before.
+- It must be the customer's own account the transfer will come from. A transfer from another account is not matched to that order on amount.
+- The account number may contain spaces and dashes; it must have 6 to 20 digits. It is echoed back as `payer_account` (digits only) on the initiate response and the order.
+- Optional: orders without it work exactly as before.
+
 ## 2026-10-26
 
 **Webhooks for business customers.** Business-customer events are now sent to your webhook, signed and retried like order events. See [Business customers: Webhooks](./api-reference/business-customers.md#webhooks).
