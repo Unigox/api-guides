@@ -3418,9 +3418,9 @@ paths:
                 value:
                   payment_details:
                     details:
-                      full_name: "Somchai Jaidee"
-                      bank_name: "Kasikornbank"
-                      account_number: "1822611806"
+                      full_name: "John Doe"
+                      bank_name: "Example Bank"
+                      account_number: "0123456789"
       responses:
         '200':
           description: Payer details submitted successfully
