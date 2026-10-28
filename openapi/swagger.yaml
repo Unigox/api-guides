@@ -3471,7 +3471,8 @@ paths:
           description: |
             `OPERATION_NOT_ALLOWED`: payer details were already submitted for this order, or the order is past
             the statuses that accept them (a `payment_request` order after `awaiting_vendor_escrow_funding`; a
-            regular on-ramp once the transfer is matched or the order is closed).
+            regular on-ramp once the transfer is matched or the order is closed, or a regular on-ramp in a
+            currency other than THB).
           content:
             application/json:
               schema:
