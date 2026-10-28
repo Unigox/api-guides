@@ -3442,7 +3442,10 @@ paths:
                 data:
                   message: "payer details submitted successfully"
         '400':
-          description: Bad request — invalid or missing payer details
+          description: |
+            `INVALID_REQUEST`: no payer details, both `payment_details_id` and `payment_details`, a saved
+            `payment_details_id` that is not the order's customer's, details on another payment network than the
+            order's, or an off-ramp order.
           content:
             application/json:
               schema:
@@ -3465,16 +3468,29 @@ paths:
                   code: ORDER_NOT_FOUND
                   message: "Order not found"
         '409':
-          description: Order is not in the correct status or not a payment_request order
+          description: |
+            `OPERATION_NOT_ALLOWED`: payer details were already submitted for this order, or the order is past
+            the statuses that accept them (a `payment_request` order after `awaiting_vendor_escrow_funding`; a
+            regular on-ramp once the transfer is matched or the order is closed).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: INVALID_STATUS
-                  message: "Order is not in awaiting_fiat_transfer status"
+              examples:
+                already_submitted:
+                  summary: Payer details already submitted
+                  value:
+                    success: false
+                    error:
+                      code: OPERATION_NOT_ALLOWED
+                      message: "buyer payment details already submitted"
+                past_accepted_status:
+                  summary: Regular on-ramp past the customer's transfer
+                  value:
+                    success: false
+                    error:
+                      code: OPERATION_NOT_ALLOWED
+                      message: "payer details can only be submitted while the order awaits the customer's transfer"
         '500':
           description: Internal server error
           content:
