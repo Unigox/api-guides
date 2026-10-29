@@ -16,6 +16,16 @@ test("the guide signs a callback URL only when GET /config has callbacks on", ()
   for (const part of ["memoLimits.maxCallbackUrlBytes", "webhookKeys", '`""`', "validation_callback_url_invalid"]) assert.ok(guide.includes(part), part);
 });
 
+test("SEC-DOCS-30: the reference's allocation example and reassignment sign a callback URL only when GET /config has callbacks on", () => {
+  assert.doesNotMatch(reference, /requests require a reachable public HTTPS receiver/);
+  assert.doesNotMatch(reference, /lock request containing the new invoice reference and callback URL\./);
+  assert.match(reference, /const \{memoLimits, webhookKeys\} = await configResponse\.json\(\);/);
+  assert.match(reference, /const callbacksAvailable = memoLimits\.maxCallbackUrlBytes > 0 && webhookKeys\?\.length > 0;/);
+  assert.match(reference, /callbackUrl: callbacksAvailable \? "https:\/\/merchant\.example\/webhooks\/unigox" : "",/);
+  assert.doesNotMatch(reference, /^\s+callbackUrl: "https:\/\/merchant\.example\/webhooks\/unigox",$/m, "a signed message with an unconditional callback URL");
+  assert.match(reference, /a `callbackUrl`: your receiver when callbacks are available, otherwise `""`\./);
+});
+
 test("the guide states the reuse rule, the failed relock gap and the precision rule", () => {
   assert.match(guide, /paid in full and at least 24 hours have passed/);
   assert.match(guide, /If the lock after an unlock fails/);

@@ -55,12 +55,14 @@ POST /memo-locks/allocate
 Content-Type: application/json
 ```
 
-The example assumes a connected `walletClient`, merchant `account`, and `invoiceReference`. The callback URL is a placeholder; requests require a reachable public HTTPS receiver.
+The example assumes a connected `walletClient`, merchant `account`, and `invoiceReference`. It signs a callback URL only when `GET /config` reports callbacks available (`memoLimits.maxCallbackUrlBytes` above 0 and at least one `webhookKeys` entry); otherwise it signs `""` and payments are confirmed through wallet history. The URL shown is a placeholder for your public HTTPS receiver.
 
 ```js
 const configResponse = await fetch(`${BRIDGE_BASE_URL}/config`, {cache: "no-store"});
 if (!configResponse.ok) throw new Error("bridge_config_unavailable");
-const {memoLimits} = await configResponse.json();
+const {memoLimits, webhookKeys} = await configResponse.json();
+// Sign a callback URL only when callbacks are available; a URL while they are not is refused with 400.
+const callbacksAvailable = memoLimits.maxCallbackUrlBytes > 0 && webhookKeys?.length > 0;
 const deadline = (
   BigInt(memoLimits.serverTimeSeconds) + BigInt(memoLimits.maxWriteDeadlineSeconds)
 ).toString();
@@ -89,7 +91,7 @@ const message = {
   chainType: "evm",
   memo: invoiceReference,
   expiresAt: "0",
-  callbackUrl: "https://merchant.example/webhooks/unigox",
+  callbackUrl: callbacksAvailable ? "https://merchant.example/webhooks/unigox" : "",
   nonce: "0x" + Array.from(random, b => b.toString(16).padStart(2, "0")).join(""),
   deadline,
 };
@@ -368,7 +370,7 @@ Both endpoints accept `{chainId, message, signature}` with the corresponding sig
 
 Only the owner can change an association. Each address supports one active lock. Unlocking does not reject incoming transfers, initiate refunds or cancel earlier credits.
 
-Address reassignment requires a successful `memo_unlocked` response followed by a lock request containing the new invoice reference and callback URL. Each request requires a fresh nonce. Reassignment saves an `ACTIVE` lock with a new `lockId`; payments on a selected network require its monitoring confirmation. An expired association can be replaced directly with a lock request.
+Address reassignment requires a successful `memo_unlocked` response followed by a lock request containing the new invoice reference and a `callbackUrl`: your receiver when callbacks are available, otherwise `""`. Each request requires a fresh nonce. Reassignment saves an `ACTIVE` lock with a new `lockId`; payments on a selected network require its monitoring confirmation. An expired association can be replaced directly with a lock request.
 
 Deposit attribution uses the on-chain timestamp. Deposits between locks have no memo; deposits within a lock's window carry that lock's reference. Delayed events retain the lock ID associated with the deposit.
 
