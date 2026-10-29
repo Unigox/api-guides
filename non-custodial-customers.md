@@ -33,11 +33,15 @@ Every customer you create has a `wallet_type`, fixed when you create them:
 | `wallet_type` | Whose address holds the money | Who signs |
 | --- | --- | --- |
 | `partner_wallet` (default) | your partner wallet | you |
-| `external_wallet` | the customer's own EVM address | the customer |
+| `external_wallet` | the customer's own EVM address | the customer, in your app |
+| `unigox_wallet` | the customer's own Unigox wallet | the customer, on the Unigox site |
 
 Customers you already have are `partner_wallet` and stay that way. A customer
 cannot switch type. To move someone to the non-custodial flow, create a new
-`external_wallet` customer for them.
+`external_wallet` or `unigox_wallet` customer for them.
+
+Use `unigox_wallet` when your customers have no wallet of their own. See
+[Customers with a Unigox wallet](#customers-with-a-unigox-wallet).
 
 ## Customers, emails and KYC
 
@@ -366,6 +370,93 @@ Follow it with `GET /users/{user_uuid}/withdrawals/{withdrawal_id}` or the
 | `failed` | Did not take effect on XAI (reverted, or not executed before the quote's deadline). The funds are still on the customer's address. |
 | `needs_review` | Could not be settled automatically, for example the bridge failed after the funds left XAI, or the withdrawal is still open after 24 hours. Unigox reconciles it. |
 
+## Customers with a Unigox wallet
+
+> **Not available yet.** This feature is not live. This notice is removed when it is.
+
+A `unigox_wallet` customer gets their own wallet at Unigox when you create them.
+They do not need a key, an app or a seed phrase. They sign in to Unigox with a
+code sent to their email and approve every movement of their money there. You
+create the operations; only the customer can approve them. Neither you nor
+Unigox can move the money without the customer.
+
+Everything else is the `external_wallet` flow above: the same deposit
+addresses, balance, off-ramp, on-ramp, withdrawal, statuses and webhooks. The
+difference is who signs and where. You never build or sign a `ForwardRequest`
+for this customer. Instead, you send the customer to an approval page.
+
+**What you need first.** Unigox wallets switched on for your partner account.
+This is separate from the `external_wallet` switch. Ask Unigox. Until it is on,
+creating a `unigox_wallet` customer answers `403 FEATURE_NOT_ENABLED`.
+
+### Create the customer
+
+```json
+{
+  "user_ref": "your-customer-id-42",
+  "email": "customer@example.com",
+  "wallet_type": "unigox_wallet"
+}
+```
+
+The wallet is created with the customer. The response carries
+`"wallet_type": "unigox_wallet"` and
+`"wallet": { "address": "0x…", "status": "active" }`. If wallet creation fails,
+the call answers `502 WALLET_PROVISIONING_FAILED`; send the same request again
+to finish it.
+
+The **email is how the customer signs in**, so it must be the customer's own
+address, and you are responsible for getting it right. It cannot be changed
+after the wallet is created. To serve a customer at another address, create a
+new customer.
+
+The wallet calls work as for `external_wallet`: `GET /users/{user_uuid}/wallet`
+for the address and balances, and deposit-address allocation. There is no
+address to link: the link calls answer `422 WALLET_TYPE_MISMATCH`.
+
+### Send the customer to approve
+
+When an operation needs the customer, send them to its approval page. Open it
+in your app (a web view or a new tab), or send them the link.
+
+| Operation | When | Approval page |
+| --- | --- | --- |
+| Off-ramp | after `POST /offramp/initiate` | `https://unigox.com/approve/order/{order_id}?account={user_uuid}` |
+| Withdrawal | after `POST /users/{user_uuid}/withdrawals/quote` | `https://unigox.com/approve/withdrawal/{withdrawal_quote_id}?account={user_uuid}` |
+
+`account` signs the customer in straight to the right account. The customer
+enters the code from their email, sees the amount and the destination, and
+confirms.
+
+- **Off-ramp.** The customer can confirm right after the order is created. The
+  page then waits for a liquidity provider to accept the order, and sends the
+  crypto to the escrow the moment it exists. The customer has to keep the page
+  open until then. If they close it early, nothing is sent and the order expires
+  as usual (`order.status.changed`). Their crypto stays in their wallet.
+  Follow the order through its webhooks as for any order.
+- **Withdrawal.** The page signs exactly the quoted withdrawal. A quote lives
+  10 minutes. If the customer does not confirm in time, request a new quote and
+  send a new link. Follow it through `wallet.withdrawal.status.changed`.
+- **Refund.** If an off-ramp does not complete, the escrow goes back to the
+  customer's wallet. The customer approves the refund on the same order page.
+
+The signing endpoints you use for an `external_wallet` customer
+(`authorize-crypto-transfer`, `authorize-refund`, `POST /users/{user_uuid}/withdrawals`)
+accept only the customer's own signature. You have no key for a
+`unigox_wallet` customer, so the approval page is the only way to submit one.
+
+### The customer's account
+
+A customer of two partners with the same email has one account at each, and
+one wallet at each. When they sign in without `account` in the link, they
+choose the account.
+
+At `https://unigox.com/approve` the customer can sign in at any time, see their
+wallet address and export the wallet's private key, so their money never
+depends on you or on Unigox to be reached. Switching Unigox wallets off for
+your partner account stops new `unigox_wallet` customers only; existing ones
+keep signing in.
+
 ## Amounts
 
 Amounts are decimal strings. Withdrawal amounts carry the token's full
@@ -401,7 +492,7 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 | --- | --- | --- |
 | `INVALID_REQUEST` | 400 | A malformed request or address, an unsupported chain or token, too many decimals, a destination the chain cannot pay (`error.details.reason` says why, e.g. `validation_solana_recipient_off_curve`), or a submitted withdrawal that differs from its quote. |
 | `INVALID_SIGNATURE` | 400 | The challenge signature does not recover to the address, the message was changed, or `address` differs from the challenged one. |
-| `FEATURE_NOT_ENABLED` | 403 | Creating an `external_wallet` customer while non-custodial mode is off for your partner account. |
+| `FEATURE_NOT_ENABLED` | 403 | Creating an `external_wallet` customer while non-custodial mode is off for your partner account, or a `unigox_wallet` customer while Unigox wallets are off. |
 | `CUSTOMER_NOT_FOUND` | 404 | No such customer, or not yours. |
 | `WITHDRAWAL_NOT_FOUND` | 404 | No such withdrawal, or a quote that was never submitted. |
 | `WALLET_NOT_LINKED` | 409 | The customer has no linked address yet. |
@@ -420,6 +511,7 @@ one address is linked at two partners, both receive `wallet.deposit.received`.
 | `TRANSACTOR_ERROR` | 502 | A request that passed every check could not be sent on chain, or a refund could not be executed. Retry. |
 | `BALANCE_UNAVAILABLE` | 502 | `GET /users/{user_uuid}/wallet` could not read the XAI balance. Safe to retry. (A withdrawal quote in the same case answers `500 INTERNAL_ERROR`.) |
 | `BRIDGE_UNAVAILABLE` | 503 | A withdrawal quote could not get a bridge quote for the destination. Safe to retry. |
+| `WALLET_PROVISIONING_FAILED` | 502 | The wallet of a new `unigox_wallet` customer could not be created. Send the same create request again. |
 | `DEPOSIT_ADDRESSES_UNAVAILABLE` | 502 | Deposit addresses could not be read, or an allocation failed before it was sent. Safe to retry. |
 | `DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN` | 502 | An allocation was sent but its outcome is unknown. **Do not repeat it**: read `GET /users/{user_uuid}/deposit-addresses` first. |
 | `DEPOSIT_ADDRESS_NOT_WATCHED` | 503 | Addresses were allocated (returned in `data.deposit_addresses`) but monitoring is not confirmed yet. Do not allocate again; check `GET /users/{user_uuid}/deposit-addresses` before showing them for payment. |

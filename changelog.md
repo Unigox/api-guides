@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## Unreleased
+
+**Customers with a Unigox wallet.** `wallet_type: unigox_wallet` gives a customer their own wallet at Unigox. The customer signs in to Unigox with a code sent to their email and approves every off-ramp, refund and withdrawal on an approval page. You create the operations; neither you nor Unigox can move the money without the customer. See [Customers with a Unigox wallet](./non-custodial-customers.md#customers-with-a-unigox-wallet).
+
+**A wallet for each business customer.** A company can have a crypto wallet of its own, so its crypto is never held together with your other customers'. Its representative approves every withdrawal from it. See [The company's own wallet](./api-reference/business-customers.md#the-companys-own-wallet).
+
+- `POST /api/v1/partner/business-customers/{business_customer_id}/wallet` creates it, `GET …/wallet` reads it.
+- `POST …/fiat-accounts/{fiat_account_id}/withdraw-to-wallet` sends USDC or USDT from the company's account to its wallet.
+- The wallet is used through its `user_uuid`, like a `unigox_wallet` customer.
+
 ## 2026-10-26
 
 **Webhooks for business customers.** Business-customer events are now sent to your webhook, signed and retried like order events. See [Business customers: Webhooks](./api-reference/business-customers.md#webhooks).

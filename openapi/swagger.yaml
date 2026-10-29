@@ -7391,6 +7391,164 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/wallet:
+    post:
+      tags:
+        - Business Customers
+      summary: Give the company its own wallet
+      operationId: createBusinessCustomerWallet
+      description: |
+        Creates a crypto wallet that belongs to the company. Its representative (the
+        `representative_email` the business customer was created with) signs in at Unigox with a code
+        sent to that email and approves every withdrawal from it. You create operations; you cannot
+        sign them, and neither can Unigox.
+
+        The wallet is addressed as a customer: use `user_uuid` with `GET /api/v1/partner/users/{user_uuid}/wallet`,
+        the deposit-address routes and the withdrawal routes, exactly as for an individual `unigox_wallet` customer.
+
+        The KYB must be approved. Enabled per partner. Idempotent: `201` the first time, then `200` with
+        the same wallet. A `pending` wallet is finished by repeating the request.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessWalletResponse'
+        '200':
+          description: The company already has this wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessWalletResponse'
+        '403':
+          description: Wallets are not enabled for you (`FEATURE_NOT_ENABLED`, `CAPABILITY_NOT_GRANTED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: No such business customer (`BUSINESS_CUSTOMER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: The KYB is not approved, or the company has no representative email (`KYB_NOT_APPROVED`, `REPRESENTATIVE_EMAIL_REQUIRED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: The wallet could not be created yet; repeat the same request (`WALLET_PROVISIONING_FAILED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+    get:
+      tags:
+        - Business Customers
+      summary: Read the company's wallet
+      operationId: getBusinessCustomerWallet
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+      responses:
+        '200':
+          description: The wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessWalletResponse'
+        '404':
+          description: No such business customer, or it has no wallet yet (`BUSINESS_CUSTOMER_NOT_FOUND`, `WALLET_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/withdraw-to-wallet:
+    post:
+      tags:
+        - Business Customers
+      summary: Send crypto from the account to the company's wallet
+      operationId: withdrawBusinessFiatAccountToWallet
+      description: |
+        Sends `amount` USDC or USDT held on the company's account to the company's own wallet. The
+        network fee is taken from the account on top of `amount`. The destination is always the
+        company's wallet; no other address can be named. Requires an `Idempotency-Key` header; a retry
+        with the same key resumes or answers the first attempt and moves nothing twice.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BusinessCustomerId'
+        - $ref: '#/components/parameters/BusinessFiatAccountId'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessWithdrawToWalletRequest'
+      responses:
+        '200':
+          description: Submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessWithdrawToWalletResponse'
+        '400':
+          description: No idempotency key (`IDEMPOTENCY_KEY_REQUIRED`) or a bad amount or currency (`INVALID_REQUEST`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '403':
+          description: Moving funds is not enabled for you (`CAPABILITY_NOT_GRANTED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: No such account under this customer (`FIAT_ACCOUNT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: The key was used for a different transfer, is still running, or is held for reconciliation (`IDEMPOTENCY_KEY_CONFLICT`, `TRANSFER_IN_PROGRESS`, `TRANSFER_UNRECONCILED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: The company has no active wallet, or the balance does not cover amount plus fee (`WALLET_NOT_FOUND`, `INSUFFICIENT_FUNDS`, `NO_OPERATING_ACCOUNT`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '502':
+          description: The balance moved to your operating account but the crypto did not leave it; repeat with the same key (`WITHDRAWAL_FAILED_AFTER_TRANSFER`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '503':
+          description: Withdrawals are switched off for now; nothing moved (`WITHDRAWALS_DISABLED`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '504':
+          description: The bank did not confirm in time and the withdrawal may still have gone through (`BANKING_TIMEOUT_UNKNOWN`). Do not retry with a new key; contact Unigox support
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
   /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/{fiat_account_id}/fund:
     post:
       tags:
@@ -7541,12 +7699,13 @@ components:
   schemas:
     WalletType:
       type: string
-      enum: [partner_wallet, external_wallet]
+      enum: [partner_wallet, external_wallet, unigox_wallet]
       default: partner_wallet
       description: |
         Whose address holds this customer's funds, fixed at creation.
         - `partner_wallet` — your partner wallet holds them and you sign (default, and every customer created before this field existed).
         - `external_wallet` — the customer's own EVM address holds them and the customer signs. Requires non-custodial mode.
+        - `unigox_wallet` — a wallet Unigox creates for the customer holds them; the customer signs in to Unigox with an email code and approves every movement there. Requires Unigox wallets to be switched on.
       example: external_wallet
 
     CustomerWalletSummary:
@@ -11558,6 +11717,86 @@ components:
         error:
           type: string
           example: "since must be an RFC 3339 timestamp, e.g. 2026-10-26T00:00:00Z"
+
+    BusinessWallet:
+      type: object
+      properties:
+        business_customer_id:
+          type: string
+          format: uuid
+        user_uuid:
+          type: string
+          format: uuid
+          description: The wallet as a customer, for the customer wallet, deposit-address and withdrawal routes.
+        wallet_type:
+          type: string
+          enum: [unigox_wallet]
+        status:
+          type: string
+          enum: [pending, active]
+          description: "`pending` until the wallet exists; repeat the create request to finish it."
+        address:
+          type: string
+          nullable: true
+          example: "0x5237d1c0b4e5a6f8c9d2e3f4a5b6c7d8e9f07d75"
+        representative_email:
+          type: string
+          description: Who signs in and approves. Fixed when the wallet is created.
+        created_at:
+          type: string
+          format: date-time
+    BusinessWalletResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            wallet:
+              $ref: '#/components/schemas/BusinessWallet'
+    BusinessWithdrawToWalletRequest:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: string
+          description: Decimal string. What arrives in the wallet; the network fee is taken on top.
+          example: "1500.00"
+        currency:
+          type: string
+          enum: [USDC, USDT]
+    BusinessWithdrawToWalletResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            withdrawal:
+              type: object
+              properties:
+                fiat_account_id:
+                  type: string
+                destination:
+                  type: string
+                  enum: [business_wallet]
+                amount:
+                  type: string
+                currency:
+                  type: string
+                status:
+                  type: string
+                  enum: [submitted]
+                replayed:
+                  type: boolean
+                idempotency_key:
+                  type: string
 
     PartnerErrorResponse:
       type: object
