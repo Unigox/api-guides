@@ -17,7 +17,7 @@ Notable changes to the Unigox partner API, newest first.
 
 **On a regular THB on-ramp you can tell us which account the customer pays from.** `POST /api/v1/partner/orders/{order_id}/submit-payer-details`, until now only for `payment_request` orders, also takes the customer's own bank account on a regular on-ramp. The incoming transfer is then matched to the order by the sender's account, so two customers paying the same amount at the same time are told apart. It is optional: without it, matching works as before.
 
-- Send it right after initiate, before the customer pays. Accepted while the order is `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer` or `fiat_transfer_pending`, once per order.
+- Send it right after initiate, before the customer pays. Accepted while the order is `awaiting_liquidity_provider`, `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer` or `fiat_transfer_pending`, once per order.
 - Inline `payment_details` needs only `details`: `payment_method_id` and `payment_network_id` default to the order's own.
 - It is not listed in `allowed_actions`, and the order does not wait for it.
 - THB only for now; other currencies answer `409 OPERATION_NOT_ALLOWED`.

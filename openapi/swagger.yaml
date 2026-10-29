@@ -3370,8 +3370,8 @@ paths:
           If you know the bank account the end-user will pay from, submit it here: the incoming transfer is then
           matched to the order by the sender's account, so two customers paying the same amount at the same time
           are still told apart. Without it, matching works as before. Accepted while the order is
-          `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer` or `fiat_transfer_pending`; best sent right
-          after initiate, before the end-user pays. The order does not wait for it, and it does not appear in
+          `awaiting_liquidity_provider`, `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer` or
+          `fiat_transfer_pending`; best sent right after initiate, before the end-user pays. The order does not wait for it, and it does not appear in
           `allowed_actions`.
 
         Payer details can be submitted once per order; a second call answers `409 OPERATION_NOT_ALLOWED`.
@@ -3473,6 +3473,9 @@ paths:
             the statuses that accept them (a `payment_request` order after `awaiting_vendor_escrow_funding`; a
             regular on-ramp once the transfer is matched or the order is closed, or a regular on-ramp in a
             currency other than THB).
+
+            `INVALID_STATUS`: the order is still `awaiting_liquidity_provider` and is not a THB on-ramp; send the
+            payer details again once a liquidity provider has accepted it.
           content:
             application/json:
               schema:
@@ -3492,6 +3495,13 @@ paths:
                     error:
                       code: OPERATION_NOT_ALLOWED
                       message: "payer details can only be submitted while the order awaits the customer's transfer"
+                awaiting_liquidity_provider:
+                  summary: Order not yet accepted, outside THB
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATUS
+                      message: "order is not ready for this action yet: no liquidity provider has accepted it"
         '500':
           description: Internal server error
           content:
