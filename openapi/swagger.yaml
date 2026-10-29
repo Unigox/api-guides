@@ -84,7 +84,9 @@ tags:
       Enabling external-wallet customers controls new customer creation. Existing external-wallet
       customers can still link their wallet, read it and deposit if that permission is later disabled.
       These routes use `X-API-Key` and your customer UUID. Wallet-signed Bridge memo addresses use
-      the separate Bridge payment API; the partner deposit-address routes do not attach memos.
+      the separate
+      [Bridge payment API](https://developers.unigox.com/api-reference/bridge-payments); the partner
+      deposit-address routes do not attach memos.
 
     x-page-icon: user
   - name: On-Ramp

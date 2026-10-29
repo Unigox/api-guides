@@ -1,6 +1,6 @@
 # Bridge payment addresses and credited webhooks
 
-API reference for [crypto payments on EVM, TON, Solana and Tron](../crypto-payments.md). Endpoint paths are relative to `BRIDGE_BASE_URL`.
+API reference for [crypto payments on EVM, TON, Solana and Tron](../crypto-payments.md). The Bridge is the Unigox API for crypto payments: it allocates collection addresses, attaches invoice references (memos) to them, settles each payment to the merchant's UNIGOX balance and sends credited webhooks. Endpoint paths are relative to its address, `BRIDGE_BASE_URL`.
 
 ## Authentication
 
@@ -255,7 +255,7 @@ Content-Type: application/json
 {"status":"memo_locks_retrieved","code":200,"data":{"locks":[],"nextBefore":null}}
 ```
 
-A nonempty response contains the same lock objects as allocation, with `monitoring` added to each `ACTIVE` lock. Closed locks do not carry readiness. Optional query fields are strings: `chainType`, `address`, `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`), `limit` (default 50, maximum 100) and `before` (a lock ID). An omitted `chainType` includes all families. `nextBefore` supplies the next page's `before` value; null indicates the final page. The endpoint returns memo associations, not payment history.
+A nonempty response contains the same lock objects as allocation, with `monitoring` added to each `ACTIVE` lock. Closed locks do not carry readiness. Optional query fields are strings: `chainType`, `address`, `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`), `limit` (default 50, maximum 100) and `before` (a lock ID). An omitted `chainType` includes all families; an omitted `status` includes locks in every status. Locks are ordered by descending lock ID. `nextBefore` is the last lock ID of a full page and supplies the next page's `before` value; it is null on a page shorter than `limit`. A final page that is exactly full still returns a cursor, and the request that follows returns no locks and a null `nextBefore`. The endpoint returns memo associations, not payment history.
 
 ## Wallet transaction history
 
@@ -408,7 +408,7 @@ Event example:
 
 ### Environment and event identity
 
-Webhook bodies do not contain `environment`. Event IDs and intent IDs are scoped to the Bridge environment and can repeat between staging and production.
+Webhook bodies do not contain `environment`. Event IDs and intent IDs are unique only within one environment (production or staging) and can repeat between the two.
 
 Use a separate callback URL for each environment, such as `/webhooks/unigox/production` and `/webhooks/unigox/staging`. Each receiver route maps to a fixed environment, Bridge API endpoint and verification-key set. The environment used for deduplication comes from that receiver configuration.
 
@@ -459,10 +459,22 @@ GET /transaction/{fromChain}/{fromTx}?quoteId={quoteId}
 
 The response uses `{status: "found", code: 200, data: {...}}`. `data` includes:
 
-- `quoteId`, `fromChain`, `fromToken`, `fromAmount`, `fromTx`;
-- `toChain`, `toToken`, `toAmount`, `actualToAmount`, `recipientAddress`, `toTx`, `toTxMinedAt`;
-- `status`, `subStatus`, `refund`, `refundTx`;
-- `memoSource`, `memoLockId`, `memoHash`, `depositAddress`.
+- source: `quoteId`, `fromChain`, `fromToken`, `fromAmount`, `fromTx`, `fromTxMinedAt`, `userAddress`;
+- destination: `toChain`, `toToken`, `toAmount`, `actualToAmount`, `recipientAddress`, `toTx`, `toTxSetAt`, `toTxMinedAt`, and `receiving` (`txHash`, `chainId`, `tokenAddress`, `tokenAmount`);
+- state: `status`, `subStatus`, `expectedCompletionSecondsLeft`, `refund`, `refundTx`, `refundTxSetAt`, `refundTxMinedAt`;
+- memo: `memo` (always `null` for a collection-address deposit), `memoSource`, `memoLockId`, `memoHash`, `depositAddress`;
+- `execution`, only for quotes with destination execution.
+
+| `status` | `subStatus` values | Meaning |
+| --- | --- | --- |
+| `CREATED`, `PENDING`, `PROCESSING`, `DEFERRED` | `WAIT_SOURCE_CONFIRMATIONS`, `WAIT_DESTINATION_TRANSACTION`, `BRIDGE_NOT_AVAILABLE`, `CHAIN_NOT_AVAILABLE`, `REFUND_IN_PROGRESS`, `UNKNOWN_ERROR`, or empty | In progress; can still become a credit |
+| `COMPLIANCE_HOLD`, `COMPLIANCE_FROZEN` | not used for the decision | Held for review; can still become a credit after a decision |
+| `DONE` | `COMPLETED` | Settled. A credit only when `refund` is not set |
+| `DONE` | `PARTIAL` | Settled in part, possibly in another token; not a full credit |
+| `DONE` | `REFUNDED` | Returned to the sender; not a credit |
+| `FAILED` | `NOT_PROCESSABLE_REFUND_NEEDED`, `OUT_OF_GAS`, `SLIPPAGE_EXCEEDED`, `INSUFFICIENT_ALLOWANCE`, `INSUFFICIENT_BALANCE`, `UNKNOWN_ERROR`, `EXPIRED`, `REFUND_FAILED`, `REFUND_INSUFFICIENT_BALANCE`, `REFUND_CHAIN_NOT_AVAILABLE` | Not completed; not a credit |
+
+Only `DONE` with `COMPLETED` and no `refund` confirms a payment. Treat any value not listed here as not yet a credit.
 
 `depositAddress` follows the [collection address format rules](#collection-address-formats). Status and history return `null` when no collection address is recorded. Source transaction and token identifiers are returned unchanged.
 
@@ -488,7 +500,9 @@ They are separate fields. In the memo table, route names are relative to `/memo-
 | All memo routes | 400 | `bad_request` | `validation_memo_lock_request_invalid` / `validation_environment_mismatch` | Malformed signed request or wrong environment |
 | `allocate`, `lock`, `unlock` | 400 | `bad_request` | `validation_deadline_invalid` | Submission deadline exceeds the allowed window |
 | `allocate`, `lock` | 400 | `bad_request` | `validation_memo_required` / `validation_expires_at_invalid` | Missing memo or invalid memo expiry |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_callback_url_invalid` | Callbacks are unavailable in this environment (`memoLimits.maxCallbackUrlBytes` is 0), or the URL is not HTTPS on port 443, carries credentials or a fragment, or is too long. Sign `callbackUrl: ""` when callbacks are unavailable |
 | `allocate`, `lock` | 400 | `bad_request` | `validation_callback_url_not_public` | Callback URL does not resolve exclusively to permitted public addresses |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_memo_too_long` / `validation_memo_not_string` / `validation_text_not_well_formed` | Memo longer than `memoLimits.maxMemoBytes` UTF-8 bytes, not a string, or containing NUL or malformed Unicode |
 | Memo writes | 400 | `bad_request` | `memo_not_supported_for_chain` | Address family is unsupported or unavailable for the requested memo operation |
 | `list` | 400 | `bad_request` | `validation_read_authorization_invalid` / `validation_invalid_list_query` | Invalid authorization window or list filter |
 | All memo routes | 401 | `memo_lock_failed` | `memo_lock_signature_invalid` | Signature does not authorize the request |
@@ -503,6 +517,8 @@ They are separate fields. In the memo table, route names are relative to `/memo-
 | `allocate` | 503 | `addresses_not_watched` | `deposit_address_not_watched` | Monitoring confirmation incomplete; the saved address is in `data.allocated` |
 | `lock` | 503 | `addresses_not_watched` | `deposit_address_not_watched` | Monitoring confirmation incomplete for the existing address; no `data` field |
 | All memo routes | 503 | `memo_lock_failed` | `signature_verification_unavailable` | Signature verification temporarily unavailable |
+| All memo routes | 413 | `bad_request` | none | Request body larger than 32 KiB |
+| All memo routes | 500 | `memo_lock_failed` | `internal_error` | Unexpected server error; on `allocate`, follow [Allocation recovery](#allocation-recovery) |
 
 For `POST /transactions/history`:
 
@@ -512,9 +528,22 @@ For `POST /transactions/history`:
 | 401 | `history_failed` | `history_signature_invalid` / `history_authorization_expired` | Signature verification failed or the read authorization expired |
 | 429 | `history_failed` | `rate_limited` | Request or signature-verification limit exceeded |
 | 503 | `history_failed` | `signature_verification_unavailable` | Signature verification temporarily unavailable |
+| 413 | `bad_request` | none | Request body larger than 32 KiB |
+| 500 | `history_failed` | `internal_error` | Unexpected server error; repeat the request later |
 
 The shared IP limiter can reject history requests before the history handler with HTTP 429,
 `status: "memo_lock_failed"` and `details: "rate_limited"`.
+
+For `GET /transaction/{fromChain}/{fromTx}`:
+
+| HTTP | `status` | `details` | Meaning |
+| --- | --- | --- | --- |
+| 400 | `bad_request` | `validation_invalid_quote_id` | `quoteId` is not `0x` followed by 64 hexadecimal digits |
+| 400 | `bad_request` | `validation_invalid_log_index` | `logIndex` is not a decimal string from `"0"` to `"9223372036854775807"` without sign, fraction or leading zero |
+| 404 | `not_found` | `from_tx_not_found` | No matching indexed record yet: the deposit may still be awaiting indexing, or the chain or hash is wrong. Ask again later or use history |
+| 500 | `not_fetched` | `internal_error` | The record could not be read and `data` is an empty array. This says nothing about the payment: ask again later |
+
+For `GET /config`, HTTP 500 with `status: "not_fetched"` and no `data`, `webhookKeys` or `memoLimits` means the configuration could not be read. Keep the keys and limits you already have and read again later.
 These tables list common errors. Validation errors can identify other invalid fields; changing signed fields requires a new signature.
 
 ### Monitoring errors

@@ -2,6 +2,16 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## 2026-10-29
+
+**Crypto payments: when to sign a callback, and every error and status explained.** [Accept crypto payments on EVM, TON, Solana and Tron](./crypto-payments.md) and its [API reference](./api-reference/bridge-payments.md) cover collection addresses with invoice references, settled to your UNIGOX balance on XAI.
+
+- A callback URL is optional. Sign one only when `GET /config` reports callbacks available (`memoLimits.maxCallbackUrlBytes` above 0 and at least one `webhookKeys` entry); otherwise sign `""` and confirm payments through wallet history.
+- The error tables now list `validation_callback_url_invalid`, the memo text errors, 413 and 500, and a new table covers `GET /transaction`: `validation_invalid_quote_id`, `validation_invalid_log_index`, `from_tx_not_found` and `not_fetched`.
+- Transaction status lists all its fields and every `status` and `subStatus` value. Only `DONE` / `COMPLETED` without `refund` is a credit.
+- Memo-association lists: an omitted `status` returns locks in every status, and an exactly full last page still returns a cursor.
+- Reassign a collection address only after its invoice was paid in full and 24 hours have passed.
+
 ## 2026-10-26
 
 **Webhooks for business customers.** Business-customer events are now sent to your webhook, signed and retried like order events. See [Business customers: Webhooks](./api-reference/business-customers.md#webhooks).
