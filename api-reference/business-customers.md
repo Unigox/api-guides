@@ -40,13 +40,18 @@ not permitted.
 | Read the book and the bank transfers | `GET …/fiat-accounts/{fiat_account_id}/ledger`, `…/payments` |
 | Move a balance to your operating account | `POST …/fiat-accounts/{fiat_account_id}/transfer-to-partner` |
 | Fund an account from your operating account | `POST …/fiat-accounts/{fiat_account_id}/fund` |
+| Give the company its own crypto wallet, and read it | `POST …/{business_customer_id}/wallet`, `GET …/wallet` |
+| Send crypto from an account to the company's wallet | `POST …/fiat-accounts/{fiat_account_id}/withdraw-to-wallet` |
 
 Not on the API, and done in the B2B console instead:
 
 - **Closing an account.** It cannot be undone; a closed IBAN is never issued
   again.
-- **Withdrawing crypto straight from a company's account.** Move the balance to
-  your operating account with `transfer-to-partner`, then withdraw from there.
+- **Withdrawing crypto from a company's account to your own wallet.** Move the
+  balance to your operating account with `transfer-to-partner`, then withdraw
+  from there. To keep the company's crypto apart from everyone else's, send it
+  to the company's own wallet instead (see
+  [The company's own wallet](#the-companys-own-wallet)).
 
 ## Conventions
 
@@ -225,6 +230,125 @@ If the bank does not confirm a transfer in time, the answer is
 `504 BANKING_TIMEOUT_UNKNOWN`: the transfer may still have gone through. Do
 not retry with a new key. Contact Unigox support; the attempt is held for
 reconciliation.
+
+## The company's own wallet
+
+> **Not available yet.** This feature is not live. This notice is removed when it is.
+
+Each company can have a crypto wallet of its own, so its USDC and USDT never
+sit together with your other customers' money. The wallet belongs to the
+company: its representative approves every withdrawal from it. You create the
+operations; neither you nor Unigox can move the money without the
+representative.
+
+The wallet works like the wallet of an individual `unigox_wallet` customer (see
+[Customers with a Unigox wallet](../non-custodial-customers.md#customers-with-a-unigox-wallet)).
+The representative is the person you named in `representative_email` when you
+created the business customer.
+
+{% hint style="info" %}
+Company wallets are switched on per partner, together with `unigox_wallet`
+customers. Until then, creating one answers `403 FEATURE_NOT_ENABLED`.
+{% endhint %}
+
+### Create the wallet
+
+Once the company's KYB is approved:
+
+```http
+POST /api/v1/partner/business-customers/{business_customer_id}/wallet
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "wallet": {
+      "business_customer_id": "8f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+      "user_uuid": "3b6e1f0a-7c2d-4e9b-a1f5-6d8c0b2a4e71",
+      "wallet_type": "unigox_wallet",
+      "status": "active",
+      "address": "0x5237d1c0b4e5a6f8c9d2e3f4a5b6c7d8e9f07d75",
+      "representative_email": "finance@acme.example",
+      "created_at": "2026-10-29T10:00:00Z"
+    }
+  }
+}
+```
+
+- The first call answers `201`, every later call `200` with the same wallet.
+  A company has one wallet.
+- `status` is `pending` until the wallet exists. If creation fails the call
+  answers `502 WALLET_PROVISIONING_FAILED`; send it again to finish it.
+- `representative_email` is fixed when the wallet is created. Changing the
+  company's email later does not change who approves.
+- `GET …/wallet` reads it, and answers `404 WALLET_NOT_FOUND` before it is
+  created.
+
+### Fill it from the company's account
+
+Convert the company's money to USDC or USDT on its account as usual, then send
+it to the wallet:
+
+```http
+POST /api/v1/partner/business-customers/{business_customer_id}/fiat-accounts/business_412/withdraw-to-wallet
+Idempotency-Key: 0b9e4c1a-6f2d-4a8e-b3c7-5d1e9f0a2b46
+Content-Type: application/json
+
+{ "currency": "USDC", "amount": "1500.00" }
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "withdrawal": {
+      "fiat_account_id": "business_412",
+      "destination": "business_wallet",
+      "amount": "1500.00",
+      "currency": "USDC",
+      "status": "submitted",
+      "replayed": false,
+      "idempotency_key": "0b9e4c1a-6f2d-4a8e-b3c7-5d1e9f0a2b46"
+    }
+  }
+}
+```
+
+- `amount` is what arrives in the wallet. The network fee is taken from the
+  account on top of it; when the balance does not cover both, the answer is
+  `422 INSUFFICIENT_FUNDS`.
+- The destination is always the company's own wallet. No other address can be
+  named here.
+- It needs the same permission as `transfer-to-partner`, and the same
+  `Idempotency-Key` rules. If the answer is
+  `502 WITHDRAWAL_FAILED_AFTER_TRANSFER`, the money reached your operating
+  account but did not leave it yet: send the same request with the same key to
+  finish it.
+- The crypto usually lands in the wallet within a few minutes. The deposit
+  webhook arrives for the wallet's `user_uuid`.
+
+The company can also receive crypto from anywhere on its deposit addresses:
+`GET /api/v1/partner/users/{user_uuid}/deposit-addresses`.
+
+### Use it
+
+Use the wallet's `user_uuid` exactly as a `unigox_wallet` customer's:
+
+- `GET /api/v1/partner/users/{user_uuid}/wallet` for the address and balances.
+- `POST /api/v1/partner/users/{user_uuid}/withdrawals/quote` to send crypto out,
+  then send the representative to
+  `https://unigox.com/approve/withdrawal/{withdrawal_quote_id}?account={user_uuid}`
+  to approve it.
+
+The representative signs in with a code sent to the representative email. A
+person who represents several companies, or who is also your customer, chooses
+the account when signing in; the page names the company. At
+`https://unigox.com/approve` the representative can see the wallet and export
+its private key.
+
+Off-ramp orders from a company's wallet are not available yet: an off-ramp
+quote for it answers `422 KYC_NOT_CLEARED`.
 
 ## Webhooks
 
@@ -459,4 +583,10 @@ If no operating account is set up for you, these answer
 | `FUNDS_NOT_SETTLED` | 422 | The money has arrived but is not available yet |
 | `ACCOUNT_CLOSED` | 422 | The account is closed |
 | `BANKING_TIMEOUT_UNKNOWN` | 504 | The bank did not confirm a transfer in time; do not retry with a new key |
+| `FEATURE_NOT_ENABLED` | 403 | Company wallets are not switched on for you |
+| `REPRESENTATIVE_EMAIL_REQUIRED` | 422 | The company has no representative email to sign in with |
+| `WALLET_NOT_FOUND` | 404, 422 | The company has no wallet yet, or it is still `pending` |
+| `WALLET_PROVISIONING_FAILED` | 502 | The wallet could not be created yet; send the same request again |
+| `WITHDRAWAL_FAILED_AFTER_TRANSFER` | 502 | The crypto reached your operating account but did not leave it; retry with the same key |
+| `WITHDRAWALS_DISABLED` | 503 | Crypto withdrawals are switched off for now; nothing moved |
 | `KYB_UNAVAILABLE`, `BANKING_UNAVAILABLE`, `BANKING_ERROR`, `SERVICE_UNAVAILABLE` | 5xx | Try again shortly |
