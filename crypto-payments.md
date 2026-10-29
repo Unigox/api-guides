@@ -6,23 +6,28 @@ The invoice reference is stored as a **memo** attached to the collection address
 
 ## Payment flow
 
-1. Allocate a collection address with `POST /memo-locks/allocate`. The signed request contains the invoice reference and HTTPS callback URL. Existing addresses support reassignment as described below.
-2. Wait for the selected network to be ready, then display the collection address, network, asset and amount at checkout.
-3. Receive the signed `deposit.credited` webhook. Its `memoLockId` identifies the invoice association; its `intentId` identifies the payment.
-4. Retrieve transaction status or wallet-signed history to confirm the credited amount, asset and recipient. Payment confirmation requires a completed, non-refunded settlement matching the invoice. Any webhook used must also pass signature verification.
+The Bridge is the Unigox API for crypto payments: it allocates collection addresses, attaches invoice references to them, settles each payment to your UNIGOX balance and sends credited webhooks. Its endpoint is `BRIDGE_BASE_URL`.
+
+1. Read `GET /config`. Callbacks are available only when `memoLimits.maxCallbackUrlBytes` is above 0 and `webhookKeys` lists at least one key.
+2. Allocate a collection address with `POST /memo-locks/allocate`. The signed request contains the invoice reference and a `callbackUrl`: your public HTTPS receiver when callbacks are available, otherwise `""`. A non-empty URL while callbacks are unavailable is refused with 400 `validation_callback_url_invalid`. Existing addresses support reassignment as described below.
+3. Wait for the selected network to be ready, then display the collection address, network, asset and amount at checkout.
+4. With a callback URL, receive the signed `deposit.credited` webhook. Its `memoLockId` identifies the invoice association; its `intentId` identifies the payment. Without one, read wallet-signed history for the association.
+5. Retrieve transaction status or wallet-signed history to confirm the credited amount, asset and recipient. Payment confirmation requires a completed, non-refunded settlement matching the invoice. Any webhook used must also pass signature verification.
 
 Signing schemas, request and response formats, and webhook authentication are defined in the [API reference](api-reference/bridge-payments.md).
 
 ## Address reuse
 
-Collection addresses support successive invoices. Reassignment after payment consists of two signed requests:
+Collection addresses support successive invoices. Reassign an address only when its last invoice was paid in full and at least 24 hours have passed since then. A second transfer from the same payer, such as a double send or an exchange retrying a withdrawal, can arrive after the invoice is paid; after reassignment it counts toward the new invoice. Never reassign an address whose invoice is unpaid, partly paid or closed unpaid: allocate a new one instead.
+
+Reassignment consists of two signed requests:
 
 1. End the previous memo association with `POST /memo-locks/unlock`.
-2. Attach the new invoice reference and callback URL with `POST /memo-locks/lock`.
+2. Attach the new invoice reference and callback URL (or `""`) with `POST /memo-locks/lock`.
 
 Reassignment preserves the address and creates a new `lockId`. The new association has an `ACTIVE` lock. [Network readiness](api-reference/bridge-payments.md#network-readiness) is reported separately in `monitoring`. Delayed webhooks retain the lock ID associated with the original deposit.
 
-Deposit attribution uses the memo active at the deposit's on-chain timestamp. Deposits during the new lock's window carry the new invoice reference; deposits between locks have no memo. Unlocking or expiry does not prevent transfers to the address.
+Deposit attribution uses the memo active at the deposit's on-chain timestamp. Deposits during the new lock's window carry the new invoice reference; deposits between locks have no memo. Unlocking or expiry does not prevent transfers to the address. If the lock after an unlock fails, the address stays without a memo until a lock succeeds, and a deposit in between is credited without an invoice reference: retry the lock, or match such deposits through history by collection address.
 
 ## Networks and assets
 
@@ -59,4 +64,6 @@ The webhook body does not include `environment`. It comes from the receiver conf
 
 History covers payments whose callbacks were missed or exhausted their retries. It retains the original invoice reference after address reassignment. See [wallet transaction history](api-reference/bridge-payments.md#wallet-transaction-history) for signing, pagination and reconciliation.
 
-Amounts are integer strings in token base units. The source and destination token decimals determine their respective scales.
+Amounts are integer strings in token base units. The source and destination token decimals determine their respective scales. Keep them as strings or use integer arithmetic such as `BigInt`: JavaScript `Number` can lose precision on 18-decimal tokens.
+
+The memo text is returned only to its owner, but its `memoHash` is public in transaction status. A predictable reference, such as a sequential order number with its amount, can be matched to its public transfer by anyone who guesses it. Keep personal data out of references.
