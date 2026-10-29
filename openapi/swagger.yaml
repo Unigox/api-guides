@@ -3360,22 +3360,26 @@ paths:
         - On-Ramp
       summary: Submit payer details
       description: |
-        Submit the end-user's payment details for a `payment_request` on-ramp order.
-        Only required when the order type is `payment_request` — regular on-ramp orders do not need this step.
+        Submit the account the end-user pays from.
 
         **Order types:**
-        - **Regular on-ramp** — the vendor sends fiat to the end-user directly. No payer details needed.
-          The partner receives vendor payment details in the `vendor_payment_details` field of `GET /orders/:id`
-          and forwards them to the end-user to initiate the transfer.
-        - **`payment_request` on-ramp** — the vendor sends a payment request (e.g. M-Pesa push) to the end-user.
-          The end-user's account details must be submitted here first so the vendor knows where to send the request.
-          Check `payment_request: true` in the order response to identify this type.
+        - **`payment_request` on-ramp** (`payment_request: true` in the order response): required. The vendor
+          sends a payment request (e.g. M-Pesa push) to the end-user, so the end-user's account details must be
+          submitted first. Accepted while the order is `awaiting_vendor_escrow_funding`.
+        - **Regular on-ramp**, currently THB only: optional. The end-user sends the transfer to the account in `vendor_payment_details`.
+          If you know the bank account the end-user will pay from, submit it here: the incoming transfer is then
+          matched to the order by the sender's account, so two customers paying the same amount at the same time
+          are still told apart. Without it, matching works as before. Accepted while the order is
+          `awaiting_liquidity_provider`, `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer` or
+          `fiat_transfer_pending`; best sent right after initiate, before the end-user pays. The order does not wait for it, and it does not appear in
+          `allowed_actions`.
 
-        Call this endpoint after initiating the order and before calling `confirm-payment-sent`.
-        The order must be in `awaiting_fiat_transfer` status.
+        Payer details can be submitted once per order; a second call answers `409 OPERATION_NOT_ALLOWED`.
 
         Provide either a `payment_details_id` (referencing a previously saved payment profile) or
-        an inline `payment_details` object with the payer's account information.
+        an inline `payment_details` object with the payer's account information. Send the full account number
+        as the end-user's bank shows it. In `payment_details`, `payment_method_id` and `payment_network_id` may be
+        omitted: they then default to the order's own.
       operationId: submitPayerDetails
       security:
         - ApiKeyAuth: []
@@ -3409,6 +3413,14 @@ paths:
                       phone: "+254712345678"
                       name: "John Doe"
                     country_code: KE
+              bank_transfer_account:
+                summary: Regular on-ramp, the bank account the end-user pays from
+                value:
+                  payment_details:
+                    details:
+                      full_name: "John Doe"
+                      bank_name: "Example Bank"
+                      account_number: "0123456789"
       responses:
         '200':
           description: Payer details submitted successfully
@@ -3430,7 +3442,10 @@ paths:
                 data:
                   message: "payer details submitted successfully"
         '400':
-          description: Bad request — invalid or missing payer details
+          description: |
+            `INVALID_REQUEST`: no payer details, both `payment_details_id` and `payment_details`, a saved
+            `payment_details_id` that is not the order's customer's, details on another payment network than the
+            order's, or an off-ramp order.
           content:
             application/json:
               schema:
@@ -3453,16 +3468,40 @@ paths:
                   code: ORDER_NOT_FOUND
                   message: "Order not found"
         '409':
-          description: Order is not in the correct status or not a payment_request order
+          description: |
+            `OPERATION_NOT_ALLOWED`: payer details were already submitted for this order, or the order is past
+            the statuses that accept them (a `payment_request` order after `awaiting_vendor_escrow_funding`; a
+            regular on-ramp once the transfer is matched or the order is closed, or a regular on-ramp in a
+            currency other than THB).
+
+            `INVALID_STATUS`: the order is still `awaiting_liquidity_provider` and is not a THB on-ramp; send the
+            payer details again once a liquidity provider has accepted it.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
-              example:
-                success: false
-                error:
-                  code: INVALID_STATUS
-                  message: "Order is not in awaiting_fiat_transfer status"
+              examples:
+                already_submitted:
+                  summary: Payer details already submitted
+                  value:
+                    success: false
+                    error:
+                      code: OPERATION_NOT_ALLOWED
+                      message: "buyer payment details already submitted"
+                past_accepted_status:
+                  summary: Regular on-ramp past the customer's transfer
+                  value:
+                    success: false
+                    error:
+                      code: OPERATION_NOT_ALLOWED
+                      message: "payer details can only be submitted while the order awaits the customer's transfer"
+                awaiting_liquidity_provider:
+                  summary: Order not yet accepted, outside THB
+                  value:
+                    success: false
+                    error:
+                      code: INVALID_STATUS
+                      message: "order is not ready for this action yet: no liquidity provider has accepted it"
         '500':
           description: Internal server error
           content:
@@ -10935,7 +10974,7 @@ components:
     SubmitPayerDetailsRequest:
       type: object
       description: |
-        Submit the payer's payment details for a `payment_request` on-ramp order.
+        The account the end-user pays from: required on a `payment_request` on-ramp, optional on a regular one.
         Provide exactly one of `payment_details_id` (saved profile) or `payment_details` (inline object).
       oneOf:
         - required: [payment_details_id]
@@ -10949,17 +10988,17 @@ components:
           properties:
             payment_details:
               type: object
-              required: [payment_method_id, payment_network_id, details]
+              required: [details]
               properties:
                 payment_method_id:
                   type: integer
                   format: int64
-                  description: Payment method ID
+                  description: Payment method ID. Defaults to the order's own when omitted.
                   example: 5
                 payment_network_id:
                   type: integer
                   format: int64
-                  description: Payment network ID
+                  description: Payment network ID. Defaults to the order's own when omitted.
                   example: 12
                 details:
                   type: object

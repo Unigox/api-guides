@@ -13,6 +13,15 @@ Notable changes to the Unigox partner API, newest first.
 - `POST /api/v1/partner/webhooks/test` takes an optional `event_type` and sends a signed sample of it. When your endpoint returns non-2xx or does not respond, the call now returns `200` with `"delivered": false` (and the code in `http_status`) instead of `502`.
 - The retail `fiat_account.deposit.received` now also carries `holder_type: retail`.
 
+## 2026-10-28
+
+**On a regular THB on-ramp you can tell us which account the customer pays from.** `POST /api/v1/partner/orders/{order_id}/submit-payer-details`, until now only for `payment_request` orders, also takes the customer's own bank account on a regular on-ramp. The incoming transfer is then matched to the order by the sender's account, so two customers paying the same amount at the same time are told apart. It is optional: without it, matching works as before.
+
+- Send it right after initiate, before the customer pays. Accepted while the order is `awaiting_liquidity_provider`, `awaiting_vendor_escrow_funding`, `awaiting_fiat_transfer` or `fiat_transfer_pending`, once per order.
+- Inline `payment_details` needs only `details`: `payment_method_id` and `payment_network_id` default to the order's own.
+- It is not listed in `allowed_actions`, and the order does not wait for it.
+- THB only for now; other currencies answer `409 OPERATION_NOT_ALLOWED`.
+
 ## 2026-10-24
 
 **On-ramp orders carry a payment deadline.** Orders carry `payment_deadline_at` (UTC). See [Paying for an on-ramp from the account](./fiat-accounts.md#paying-for-an-on-ramp-from-the-account).
