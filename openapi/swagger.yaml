@@ -8632,6 +8632,12 @@ components:
                       type: string
                       description: User's country code (ISO 2-letter) from KYC data
                       example: NG
+                    rejection_reasons:
+                      type: array
+                      description: Reasons from this partner customer's rejected verification session. Empty when not rejected or no reason is available. Also included as data.rejection_reasons by the verification-status endpoint; legacy provider_messages is retained there.
+                      items:
+                        type: string
+                      example: ["Document back not detected in the document image"]
                     rejection_reason:
                       type: string
                       nullable: true
@@ -8875,6 +8881,12 @@ components:
                   nullable: true
                   description: Seconds remaining for verification session (if applicable)
                   example: 3600
+                rejection_reasons:
+                  type: array
+                  description: Reasons for this customer's rejected verification, matching the KYC webhook. Empty for other statuses or when no reason is available.
+                  items:
+                    type: string
+                  example: ["Document back not detected in the document image"]
                 provider_messages:
                   type: array
                   items:
