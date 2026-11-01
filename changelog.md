@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2026-11-02
 
-Partner KYC status responses add `rejection_reasons` from the customer’s own verification session. Existing `rejection_reason` and `provider_messages` fields remain available. Do not merge this documentation before the verification change is deployed.
+Partner KYC status responses add `rejection_reasons` from the customer’s own verification session. Existing `rejection_reason` and `provider_messages` fields remain available.
 
 Notable changes to the Unigox partner API, newest first.
 
