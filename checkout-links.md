@@ -48,7 +48,8 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
        expiresAt: "0",  // no end: the memo stays on the address until you end the reservation
        callbackUrl: "", // callbacks are off in production: confirm through step 6
        nonce: nonce(),
-       deadline: String(Number(memoLimits.serverTimeSeconds) + Number(memoLimits.maxWriteDeadlineSeconds)),
+       // 30 s inside the limit: a server whose clock runs a second ahead would refuse a deadline right at the edge.
+       deadline: String(Number(memoLimits.serverTimeSeconds) + Number(memoLimits.maxWriteDeadlineSeconds) - 30),
      };
      const signature = await walletClient.signTypedData({ account, domain, types, primaryType: "AllocateAndLock", message });
      const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/allocate`, {
@@ -79,9 +80,50 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
    - **Environment and chain id.** `environment` is `"production"` against the production API address and `"staging"` against staging's, as the Developers page shows. A wrong one is refused with 400 `validation_environment_mismatch`. The request body's `chainId` must equal the domain's `chainId`. This chain id only names the chain your signature is made for; it has nothing to do with the networks your customers pay on. An ordinary wallet (EOA) may sign on any chain id: the examples use 42161, and the portal signs with 660279. A contract wallet (ERC-1271) must sign on a chain Unigox has enabled for contract wallets: ask Unigox which one.
    - **Reusing an address.** A new address is the safe choice. Reuse an address only when its last payment was paid in full and credited, and its reservation ended at least 7 days ago. Until the new memo is reserved, a second transfer from the same payer (a double send, an exchange retrying a withdrawal) carries no reference; once it is reserved, that transfer is credited to the new payment. The portal works this way: it takes a new address while an address type holds less than 80 % of its limit of 1,000 addresses, and only past that reuses the address of a link that was paid in full and closed at least 7 days ago, longest idle first. It never takes the address of an open link (paid or not), of a partly paid or unpaid link, or of a customer's deposit page. At the limit, write to support@unigox.com to raise it. Never use your main deposit address (address index 0): your own top-ups there would count as this payment. Never reuse an address whose payment is unpaid, part paid or closed unpaid: a late payment for it would count toward the next payment on the address.
    - **To reuse an address**, first end its earlier payment's reservation with `POST /memo-locks/unlock` (signed `Unlock`), then reserve the new memo with `POST /memo-locks/lock` (signed `Lock`, `expiresAt: "0"`): the address keeps its text and the new reservation gets a new address ID. The earlier payment's link names the ended reservation, so it now opens as closed. It shows the payment it received only in the browser that followed it; elsewhere the customer sees a closed link with no payment, so keep your own order page as the customer's receipt. Never send the old link again, and build every new payment's link from its new reservation.
-   - **The signing domain.** Each request is signed under the `domain` of the code above, with a fresh 32-byte nonce and a deadline taken from `GET /config` (`memoLimits.serverTimeSeconds + memoLimits.maxWriteDeadlineSeconds`). The [API reference: payment addresses](https://developers.unigox.com/api-reference/payment-addresses) has the exact types of `Lock`, `Unlock` and `ListLocks` and a complete example. No API key or account token is used.
+   - **The signing domain.** Each request is signed under the `domain` of the code above, with a fresh 32-byte nonce and a deadline taken from `GET /config` (`memoLimits.serverTimeSeconds + memoLimits.maxWriteDeadlineSeconds`, less a margin of about 30 seconds). The [API reference: payment addresses](https://developers.unigox.com/api-reference/payment-addresses) has the exact types of `Lock`, `Unlock` and `ListLocks` and a complete example. No API key or account token is used.
 
-3. **Wait for the networks to be ready.** An EVM or TRON address can answer `202 addresses_preparing`. Only networks with `confirmed: true` in `monitoring` take payments yet. Show the checkout once the networks you want are confirmed, or show it now: the checkout offers only the networks the link lists as ready, and that list does not update by itself. If you send the link before every network is ready, build the link again once they are (a signed `POST /memo-locks/list` with `{"chainType", "address", "limit": "1"}` returns the reservation's current `monitoring`), and send the new link. What you should see: `confirmed: true` for each network you offer.
+3. **Wait for the networks to be ready.** A new EVM or TRON address answers `202 addresses_preparing` and takes payments only once its networks are confirmed, which can take a few minutes. Only networks with `confirmed: true` in `monitoring` take payments. The link carries the readiness it was built with and does not update by itself: a link built too early shows the payer "This payment can't be made right now". So build the link only after `waitUntilReady()` below says the address is ready, and make the order's link when the order is placed, not when the payer presses Pay. What you should see: `confirmed: true` for each network you offer.
+
+   - **What it does:** reads the address's newest reservation with a signed `POST /memo-locks/list`, every 10 seconds, until every network is ready (`watched: true`).
+   - **What you keep:** the `monitoring` it returns, for step 4.
+   - **What can go wrong:** at `maxMs` it returns the networks ready by then (the link offers only those), or `null` when none is: keep the order without a link and try again later.
+
+   ```js
+   // A read signature (ListLocks, no nonce) is reused until it expires: one signature an hour, not one per read.
+   const readTypes = {
+     ListLocks: [
+       { name: "action", type: "string" }, { name: "wallet", type: "address" },
+       { name: "environment", type: "string" }, { name: "issuedAt", type: "uint64" },
+       { name: "expiresAt", type: "uint64" },
+     ],
+   };
+   let readGrant = null;
+   async function readSignature() {
+     const { memoLimits } = await (await fetch(`${UNIGOX_PAYMENTS_API}/config`, { cache: "no-store" })).json();
+     const now = Number(memoLimits.serverTimeSeconds);
+     if (readGrant && Number(readGrant.authorization.expiresAt) > now + 60) return readGrant;
+     const authorization = { action: "list", wallet: WALLET, environment: ENVIRONMENT, issuedAt: String(now), expiresAt: String(now + 3600) };
+     const signature = await walletClient.signTypedData({ account, domain, types: readTypes, primaryType: "ListLocks", message: authorization });
+     return (readGrant = { authorization, signature });
+   }
+
+   // Waits until the address takes payments on every network (watched), at most maxMs. Returns its monitoring for
+   // paymentToken(): at maxMs, the networks ready by then, or null when none is.
+   export async function waitUntilReady(chainType, address, maxMs = 300_000) {
+     const until = Date.now() + maxMs;
+     for (;;) {
+       const { authorization, signature } = await readSignature();
+       const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/list`, {
+         method: "POST", headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({ chainId: domain.chainId, authorization, signature, query: { chainType, address, limit: "1" } }),
+       });
+       const monitoring = (await response.json()).data?.locks?.[0]?.monitoring;
+       if (monitoring?.watched) return monitoring;                         // every network is ready
+       if (Date.now() > until) return monitoring?.chains?.some((c) => c.confirmed) ? monitoring : null;
+       await new Promise((resolve) => setTimeout(resolve, 10_000));
+     }
+   }
+   ```
 
 4. **Build the payment link.** `paymentToken()` (and `topUpToken()` for deposit addresses) builds exactly the code the checkout reads; their Node.js source is under [The token builders](#the-token-builders). The portal's **Developers** page shows the same code filled in with your wallet once Unigox has exported your key. Call it with what step 2 returned:
 
@@ -120,11 +162,11 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
 
 The whole path of one order, from "order created" to "order paid", in two files: `unigox.mjs` holds the blocks of this guide, pasted once; `server.mjs` is your shop. It keeps orders in memory to stay short: use your own database.
 
-- **What it does:** when the payer presses **Pay with crypto**, your server reserves an address for the order and returns its link; the checkout shows it; your page reports each transfer; your server checks it with Unigox and marks the order paid once. A job checks every open order each minute, so a payment is found even when the payer closed the page.
+- **What it does:** when an order is placed, your server reserves an address for it and builds its link once the address is ready (a few minutes); when the payer presses **Pay with crypto**, the checkout shows that link; your page reports each transfer; your server checks it with Unigox and marks the order paid once. A job checks every open order each minute, so a payment is found even when the payer closed the page.
 - **What you keep:** with each order, its reference text, its address IDs and the transfer IDs you counted.
 - **What can go wrong:** written next to each step in the code.
 
-**`unigox.mjs`**: paste, in this order: step 2's block of [Option B](#option-b-from-your-server) without its last two lines (they are an example call), the two builders of [The token builders](#the-token-builders) (`paymentToken()` and its helpers is enough), and `verifyTransfers()` and `isPaid()` of [Confirm without the key](https://developers.unigox.com/tutorials/crypto-checkout-confirm#confirm-without-the-key). Keep one `UNIGOX_PAYMENTS_API` line and move the `import` lines to the top. Then add your key and the exports:
+**`unigox.mjs`**: paste, in this order: step 2's block of [Option B](#option-b-from-your-server) without its last two lines (they are an example call), step 3's block (`waitUntilReady()`), the two builders of [The token builders](#the-token-builders) (`paymentToken()` and its helpers is enough), and `verifyTransfers()` and `isPaid()` of [Confirm without the key](https://developers.unigox.com/tutorials/crypto-checkout-confirm#confirm-without-the-key). Keep one `UNIGOX_PAYMENTS_API` line and move the `import` lines to the top. Then add your key and the exports:
 
 ```js
 // At the top of unigox.mjs. npm install viem. The key comes from your secrets store, never from code.
@@ -145,23 +187,30 @@ export { paymentToken, WALLET };
 ```js
 // Node 20+. UNIGOX_PAYMENTS_API and UNIGOX_WALLET_KEY in the environment; run: node server.mjs
 import { createServer } from "node:http";
-import { isPaid, paymentToken, reserveAddress, verifyTransfers, WALLET } from "./unigox.mjs";
+import { isPaid, paymentToken, reserveAddress, verifyTransfers, waitUntilReady, WALLET } from "./unigox.mjs";
 
 const shop = new Map([["NW-20418", "250.00"]]); // your orders and their amounts in USD
 const orders = new Map();                         // what this example keeps per order
 const counted = new Set();                        // transfer IDs (quoteId) already added, each once
 
-// 1. Order created, the payer pressed Pay: reserve an address and build the link, once per order.
-async function linkFor(id) {
-  if (orders.has(id)) return orders.get(id).token;
+// 1. Order placed: reserve an address and build the link once it is ready, once per order. Started when the order is
+//    placed, because a new address takes a few minutes to be ready; Pay with crypto then gets the finished link.
+const making = new Map();                         // order ID -> the link being made
+const linkFor = (id) => {
+  if (!making.has(id)) making.set(id, makeLink(id).catch((error) => { making.delete(id); throw error; }));
+  return making.get(id);
+};
+async function makeLink(id) {
   const amount = shop.get(id);
   if (!amount) throw new Error(`no order ${id}`);
   // A random part keeps the reference text from being guessed (see step 2).
   const memo = `${id}-${Math.random().toString(36).slice(2, 8)} · ${amount} USD`;
   const evm = await reserveAddress("evm", memo);  // can throw: the button reports TOKEN_MISSING, the payer tries again
+  const monitoring = await waitUntilReady("evm", evm.address); // step 3: a link built earlier offers no network
+  if (!monitoring) throw new Error(`${id}: the address is not ready yet`);
   const token = paymentToken({
     merchant: "Northwind", memo, amount, wallet: WALLET, expiresAt: null, openedAt: Date.now(),
-    addresses: { evm: { address: evm.address, lockId: evm.addressId, monitoring: evm.monitoring } },
+    addresses: { evm: { address: evm.address, lockId: evm.addressId, monitoring } },
   });
   orders.set(id, { id, token, memo, amount, wallet: WALLET, tolerance: "default", lockIds: [String(evm.addressId)], reported: [], micros: 0n, status: "open" });
   console.log(`${id}: link https://www.unigox.com/pay/${token.slice(0, 12)}…`);
@@ -207,6 +256,9 @@ createServer(async (req, res) => {
   }
 }).listen(3000, () => console.log("shop on http://localhost:3000"));
 
+// Your shop places its orders: start making each order's link now, so it is ready when the payer presses Pay.
+for (const id of shop.keys()) linkFor(id).catch(console.error);
+
 // 3. The job: every open order, every minute, also when the payer closed the page.
 setInterval(() => {
   for (const order of orders.values()) if (order.status === "open") check(order).catch(console.error);
@@ -238,12 +290,12 @@ What you should see in the server's log, step by step:
 
 ```text
 shop on http://localhost:3000
-NW-20418: link https://www.unigox.com/pay/eyJ2IjoxLCJt…   ← the payer pressed Pay with crypto
+NW-20418: link https://www.unigox.com/pay/eyJ2IjoxLCJt…   ← a few minutes after start: the address is ready
 NW-20418: credited 250 USD                                 ← the transfer was credited to your Unigox wallet
 NW-20418: paid                                             ← once, even if the page reports the payment again
 ```
 
-Between the first and second line the checkout shows the address and the amount, then **Payment detected** while the transfer confirms. A payment that comes short shows `credited` without `paid` until the rest arrives. Run it on staging first ([Test before you go live](https://developers.unigox.com/tutorials/crypto-checkout-testing#test-before-you-go-live)).
+Between the first and second line the payer presses **Pay with crypto**, and the checkout shows the address and the amount, then **Payment detected** while the transfer confirms. A payment that comes short shows `credited` without `paid` until the rest arrives. Run it on staging first ([Test before you go live](https://developers.unigox.com/tutorials/crypto-checkout-testing#test-before-you-go-live)).
 
 ### Link format (advanced)
 
@@ -494,7 +546,7 @@ A deposit address belongs to one customer for good: every transfer to it is that
 - **What you keep:** the customer's reference text and every address ID, old and new, with the customer.
 - **What can go wrong:** the same as step 2 of Option B. A network that is not ready yet is left out of the page until you build the link again.
 
-A complete example, from a new customer to the link of their deposit page, with `reserveAddress()` of [Option B](#option-b-from-your-server) and `topUpToken()` of [The token builders](#the-token-builders) in the same file:
+A complete example, from a new customer to the link of their deposit page, with `reserveAddress()` and `waitUntilReady()` of [Option B](#option-b-from-your-server) and `topUpToken()` of [The token builders](#the-token-builders) in the same file:
 
 ```js
 // Node 20+. Your server holds your wallet's key (reserveAddress signs with it). db is your own database.
@@ -505,15 +557,23 @@ const newTag = () => Array.from({ length: 10 }, () => TAG_LETTERS[randomInt(TAG_
 
 // customerId: your own ID for the customer (shown on their page, so no personal data), up to 64 characters.
 export async function createDepositPage(customerId) {
-  const memo = `Top-up · ${customerId} · ${newTag()}`;        // keep this memo for the customer's lifetime
-  const openedAt = Date.now();
-  const addresses = {};
+  // A run that stopped part way (a lost answer, a refused request) left its memo and addresses: carry on with them,
+  // so calling this again never gives the customer a second set of addresses.
+  const saved = await db.customer(customerId);
+  const memo = saved?.memo ?? `Top-up · ${customerId} · ${newTag()}`; // keep this memo for the customer's lifetime
+  const openedAt = saved?.openedAt ?? Date.now();
+  const addresses = { ...saved?.addresses };
+  // Keep the memo and every address ID with the customer, from before the first address: crediting needs all of them.
+  const save = () => db.saveCustomer({ id: customerId, memo, openedAt, addresses, lockIds: Object.values(addresses).map((a) => String(a.lockId)) });
+  await save();
   for (const type of ["evm", "tvm", "ton", "svm"]) {            // every address type you accept
+    if (addresses[type]) continue;                              // reserved by an earlier run
     const made = await reserveAddress(type, memo);              // a new address, reserved for this customer
-    addresses[type] = { address: made.address, lockId: made.addressId, monitoring: made.monitoring };
+    // Step 3 of Option B: wait until it takes payments, or the page offers no network for it yet.
+    const monitoring = (await waitUntilReady(type, made.address)) ?? made.monitoring;
+    addresses[type] = { address: made.address, lockId: made.addressId, monitoring };
+    await save();                                               // each address as soon as it exists
   }
-  // Keep the memo and every address ID with the customer: crediting deposits needs all of them.
-  await db.saveCustomer({ id: customerId, memo, openedAt, lockIds: Object.values(addresses).map((a) => String(a.lockId)) });
   const token = topUpToken({
     merchant: "Northwind",                     // the name your customer sees
     memo, wallet: WALLET, openedAt, addresses,

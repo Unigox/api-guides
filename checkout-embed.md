@@ -91,6 +91,8 @@ The checkout takes the container's whole width, centres its payment card in it, 
 <script>window.UnigoxCheckout && UnigoxCheckout.bind();</script>
 ```
 
+These links take no callbacks: your page hears nothing about the payment, so nothing reaches your server from it. Confirm such a payment in the portal's **Payments**, from a transaction hash your customer gives you, or with your signed history ([4. Confirm the payment on your server](https://developers.unigox.com/tutorials/crypto-checkout-confirm#4-confirm-the-payment-on-your-server)). When your server should confirm from the page's events, use `UnigoxCheckout.create()` with callbacks instead.
+
 `bind()` adds one click listener for every such link on the page, including links added later. A click with Ctrl, Cmd, Shift or Alt, or a link whose `data-target` does not exist, opens the hosted page as usual, and so does any link before the script loads. Several links for one token may ask for different things (`data-theme="dark"`, modal or inline): each click opens what its link asks for, and an inline link shows its checkout in its `data-target` even when another checkout was there.
 
 `bind(root)` handles every `data-unigox-checkout` link inside `root`, including links your users post. Anyone who can put a link on your page (a review, a comment, a forum post) can then open a checkout for their own token, with their own addresses, in your page's dialog. On a page with user content, bind only a container that holds your own links, for example `UnigoxCheckout.bind(document.querySelector("#checkout-links"))`, never the whole document.
