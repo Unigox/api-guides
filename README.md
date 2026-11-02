@@ -134,11 +134,31 @@ Run the guard's tests with `node --test scripts/*.test.mjs`. CI runs them on
 every pull request and every push to `main` (`.github/workflows/test.yml`); make
 that job a required status check of `main` so a red run blocks the merge.
 
-## Bridge crypto payment guide
+## Crypto processing: Unigox Checkout
 
-- `crypto-payments.md`: merchant checkout and settlement walkthrough.
-- `api-reference/bridge-payments.md`: signed address requests, responses, callback
-  verification and transaction reconciliation.
+Start here for payment links, the checkout on a partner's site and customer deposit
+addresses. One guide, published as six pages on the developer site:
+
+- `checkout-quickstart.md`: Quickstart (`tutorials/crypto-checkout`): which way to start,
+  the no-code quickstart, the checkout on your site, and what you need.
+- `checkout-embed.md`: create a payment and show the checkout on your site.
+- `checkout-confirm.md`: confirm payments on your server (`tutorials/crypto-checkout-confirm`), with or without your wallet's key.
+- `checkout-links.md`: make payment links and customers' deposit pages on your server
+  (`tutorials/crypto-checkout-links`), and a payment page of your own.
+- `checkout-reference.md`: networks and coins, troubleshooting, questions, types, changes, and
+  notifications to your server (not available yet).
+- `checkout-testing.md`: test without money, test before you go live, go live.
+- `checkout-integration.md`: the same guide on one page.
+
+These six files are written by `node scripts/crypto-checkout-guide-sync.mjs` in the
+unigox.com repository from its `public/checkout-integration.md`; do not edit them here.
+
+## Low-level payments API
+
+- `crypto-payments.md`: low-level payments API: payment addresses for a payment page of
+  your own (advanced).
+- `api-reference/payment-addresses.md`: its API reference: signed address requests,
+  responses, callback verification and transaction reconciliation.
 
 These pages describe the memo-address release contract, initially checked against Quote
 `653080043c2a23bc68316e58daac7c3de1f7cd02`. Deadline metadata, address projections,
@@ -151,7 +171,7 @@ or a live merchant canary. The wallet UI's Privy path does not accept merchant c
 these examples use direct EVM wallet signing.
 
 `.github/workflows/publish-memo-guides.yml` publishes these pages under
-`tutorials/crypto-payments` and `api-reference/bridge-payments` when their source
+`tutorials/crypto-payments` and `api-reference/payment-addresses` when their source
 changes on `main`. It creates missing pages in the existing navigation groups,
 updates only those guides, and converts their repository links to public URLs.
 It also appends any missing wallet/deposit-address operation blocks to the

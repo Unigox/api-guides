@@ -9,7 +9,7 @@ key. Funds on the customer's address move only with the customer's signature;
 your partner wallet does not hold or sign for them.
 
 **What you will build.** A customer who has proved they own an EVM address,
-holds deposit addresses on EVM chains, Solana, Tron and TON that credit that
+holds customer wallet addresses on EVM chains, Solana, Tron and TON that credit that
 address, can on-ramp, and can off-ramp and withdraw by signing in your app.
 
 **What you need first.** A partner API key and the non-custodial mode switched
@@ -71,7 +71,7 @@ withdrawals need no KYC: it is the customer's own money on their own address.
 1. Create the customer: `POST /users` with `wallet_type: external_wallet`.
 2. Link the customer's address: `POST /users/{user_uuid}/wallet/challenge`,
    then `POST /users/{user_uuid}/wallet`.
-3. Hand out deposit addresses: `POST /users/{user_uuid}/deposit-addresses/{chain_type}/allocate`.
+3. Hand out customer wallet addresses: `POST /users/{user_uuid}/deposit-addresses/{chain_type}/allocate`.
 4. Run KYC as for any customer, before or after the wallet is linked.
 5. Off-ramp, on-ramp and withdraw. The customer signs where your partner wallet
    signs for a `partner_wallet` customer.
@@ -171,7 +171,7 @@ answer `409 WALLET_ALREADY_LINKED`.
 Until the wallet is linked, order initiate, deposit-address and withdrawal
 calls for this customer answer `409 WALLET_NOT_LINKED`. A price quote works.
 
-### 3. Hand out deposit addresses
+### 3. Hand out customer wallet addresses
 
 ```http
 POST /api/v1/partner/users/{user_uuid}/deposit-addresses/{chain_type}/allocate
@@ -188,7 +188,7 @@ Content-Type: application/json
 to 1,000 addresses per chain type. `GET /users/{user_uuid}/deposit-addresses`
 lists the ones already allocated. Each address is tied to the customer's linked
 address, so two of your customers depositing the same amount at the same time
-are never confused. Deposit addresses belong to the linked address: if the
+are never confused. Customer wallet addresses belong to the linked address: if the
 customer linked the same address at another partner, the list includes
 addresses allocated there, and the 1,000 cap is shared. Supported tokens and chains are listed by
 `GET /api/v1/supported/blockchains`.
@@ -196,7 +196,7 @@ addresses allocated there, and the 1,000 cap is shared. Supported tokens and cha
 When a deposit has been credited on XAI you receive `wallet.deposit.received`,
 and the balance shows in `GET /users/{user_uuid}/wallet`. Balances and deposit
 webhooks cover USDT and USDC on XAI. Credits that arrive through the bridge
-(deposit addresses included) send `wallet.deposit.received`. A plain transfer
+(customer wallet addresses included) send `wallet.deposit.received`. A plain transfer
 on XAI, an on-ramp release or a refund shows in the balance but sends no wallet
 webhook; follow those through the order webhooks.
 

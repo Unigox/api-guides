@@ -5,7 +5,14 @@ on:
     branches: [main]
     paths:
       - crypto-payments.md
-      - api-reference/bridge-payments.md
+      - checkout-integration.md
+      - checkout-quickstart.md
+      - checkout-embed.md
+      - checkout-confirm.md
+      - checkout-links.md
+      - checkout-reference.md
+      - checkout-testing.md
+      - api-reference/payment-addresses.md
       - non-custodial-customers.md
       - api-reference/third-party-payouts.md
       - api-reference/funding-your-wallet.md
@@ -15,7 +22,14 @@ on:
   pull_request:
     paths:
       - crypto-payments.md
-      - api-reference/bridge-payments.md
+      - checkout-integration.md
+      - checkout-quickstart.md
+      - checkout-embed.md
+      - checkout-confirm.md
+      - checkout-links.md
+      - checkout-reference.md
+      - checkout-testing.md
+      - api-reference/payment-addresses.md
       - non-custodial-customers.md
       - api-reference/third-party-payouts.md
       - api-reference/funding-your-wallet.md

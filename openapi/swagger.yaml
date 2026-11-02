@@ -79,14 +79,14 @@ tags:
          `GET` on that path returns the link status and XAI balances.
       5. Allocate deposit addresses and check their monitoring status before accepting payments.
          Supported deposits are credited to the linked wallet on UNIGOX, on XAI (chain ID 660279).
-         Register your partner webhook to receive `wallet.deposit.received` after a bridge credit.
+         Register your partner webhook to receive `wallet.deposit.received` after a deposit is credited.
 
       Enabling external-wallet customers controls new customer creation. Existing external-wallet
       customers can still link their wallet, read it and deposit if that permission is later disabled.
-      These routes use `X-API-Key` and your customer UUID. Wallet-signed Bridge memo addresses use
+      These routes use `X-API-Key` and your customer UUID. Wallet-signed payment-address requests use
       the separate
-      [Bridge payment API](https://developers.unigox.com/api-reference/bridge-payments); the partner
-      deposit-address routes do not attach memos.
+      [payments API](https://developers.unigox.com/api-reference/payment-addresses) (API reference:
+      payment addresses); the partner deposit-address routes do not attach references (memos).
 
     x-page-icon: user
   - name: On-Ramp
@@ -1436,7 +1436,7 @@ paths:
       summary: Allocate customer deposit addresses
       description: |
         Creates additional deposit addresses for a customer with a linked external wallet.
-        The customer must belong to the authenticated partner. Supported address families are
+        The customer must belong to the authenticated partner. Supported address types are
         `evm`, `svm` (Solana), `tvm` (Tron) and `ton`. The configured address cap also applies.
         First create an `external_wallet` customer and complete the wallet challenge/link flow.
         The linked address receives the supported settlement token on UNIGOX, on XAI (chain ID 660279).
@@ -1455,8 +1455,9 @@ paths:
         because the original request may still complete. The allocation POST is not idempotent:
         repeating it can create additional addresses. Treat a lost HTTP response as uncertain too.
 
-        These partner endpoints do not attach a memo. Wallet-signed memo-address requests
-        use the separate Bridge payment API.
+        These partner endpoints do not attach a reference (memo). Wallet-signed payment-address
+        requests use the separate payments API
+        ([API reference: payment addresses](https://developers.unigox.com/api-reference/payment-addresses)).
       operationId: allocatePartnerCustomerDepositAddresses
       security:
         - ApiKeyAuth: []

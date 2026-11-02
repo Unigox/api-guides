@@ -2,15 +2,28 @@
 
 Notable changes to the Unigox partner API, newest first.
 
+## Unreleased
+
+**Crypto processing: payment links, the checkout on your site and deposit addresses.**
+
+- Payment links in the business portal: create a link for an amount and a reference, with an optional pay-by date, tolerance, coins and networks; share it by link, email or QR code; follow it in Payment links and Payments, and export both as CSV. No code needed: see the [crypto processing help](https://www.unigox.com/crypto-processing/help/payment-links).
+- Customer deposit addresses: a permanent page per customer in the portal (Deposit addresses), the `topUpToken()` builder, the `onDeposit` callback and the `UNIGOX_CHECKOUT_DEPOSIT_CREDITED` message, and how a server credits each deposit (section "Customer deposit addresses" of [Links and deposit pages from your server](./checkout-links.md)).
+- Address reuse: wait 7 days (was 24 hours) after the reservation of a payment paid in full has ended, and never reuse the address of an open, partly paid or closed-unpaid invoice, as the crypto payments guide's Address reuse now says.
+- [Accept crypto payments with Unigox Checkout on your website](./checkout-integration.md): payment links from the business portal, the checkout as a hosted page, a window or part of your page (`checkout.js`), and confirming each payment on your server. On the developer site it is six pages: [Quickstart](./checkout-quickstart.md), [Embed](./checkout-embed.md), [Confirm payments](./checkout-confirm.md), [Links and deposit pages from your server](./checkout-links.md), [Test and go live](./checkout-testing.md) and [Reference](./checkout-reference.md).
+- [Link check](./checkout-links.md): an endpoint that confirms an address belongs to your link before your own payment page shows it, without a signature. The checkout reads it before it shows an address; a payment page of your own should too (see "Headless: your own payment page", which gives its address). The payments API does not change.
+- [Unigox Checkout and the business portal](./crypto-payments.md#unigox-checkout-and-the-business-portal): write the reference text (`memo`) as `<reference> · <amount> USD` so the checkout and the portal can tell paid from underpaid. Links made in the portal carry their options (pay-by date, coins, tolerance) in their reference text, so an edited link refuses to open (the checkout guide's "Link format" explains it).
+- The API reference for payment addresses moves to "API reference: payment addresses" (`api-reference/payment-addresses` on the developer site, formerly `api-reference/bridge-payments`). Its content is unchanged.
+- Crypto processing is in early access. Unigox turns it on for your business; then payment links, deposit addresses and the checkout appear in your business portal. Production callbacks stay off: the guide shows how a server confirms each payment without a key, from the public transaction status. Money: no change to how payments are credited.
+
 ## 2026-10-29
 
-**Crypto payments: when to sign a callback, and every error and status explained.** [Accept crypto payments on EVM, TON, Solana and Tron](./crypto-payments.md) and its [API reference](./api-reference/bridge-payments.md) cover collection addresses with invoice references, settled to your UNIGOX balance on XAI.
+**Crypto payments: when to sign a callback, and every error and status explained.** [Accept crypto payments on EVM, TON, Solana and Tron](./crypto-payments.md) and its [API reference](./api-reference/payment-addresses.md) cover payment addresses with invoice references, credited to your Unigox balance.
 
 - A callback URL is optional. Sign one only when `GET /config` reports callbacks available (`memoLimits.maxCallbackUrlBytes` above 0 and at least one `webhookKeys` entry); otherwise sign `""` and confirm payments through wallet history.
 - The error tables now list `validation_callback_url_invalid`, the memo text errors, 413 and 500, and a new table covers `GET /transaction`: `validation_invalid_quote_id`, `validation_invalid_log_index`, `from_tx_not_found` and `not_fetched`.
 - Transaction status lists all its fields and every `status` and `subStatus` value. Only `DONE` / `COMPLETED` without `refund` is a credit.
-- Memo-association lists: an omitted `status` returns locks in every status, and an exactly full last page still returns a cursor.
-- Reassign a collection address only after its invoice was paid in full and 24 hours have passed.
+- Lists of an address's reservations: an omitted `status` returns reservations in every status, and an exactly full last page still returns a cursor.
+- Reuse a payment address only after its invoice was paid in full and 24 hours have passed.
 
 ## 2026-10-26
 
@@ -88,13 +101,13 @@ See [Paying an off-ramp through the account](./fiat-accounts.md#paying-an-off-ra
 - A change applies to orders created after it; an order keeps the fee wallet it was created with.
 - Only the markup moves. Off-ramp orders are still funded from, and refunded to, your partner wallet (for an `external_wallet` customer, the customer's address). The markup of other on-ramp orders is withheld at send-out and stays in your partner wallet.
 
-**Bridge refusals are 4xx.** A withdrawal quote, or an on-ramp send-out, to an address the destination chain cannot pay returns `400 INVALID_REQUEST` with `error.details.reason`. An amount too small to bridge returns `422 AMOUNT_TOO_LOW`: either the bridge refused it (`error.details.reason`), or the bridge fee would exceed 2% of the amount (`error.details.bridge_fee`, `estimated_minimum_amount`, `max_fee_pct`). Both returned `500` before.
+**Cross-chain transfer refusals are 4xx.** A withdrawal quote, or an on-ramp send-out, to an address the destination chain cannot pay returns `400 INVALID_REQUEST` with `error.details.reason`. An amount too small to bridge returns `422 AMOUNT_TOO_LOW`: either the bridge refused it (`error.details.reason`), or the bridge fee would exceed 2% of the amount (`error.details.bridge_fee`, `estimated_minimum_amount`, `max_fee_pct`). Both returned `500` before.
 
-**Funding your wallet has its own page.** [Funding your wallet](./api-reference/funding-your-wallet.md) describes the deposit addresses Unigox keeps for your partner wallet on other chains, the tokens each chain accepts, and how a deposit is credited on XAI. It was previously covered only under third-party payouts.
+**Funding your wallet has its own page.** [Funding your wallet](./api-reference/funding-your-wallet.md) describes your wallet's funding addresses, which Unigox keeps for your partner wallet on other chains, the tokens each chain accepts, and how a deposit is credited on XAI. It was previously covered only under third-party payouts.
 
 ## 2026-10-15
 
-**`authorize-crypto-transfer` checks the signature before relaying.** A `forward_request` not signed by `forward_request.from`, with a `deadline` in the past, or with a `nonce` that is not the signer's current forwarder nonce, returns `400 INVALID_REQUEST` and nothing is relayed. Such a request was relayed before and failed as `502 TRANSACTOR_ERROR`. If a relayed request failed without moving funds, a new signed request for the same order is accepted.
+**`authorize-crypto-transfer` checks the signature before forwarding.** A `forward_request` not signed by `forward_request.from`, with a `deadline` in the past, or with a `nonce` that is not the signer's current forwarder nonce, returns `400 INVALID_REQUEST` and nothing is relayed. Such a request was relayed before and failed as `502 TRANSACTOR_ERROR`. If a relayed request failed without moving funds, a new signed request for the same order is accepted.
 
 **Payout base rate.** A payout estimate or quote may include `fee_breakdown.payout_base_rate`: the conversion rate before the licensed partner's costs and margin, when that licensed partner publishes it, for instant and T+1 offers. Use it to show the recipient amount and one combined fee without charging the fee twice. It is omitted when the rate is not known or is out of date; its absence does not mean there is no margin. Existing amounts and the meaning of `fiat_rail_fee` do not change.
 
@@ -142,7 +155,7 @@ See [Paying an off-ramp through the account](./fiat-accounts.md#paying-an-off-ra
 **Non-custodial customers.** A customer created with `wallet_type: external_wallet` holds their crypto at their own EVM address and signs every movement of it; your partner wallet does not hold or sign for it. Ask Unigox to switch the mode on for your partner account. See [Non-custodial customers](./non-custodial-customers.md).
 
 - **Link once.** `POST /users/{user_uuid}/wallet/challenge` returns a Sign-In with Ethereum message; the customer signs it with `personal_sign` and you submit it to `POST /users/{user_uuid}/wallet`. The address is fixed from then on.
-- **Deposit addresses of their own** on EVM chains, Solana, Tron and TON, credited to the customer's address on XAI. `GET /users/{user_uuid}/wallet` shows the balance; `wallet.deposit.received` fires on each credit.
+- **Customer wallet addresses of their own** on EVM chains, Solana, Tron and TON, credited to the customer's address on XAI. `GET /users/{user_uuid}/wallet` shows the balance; `wallet.deposit.received` fires on each credit.
 - **Orders.** On an off-ramp the customer signs the escrow funding and any refund, and refunds land on their own address. On an on-ramp the crypto is released to the customer's address and your partner fee to your partner wallet, in the same transaction.
 - **Withdrawals** to any supported chain, signed by the customer, gas paid by Unigox: `POST /users/{user_uuid}/withdrawals/quote`, then `POST /users/{user_uuid}/withdrawals`. `wallet.withdrawal.status.changed` follows each one. Deposits and withdrawals need no KYC; orders do.
 - New error codes: `FEATURE_NOT_ENABLED`, `WALLET_NOT_LINKED`, `WALLET_ALREADY_LINKED`, `WALLET_TYPE_MISMATCH`, `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED`, `CUSTOMER_NOT_FOUND`, `WITHDRAWAL_NOT_FOUND`, `ADDRESS_CAP_REACHED`, `BALANCE_UNAVAILABLE`, `DEPOSIT_ADDRESSES_UNAVAILABLE`, `DEPOSIT_ADDRESS_ALLOCATION_UNKNOWN`, `DEPOSIT_ADDRESS_NOT_WATCHED`, `BRIDGE_UNAVAILABLE`.

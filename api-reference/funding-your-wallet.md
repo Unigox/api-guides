@@ -43,7 +43,7 @@ order cannot be funded by a USDT balance.
 
 You do not have to source USDC on XAI yourself.
 
-Unigox provisions a deposit address for your account on each supported chain and
+Unigox provisions a funding address for your wallet on each supported chain and
 monitors it. A deposit that lands there is moved to your XAI wallet automatically
 and credited 1:1 with no fee, usually within minutes; a deposit held for a
 compliance check is credited after review.
@@ -68,9 +68,9 @@ Very small amounts can round down to zero after decimal conversion; send at
 least 1 USDC or USDT.
 
 {% hint style="danger" %}
-**A deposit address is not your XAI wallet address, and the two are never
+**A funding address is not your XAI wallet address, and the two are never
 interchangeable.** Sending Solana USDC to your XAI address, or XAI USDC to your
-Solana deposit address, is unrecoverable in either direction. Sending a token a
+Solana funding address, is unrecoverable in either direction. Sending a token a
 chain does not accept, such as USDC to Tron, is equally unrecoverable.
 
 Always take the address for the exact chain you are sending from, check it

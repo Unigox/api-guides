@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const guide = read("crypto-payments.md");
-const reference = read("api-reference/bridge-payments.md");
+const reference = read("api-reference/payment-addresses.md");
 
 test("the guide signs a callback URL only when GET /config has callbacks on", () => {
   assert.doesNotMatch(guide, /contains the invoice reference and HTTPS callback URL\./);
@@ -27,8 +27,10 @@ test("SEC-DOCS-30: the reference's allocation example and reassignment sign a ca
 });
 
 test("the guide states the reuse rule, the failed relock gap and the precision rule", () => {
-  assert.match(guide, /paid in full and at least 24 hours have passed/);
-  assert.match(guide, /If the lock after an unlock fails/);
+  // The portal's rule (owner decision O-08), the same in the checkout guide and the help: 7 days, not 24 hours.
+  assert.match(guide, /paid in full and credited, and 7 days have passed since/);
+  assert.doesNotMatch(guide, /24 hours/);
+  assert.match(guide, /If reserving the address again after ending its reservation fails/);
   assert.match(guide, /`BigInt`/);
   assert.match(guide, /`memoHash` is public/);
 });
@@ -45,6 +47,12 @@ test("the reference gives every status and subStatus of a transaction and the li
   for (const status of ["CREATED", "PENDING", "PROCESSING", "DONE", "FAILED", "DEFERRED", "COMPLIANCE_HOLD", "COMPLIANCE_FROZEN"]) assert.ok(reference.includes(`\`${status}\``), status);
   for (const sub of ["COMPLETED", "PARTIAL", "REFUNDED", "WAIT_SOURCE_CONFIRMATIONS", "NOT_PROCESSABLE_REFUND_NEEDED"]) assert.ok(reference.includes(`\`${sub}\``), sub);
   assert.match(reference, /A final page that is exactly full still returns a cursor/);
-  assert.match(reference, /an omitted `status` includes locks in every status/);
-  assert.match(reference, /The Bridge is the Unigox API for crypto payments/);
+  assert.match(reference, /an omitted `status` includes reservations in every status/);
+  // Docs review L53: the list rule speaks of address IDs and address types, not of lock IDs, memo locks or families.
+  assert.match(reference, /`before` \(an address ID, the `lockId` field\)/);
+  assert.match(reference, /An omitted `chainType` includes all address types/);
+  assert.doesNotMatch(reference.replace(/"Unigox Bridge Memo Locks"/g, ""), /lock ID|memo lock|\bfamil(y|ies)\b|`ACTIVE` lock\b|active lock\b|closed locks?\b/i);
+  // The reference speaks of the Unigox payments API and payment addresses, never of internal service names.
+  assert.match(reference, /The Unigox payments API gives you payment addresses/);
+  assert.doesNotMatch(reference.replace(/"Unigox Bridge (Memo Locks|History)"|name: "Unigox Bridge (Memo Locks|History)"|`BRIDGE_\w+`/g, ""), /\bBridge\b|\bXAI\b|collection address|memo association/i);
 });

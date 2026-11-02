@@ -13,6 +13,6 @@ Reference groups:
 - [Funding your wallet](./funding-your-wallet.md)
 - [Third-party payouts](./third-party-payouts.md)
 - [Business customers](./business-customers.md)
-- [Bridge payment addresses and credited webhooks](./bridge-payments.md)
+- [API reference: payment addresses](./payment-addresses.md)
 - [Orders](https://developers.unigox.com/api-reference/orders)
 - [Webhooks](https://developers.unigox.com/api-reference/webhooks)

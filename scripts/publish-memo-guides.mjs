@@ -1,4 +1,4 @@
-// Publish the two memo guides into the existing Tutorials and API Reference
+// Publish the memo guides into the existing Tutorials and API Reference
 // groups. Other pages and their ordering/content are never replaced.
 // GITBOOK_TOKEN and GITBOOK_SPACE reuse the existing page-publishing settings.
 // --dry-run resolves the live parents/pages without creating a change request.
@@ -7,8 +7,19 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 export const guides = [
-  { source: "crypto-payments.md", path: "tutorials/crypto-payments", sibling: "tutorials/fiat-accounts", title: "Accept crypto payments on EVM, TON, Solana and Tron" },
-  { source: "api-reference/bridge-payments.md", path: "api-reference/bridge-payments", sibling: "api-reference/user-management", title: "Bridge payment addresses and credited webhooks" },
+  { source: "crypto-payments.md", path: "tutorials/crypto-payments", sibling: "tutorials/fiat-accounts", title: "Payments API: payment addresses for your own payment page" },
+  // The integrator guide of Unigox Checkout as six pages, the Quickstart first at the path the portal's Developers page
+  // links. unigox.com scripts/crypto-checkout-guide-sync.mjs writes them (and checkout-integration.md, the whole guide on
+  // one page) from its public/checkout-integration.md; its tests keep them the same.
+  { source: "checkout-quickstart.md", path: "tutorials/crypto-checkout", sibling: "tutorials/fiat-accounts", title: "Accept crypto payments with Unigox Checkout on your website" },
+  { source: "checkout-embed.md", path: "tutorials/crypto-checkout-embed", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: create a payment and show it on your site" },
+  { source: "checkout-confirm.md", path: "tutorials/crypto-checkout-confirm", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: confirm payments on your server" },
+  { source: "checkout-links.md", path: "tutorials/crypto-checkout-links", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: make payment links and deposit pages on your server" },
+  { source: "checkout-testing.md", path: "tutorials/crypto-checkout-testing", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: test and go live" },
+  { source: "checkout-reference.md", path: "tutorials/crypto-checkout-reference", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: networks, troubleshooting and changes" },
+  // Published before as api-reference/bridge-payments ("Bridge payment addresses and credited webhooks"): that page is
+  // renamed in place (same page, new path and title), so the developer site keeps one reference page, not two.
+  { source: "api-reference/payment-addresses.md", path: "api-reference/payment-addresses", formerPath: "api-reference/bridge-payments", sibling: "api-reference/user-management", title: "API reference: payment addresses" },
   { source: "non-custodial-customers.md", path: "tutorials/non-custodial-customers", sibling: "tutorials/fiat-accounts", title: "Non-custodial customers" },
   { source: "api-reference/third-party-payouts.md", path: "tutorials/third-party-payouts", sibling: "tutorials/fiat-accounts", title: "Third-party payouts" },
   { source: "api-reference/funding-your-wallet.md", path: "tutorials/funding-your-wallet", sibling: "tutorials/fiat-accounts", title: "Funding your wallet" },
@@ -45,13 +56,15 @@ export async function publishMemoGuides(api, space, dryRun, spec) {
   for (const guide of guides) {
     const sibling = locatePage(tree.pages, guide.sibling);
     if (!sibling?.parent) throw new Error(`Cannot resolve existing parent for ${guide.path}`);
-    const existing = locatePage(tree.pages, guide.path);
+    const current = locatePage(tree.pages, guide.path);
+    const former = !current && guide.formerPath ? locatePage(tree.pages, guide.formerPath) : undefined;
+    const existing = current ?? former;
     if (existing && existing.parent !== sibling.parent) throw new Error(`Unexpected parent for ${guide.path}`);
     const source = await readFile(new URL(`../${guide.source}`, import.meta.url), "utf8");
     const markdown = renderGuide(source);
     if (!markdown.trim()) throw new Error(`Empty source: ${guide.source}`);
-    plan.push({ ...guide, parent: sibling.parent, id: existing?.page.id, markdown });
-    console.log(`${existing ? "Update" : "Create"} ${guide.path} under existing parent ${sibling.parent}`);
+    plan.push({ ...guide, parent: sibling.parent, id: existing?.page.id, rename: Boolean(former), markdown });
+    console.log(`${former ? `Rename ${guide.formerPath} to` : existing ? "Update" : "Create"} ${guide.path} under existing parent ${sibling.parent}`);
   }
   if (dryRun) {
     const reference = await api("GET", `${base}/content/path/api-reference%2Fuser-management?format=document`);
@@ -68,7 +81,7 @@ export async function publishMemoGuides(api, space, dryRun, spec) {
   const changes = [];
   for (const page of plan) {
     changes.push(page.id
-      ? { operation: "update_page", page: page.id, document: { markdown: page.markdown } }
+      ? { operation: "update_page", page: page.id, ...(page.rename ? { slug: page.path.split("/").at(-1), title: page.title } : {}), document: { markdown: page.markdown } }
       : { operation: "insert_page", into: page.parent, slug: page.path.split("/").at(-1), title: page.title, document: { markdown: page.markdown } });
   }
   if (referenceChange.added) changes.push({ operation: "update_page", page: reference.id, document: { document: referenceChange.document } });
@@ -146,7 +159,7 @@ export function locatePage(pages, path, parent = null) {
  */
 export function renderGuide(markdown) {
   return markdown
-    .replace(/\]\(api-reference\/bridge-payments\.md(?=[#)])/g, "](https://developers.unigox.com/api-reference/bridge-payments")
+    .replace(/\]\(api-reference\/payment-addresses\.md(?=[#)])/g, "](https://developers.unigox.com/api-reference/payment-addresses")
     .replace(/\]\(\.\.\/crypto-payments\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/crypto-payments")
     .replace(/\]\((?:\.\.\/|\.\/)?non-custodial-customers\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/non-custodial-customers")
     .replace(/\]\((?:\.\.\/|\.\/)?fiat-accounts\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/fiat-accounts")
