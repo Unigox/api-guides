@@ -12,7 +12,7 @@ Start with the section that matches where you are in the integration process.
 
 ## Where to go next
 
-* [Accept crypto payments on EVM, TON, Solana and Tron](crypto-payments.md) using collection addresses, invoice references and payment webhooks.
+* [Accept stablecoin payments](https://developers.unigox.com/tutorials/crypto-checkout) with payment links, Unigox Checkout on your site and customer deposit addresses, on Ethereum-style networks, TRON, TON and Solana. Building your own payment page on the [payments API](crypto-payments.md) is for special cases.
 
 * Read [Basics](https://developers.unigox.com/basics/how-it-works) for webhook behavior, lifecycle, and production readiness.
 * Read [Off-Ramp Partner Playbook](https://developers.unigox.com/tutorials/off-ramp-playbook) for the full phased integration flow.
