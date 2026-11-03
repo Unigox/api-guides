@@ -881,7 +881,7 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
    // Reserves the memo on an address you already have (signed `Lock`, a fresh nonce each time): the address a 401
    // memo_lock_signature_expired answer named, or one you reuse (see "If something goes wrong"). Returns what
    // reserveAddress() returns. A lost answer here cannot be resent (409 memo_lock_nonce_used): read the address's newest
-   // reservation (step 3's list read) before you sign another; one that shows your memo went through.
+   // reservation (newestReservation() in step 3) before you sign another; one that shows your memo went through.
    export async function reserveMemo(chainType, address, memo) {
      const { memoLimits } = await (await fetch(`${UNIGOX_PAYMENTS_API}/config`, { cache: "no-store" })).json();
      const message = {
@@ -914,7 +914,7 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
    **Callback address.** Getting an address and reserving one both sign a `callbackUrl`. Notifications to your server are not available yet, so sign `callbackUrl: ""` and confirm payments as [4. Confirm the payment on your server](#4-confirm-the-payment-on-your-server) shows. Any other value is refused with 400 `validation_callback_url_invalid` and nothing is reserved. [Notifications to your server (not available yet)](#notifications-to-your-server-not-available-yet) says what changes once Unigox turns them on for you.
 
    **If something goes wrong:**
-   - **An answer is lost** (a timeout, a dropped connection, a 5xx). Do not sign a new request for the same order. To get an address, send the same signed body again, with the same nonce, also after its deadline (`reserveAddress(chainType, memo, signed)` with the request you kept): it answers with the address and reservation it made the first time. Once the deadline has passed, the kept request can no longer reserve anything, and its answer tells you what it did: 401 `memo_lock_signature_expired` with the address in `data.allocated` means the address was made but its memo was not reserved; keep that address with the order, then reserve its memo with a new signed `Lock` (`reserveMemo(chainType, address, memo)` above). The same 401 with no address means the request never took effect (a connection refused, an outage): sign a new request; its predecessor's nonce was never used, so this makes no second address. A new nonce after a request that did take effect makes a second address. To reserve or end a reservation of an address you already have (`POST /memo-locks/lock`, signed `Lock`, or `POST /memo-locks/unlock`, signed `Unlock`), a resend answers 409 `memo_lock_nonce_used`, also when the first one took effect. Read the address's newest reservation with a signed `POST /memo-locks/list` (`{"chainType", "address", "limit": "1"}`): if it shows your memo (reserve) or is closed (end), the request went through; if not, sign a new one with a fresh nonce and deadline.
+   - **An answer is lost** (a timeout, a dropped connection, a 5xx). Do not sign a new request for the same order. To get an address, send the same signed body again, with the same nonce, also after its deadline (`reserveAddress(chainType, memo, signed)` with the request you kept): it answers with the address and reservation it made the first time. Once the deadline has passed, the kept request can no longer reserve anything, and its answer tells you what it did: 401 `memo_lock_signature_expired` with the address in `data.allocated` means the address was made but its memo was not reserved; keep that address with the order, then reserve its memo with a new signed `Lock` (`reserveMemo(chainType, address, memo)` above). The same 401 with no address means the request never took effect (a connection refused, an outage): sign a new request; its predecessor's nonce was never used, so this makes no second address. A new nonce after a request that did take effect makes a second address. To reserve or end a reservation of an address you already have (`POST /memo-locks/lock`, signed `Lock`, or `POST /memo-locks/unlock`, signed `Unlock`), a resend answers 409 `memo_lock_nonce_used`, also when the first one took effect. Read the address's newest reservation with a signed `POST /memo-locks/list` (`{"chainType", "address", "limit": "1"}`; `newestReservation(chainType, address)` in step 3): if it shows your memo (reserve) or is closed (end), the request went through; if not, sign a new one with a fresh nonce and deadline. A new `Lock` on an address whose earlier `Lock` took effect answers 409 `deposit_address_already_locked` every time, so read first and sign again only when the read shows no open reservation.
    - **Environment and chain id.** `environment` is `"production"` against the production API address and `"staging"` against staging's, as the Developers page shows. A wrong one is refused with 400 `validation_environment_mismatch`. The request body's `chainId` must equal the domain's `chainId`. This chain id only names the chain your signature is made for; it has nothing to do with the networks your customers pay on. An ordinary wallet (EOA) may sign on any chain id: the examples use 42161, and the portal signs with 660279. A contract wallet (ERC-1271) must sign on a chain Unigox has enabled for contract wallets: ask Unigox which one.
    - **Reusing an address.** A new address is the safe choice. Reuse an address only when its last payment was paid in full and credited, and its reservation ended at least 7 days ago. Until the new memo is reserved, a second transfer from the same payer (a double send, an exchange retrying a withdrawal) carries no reference; once it is reserved, that transfer is credited to the new payment. The portal works this way: it takes a new address while an address type holds less than 80 % of its limit of 1,000 addresses, and only past that reuses the address of a link that was paid in full and closed at least 7 days ago, longest idle first. It never takes the address of an open link (paid or not), of a partly paid or unpaid link, or of a customer's deposit page. At the limit, write to support@unigox.com to raise it. Never use your main deposit address (address index 0): your own top-ups there would count as this payment. Never reuse an address whose payment is unpaid, part paid or closed unpaid: a late payment for it would count toward the next payment on the address.
    - **To reuse an address**, first end its earlier payment's reservation with `POST /memo-locks/unlock` (signed `Unlock`), then reserve the new memo with `POST /memo-locks/lock` (signed `Lock`, `expiresAt: "0"`): the address keeps its text and the new reservation gets a new address ID. The earlier payment's link names the ended reservation, so it now opens as closed. It shows the payment it received only in the browser that followed it; elsewhere the customer sees a closed link with no payment, so keep your own order page as the customer's receipt. Never send the old link again, and build every new payment's link from its new reservation.
@@ -943,6 +943,21 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
      const authorization = { action: "list", wallet: WALLET, environment: ENVIRONMENT, issuedAt: String(now), expiresAt: String(now + 3600) };
      const signature = await walletClient.signTypedData({ account, domain, types: readTypes, primaryType: "ListLocks", message: authorization });
      return (readGrant = { authorization, signature });
+   }
+
+   // The address's newest reservation, from a signed POST /memo-locks/list: { lockId, wallet, memo, status, monitoring, … }
+   // as the API reference lists it, or null when the address never had one. It throws when Unigox cannot be read, so a
+   // caller never takes "no answer" for "no reservation". Step 2's "An answer is lost" and server.mjs read it after a
+   // Lock whose answer was lost: one that shows your wallet and memo, still ACTIVE, is the reservation that Lock made.
+   export async function newestReservation(chainType, address) {
+     const { authorization, signature } = await readSignature();
+     const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/list`, {
+       method: "POST", headers: { "Content-Type": "application/json" },
+       body: JSON.stringify({ chainId: domain.chainId, authorization, signature, query: { chainType, address, limit: "1" } }),
+     });
+     const body = await response.json().catch(() => null);
+     if (!response.ok || !Array.isArray(body?.data?.locks)) throw new Error(body?.details ?? body?.status ?? `HTTP ${response.status}`);
+     return body.data.locks[0] ?? null;
    }
 
    // Waits until the address takes payments on every network (watched), at most maxMs. Returns its monitoring for
@@ -1001,10 +1016,10 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
 The whole path of one order, from "order created" to "order paid", in two files: `unigox.mjs` holds the blocks of this guide, pasted once; `server.mjs` is your shop. It keeps orders in memory to stay short: use your own database.
 
 - **What it does:** when an order is placed, your server reserves an address for it and builds its link once the address is ready (a few minutes); when the payer presses **Pay with crypto**, the checkout shows that link; your page reports each transfer; your server checks it with Unigox and marks the order paid once. A job checks every reported transfer of every open order each minute, so one that was still pending when the payer closed the page is credited later. A transfer no page reported to your server (the payer closed the page before it posted, or paid from another device) is not among those hints and this job cannot find it: `fulfilInvoice()` of [Confirm](#4-confirm-the-payment-on-your-server) finds it in your signed history (count both by `quoteId`, so a payment seen both ways counts once), or look it up in the portal's **Payments**.
-- **What you keep:** with each order, its reference text, the signed request for its address and then the address, its address IDs, the transfer hints still to prove and the transfer IDs you counted. Each is written before the next step starts, so an attempt that fails is resumed, never redone.
+- **What you keep:** with each order, its reference text, the signed request for its address and then the address, whether a `Lock` for its memo was sent, its address IDs, the transfer hints still to prove and the transfer IDs you counted. Each is written before the next step starts, so an attempt that fails is resumed, never redone.
 - **What can go wrong:** written next to each step in the code.
 
-**`unigox.mjs`**: paste, in this order: step 2's block of [Option B](#option-b-from-your-server) without its last four lines (they are an example call), step 3's block (`waitUntilReady()`), the two builders of [The token builders](#the-token-builders) (`paymentToken()` and its helpers is enough), and `verifyTransfers()` and `isPaid()` of [Confirm without the key](#confirm-without-the-key). Keep one `UNIGOX_PAYMENTS_API` line and move the `import` lines to the top. Then add your key and the exports:
+**`unigox.mjs`**: paste, in this order: step 2's block of [Option B](#option-b-from-your-server) without its last four lines (they are an example call), step 3's block (`waitUntilReady()`), the two builders of [The token builders](#the-token-builders) (`paymentToken()` and its helpers is enough), and the whole block of [Confirm without the key](#confirm-without-the-key) (`unigoxGet()`, `verifyTransfers()` and `isPaid()`: the server reads its transfer hints with `unigoxGet()` too). Keep one `UNIGOX_PAYMENTS_API` line and move the `import` lines to the top. Then add your key and the exports:
 
 ```js
 // At the top of unigox.mjs. npm install viem. The key comes from your secrets store, never from code.
@@ -1016,8 +1031,8 @@ const walletClient = createWalletClient({ account, chain: arbitrum, transport: h
 
 // …the pasted blocks…
 
-// At the end of unigox.mjs:
-export { paymentToken, WALLET };
+// At the end of unigox.mjs: the names server.mjs imports that the pasted blocks do not export themselves.
+export { paymentToken, unigoxGet, WALLET };
 ```
 
 **`server.mjs`**:
@@ -1025,7 +1040,7 @@ export { paymentToken, WALLET };
 ```js
 // Node 20+. UNIGOX_PAYMENTS_API and UNIGOX_WALLET_KEY in the environment; run: node server.mjs
 import { createServer } from "node:http";
-import { allocationRequest, isPaid, paymentToken, reserveAddress, reserveMemo, verifyTransfers, waitUntilReady, WALLET } from "./unigox.mjs";
+import { allocationRequest, isPaid, newestReservation, paymentToken, reserveAddress, reserveMemo, unigoxGet, verifyTransfers, waitUntilReady, WALLET } from "./unigox.mjs";
 
 const shop = new Map([["NW-20418", "250.00"]]); // your orders and their amounts in USD
 const orders = new Map();                         // what this example keeps per order: in your shop, a database row
@@ -1051,7 +1066,7 @@ async function makeLink(id) {
   if (!order) {
     // A random part keeps the reference text from being guessed (see step 2).
     const memo = `${id}-${Math.random().toString(36).slice(2, 8)} · ${amount} USD`;
-    order = { id, memo, amount, wallet: WALLET, tolerance: "default", request: null, address: null, evm: null, token: null, lockIds: [], reported: [], micros: 0n, status: "open" };
+    order = { id, memo, amount, wallet: WALLET, tolerance: "default", request: null, address: null, lockSent: false, evm: null, token: null, lockIds: [], reported: [], micros: 0n, status: "open" };
     orders.set(id, order);
   }
   if (order.token) return order.token;
@@ -1060,6 +1075,7 @@ async function makeLink(id) {
     try {
       // Can throw (a lost answer): the button reports TOKEN_MISSING, the payer tries again, and the same request is sent again.
       order.evm = await reserveAddress("evm", order.memo, order.request);
+      order.request = null;                                           // spent: the order has its address
     } catch (error) {
       if (error.code !== "memo_lock_signature_expired") throw error;
       // The deadline passed before the memo was reserved: the kept request is spent either way. An answer that names the
@@ -1071,10 +1087,21 @@ async function makeLink(id) {
     }
   }
   if (!order.evm) {
-    // An address without its memo: reserve it with a signed Lock, a fresh nonce each attempt (step 2). When an earlier
-    // Lock's answer was lost and it took effect, this answers 409 deposit_address_already_locked: read the address's
-    // newest reservation (step 2, "An answer is lost") and take its address ID.
-    order.evm = await reserveMemo("evm", order.address, order.memo);
+    // An address without its memo: reserve it with a signed Lock, a fresh nonce each attempt (step 2). A Lock whose
+    // answer was lost may have taken effect, and every later Lock on the address then answers 409
+    // deposit_address_already_locked, so the order records that a Lock was sent before it goes out, and the attempt
+    // after one first reads the address's newest reservation (step 2, "An answer is lost"). This order's own (your
+    // wallet, this memo, still active) is the reservation that Lock made: its address ID is taken as it is. Another
+    // active reservation on the address is another payment's: the order fails here for you to look at, and no further
+    // Lock is signed. A closed one, or none, means the Lock never took effect: a new one is signed.
+    const found = order.lockSent ? await newestReservation("evm", order.address) : null; // throws while Unigox cannot be read: the next attempt reads again
+    if (found?.status === "ACTIVE") {
+      if (found.wallet?.toLowerCase() !== WALLET.toLowerCase() || found.memo !== order.memo) throw new Error(`${id}: ${order.address} is reserved for another payment (address ID ${found.lockId})`);
+      order.evm = { address: order.address, addressId: found.lockId, monitoring: found.monitoring };
+    } else {
+      order.lockSent = true;                                            // written before the Lock is sent
+      order.evm = await reserveMemo("evm", order.address, order.memo);
+    }
   }
   order.lockIds = [String(order.evm.addressId)];
   const monitoring = await waitUntilReady("evm", order.evm.address); // step 3: a link built earlier offers no network
@@ -1673,7 +1700,7 @@ If you give customers deposit addresses ([Customer deposit addresses](#customer-
 | 400 `validation_memo_too_long`, `validation_memo_not_string` or `validation_text_not_well_formed` | The memo is longer than 256 UTF-8 bytes, not a string, or holds a NUL or broken Unicode. Shorten or fix the reference and sign again. |
 | 401 `memo_lock_signature_expired` | The deadline has passed. Take a fresh one from `GET /config` for every new request. To retry getting an address whose answer was lost, send the same signed body again (step 2, option B); after this answer it is spent: with an address in `data.allocated`, reserve that address with a signed `Lock` (`reserveMemo()`); with none, sign a new request. |
 | 409 `memo_lock_nonce_used` | This nonce was used before. After a lost answer to a reserve or end request, read the address's newest reservation with a signed `POST /memo-locks/list` to see whether it went through; sign a new request only if it did not. |
-| 409 `deposit_address_already_locked` | The address still has an active reservation. Get a new address; reuse this one only once its payment was paid in full and credited, and its reservation ended at least 7 days ago. |
+| 409 `deposit_address_already_locked` | The address still has an active reservation. After a `Lock` whose answer was lost, read the address's newest reservation first (`newestReservation()`, step 3): one with your wallet and memo is the reservation that `Lock` made, so take its address ID instead of signing another. Otherwise get a new address; reuse this one only once its payment was paid in full and credited, and its reservation ended at least 7 days ago. |
 | 429 `deposit_addresses_cap_exceeded` | You reached your address limit (1,000 addresses per address type unless Unigox raised it). Reuse addresses whose last payment was paid in full and whose reservation ended at least 7 days ago, longest idle first, or write to support@unigox.com to raise the limit. |
 | 429 `rate_limited` | Too many requests from your server or wallet, or memo writes are not open in this environment yet. Wait and send the same request again; if it persists, contact Unigox. |
 | 503 `deposit_address_not_watched` | The address is not watched yet (Solana, TON). When you get a new address, the saved address is in `data.allocated`: send the same signed body again later. When you reserve an address after ending its reservation, the address has no memo until the reservation succeeds, and a transfer in between arrives without reference. |
