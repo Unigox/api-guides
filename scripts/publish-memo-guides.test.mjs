@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addPartnerOperations, locatePage, renderGuide, verifyImportedGuide, publishMemoGuides, partnerOperations } from "./publish-memo-guides.mjs";
+import { addPartnerOperations, locatePage, renderGuide, verifyImportedGuide, publishMemoGuides, partnerOperations, operatingOperations } from "./publish-memo-guides.mjs";
 
 /** Returns an isolated existing reference with prose and a generated operation; no IO. */
 function referenceFixture() {
@@ -60,3 +60,14 @@ test("dry-run only reads; unknown parent stops publication", async () => {
 
 /** @param {string} method Recorded method. @returns {boolean} Whether no write was requested. */
 function isGet(method) { return method === "GET"; }
+
+// The financial endpoints belong on Business Customers, without copying user-wallet endpoints there.
+test("operating API blocks are appended separately and idempotently", () => {
+  const before = referenceFixture();
+  before.document.nodes[1].data.path = "/api/v1/partner/operating-account";
+  const result = addPartnerOperations(before, "test-spec", operatingOperations);
+  assert.equal(result.added, 3);
+  assert.deepEqual(result.document.nodes.slice(0, before.document.nodes.length), before.document.nodes);
+  assert.equal(addPartnerOperations({id: before.id, document: result.document}, "test-spec", operatingOperations).added, 0);
+  assert.ok(!JSON.stringify(result.document).includes("/withdrawals/quote"));
+});

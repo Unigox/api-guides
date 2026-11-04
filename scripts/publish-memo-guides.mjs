@@ -28,6 +28,16 @@ export const partnerOperations = [
   ["get", "/api/v1/partner/users/{user_uuid}/withdrawals/{withdrawal_id}"],
 ];
 
+export const operatingOperations = [
+  ["post", "/api/v1/partner/operating-account/conversions"],
+  ["post", "/api/v1/partner/operating-account/withdrawals"],
+  ["get", "/api/v1/partner/operating-account/operations/{operation_id}"],
+];
+const referenceTargets = [
+  { path: "api-reference/user-management", operations: partnerOperations },
+  { path: "api-reference/business-customers", operations: operatingOperations },
+];
+
 /**
  * Publish just the configured memo pages in one GitBook change request.
  * @param {Function} api Authenticated GitBook transport; method/path/body -> JSON.
@@ -54,8 +64,10 @@ export async function publishMemoGuides(api, space, dryRun, spec) {
     console.log(`${existing ? "Update" : "Create"} ${guide.path} under existing parent ${sibling.parent}`);
   }
   if (dryRun) {
-    const reference = await api("GET", `${base}/content/path/api-reference%2Fuser-management?format=document`);
-    console.log(`Add ${addPartnerOperations(reference, spec).added} missing wallet/deposit operation blocks`);
+    for (const ref of referenceTargets) {
+      const reference = await api("GET", `${base}/content/path/${encodeURIComponent(ref.path)}?format=document`);
+      console.log(`Add ${addPartnerOperations(reference, spec, ref.operations).added} missing operations to ${ref.path}`);
+    }
     return guides.map(pagePath);
   }
 
@@ -63,24 +75,31 @@ export async function publishMemoGuides(api, space, dryRun, spec) {
   if (!cr.id || !cr.revision) throw new Error("Change request has no ID/revision");
   const target = `${base}/change-requests/${encodeURIComponent(cr.id)}`;
   console.log(`Prepared GitBook change request ${cr.id}`);
-  const reference = await api("GET", `${target}/content/path/api-reference%2Fuser-management?format=document`);
-  const referenceChange = addPartnerOperations(reference, spec);
+  const references = [];
+  for (const ref of referenceTargets) {
+    const reference = await api("GET", `${target}/content/path/${encodeURIComponent(ref.path)}?format=document`);
+    references.push({ ...ref, id: reference.id, change: addPartnerOperations(reference, spec, ref.operations) });
+  }
   const changes = [];
   for (const page of plan) {
     changes.push(page.id
       ? { operation: "update_page", page: page.id, document: { markdown: page.markdown } }
       : { operation: "insert_page", into: page.parent, slug: page.path.split("/").at(-1), title: page.title, document: { markdown: page.markdown } });
   }
-  if (referenceChange.added) changes.push({ operation: "update_page", page: reference.id, document: { document: referenceChange.document } });
+  for (const ref of references) {
+    if (ref.change.added) changes.push({ operation: "update_page", page: ref.id, document: { document: ref.change.document } });
+  }
   await api("POST", `${target}/content`, { expectedRevision: cr.revision, changes });
   for (const page of plan) {
     const persisted = await api("GET", `${target}/content/path/${encodeURIComponent(page.path)}?format=markdown`);
     if (page.id && persisted.id !== page.id) throw new Error(`Page identity changed: ${page.path}`);
     verifyImportedGuide(persisted.markdown, page.markdown, page.path);
   }
-  const importedReference = await api("GET", `${target}/content/path/api-reference%2Fuser-management?format=document`);
-  if (importedReference.id !== reference.id || addPartnerOperations(importedReference, spec).added !== 0) {
-    throw new Error("User Management operation blocks did not persist");
+  for (const ref of references) {
+    const imported = await api("GET", `${target}/content/path/${encodeURIComponent(ref.path)}?format=document`);
+    if (imported.id !== ref.id || addPartnerOperations(imported, spec, ref.operations).added !== 0) {
+      throw new Error(`Operation blocks did not persist in ${ref.path}`);
+    }
   }
   const result = await api("POST", `${target}/merge`, {});
   if (result.result !== "merge") throw new Error(`GitBook merge did not report a clean merge: ${result.result}`);
@@ -95,14 +114,14 @@ export async function publishMemoGuides(api, space, dryRun, spec) {
  * @returns {{document:object,added:number}} Cloned document (without content token),
  * and count of new blocks. No IO/mutation; throws for an unknown reference format.
  */
-export function addPartnerOperations(page, spec) {
+export function addPartnerOperations(page, spec, operations = partnerOperations) {
   if (!page.id || !Array.isArray(page.document?.nodes) || !spec) throw new Error("Missing User Management JSON document/spec");
   const document = structuredClone(page.document);
   delete document.meta;
   const existing = operationKeys(document.nodes, spec);
   if (!existing.size) throw new Error("User Management has no blocks for the configured spec");
   let added = 0;
-  for (const [method, path] of partnerOperations) {
+  for (const [method, path] of operations) {
     if (existing.has(`${method} ${path}`)) continue;
     document.nodes.push({ object: "block", type: "openapi-operation", data: { method, path, ref: { kind: "openapi", spec } }, isVoid: true });
     added++;

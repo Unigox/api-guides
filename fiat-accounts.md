@@ -50,6 +50,10 @@ what arrives is an order, not a transfer. EUR and GBP off-ramps are paid
 through the customer's account by Unigox itself, on to the bank you named; see
 [Paying an off-ramp through the account](#paying-an-off-ramp-through-the-account).
 
+Automatic collection into your operating account is a separate, Unigox-managed
+arrangement; it does not require a transfer call from your integration. See
+[Collecting deposits into your operating account](#collecting-deposits-into-your-operating-account).
+
 ## Conventions
 
 The same as the rest of the Partner API. Responses are wrapped:
@@ -258,8 +262,161 @@ X-API-Key: <api-key>
 ```
 
 Only money coming in is listed, so every row is a `credit`. `order_id` names the on-ramp
-this deposit funded, and is `null` when it funded none: that money simply stays
-on the customer's account.
+this deposit funded, and is `null` when it funded none. By default, that money
+stays on the customer's account. With collection enabled, it can instead be
+collected into your operating account as described below. `order_id: null` does
+not confirm that the funds are still available on the customer's account.
+
+## Collecting deposits into your operating account
+
+For partners with collection enabled, the flow is:
+
+1. Create and KYC-verify the customer, open their fiat account and retrieve its
+   payment details using the steps above.
+2. The customer sends EUR to their own EUR IBAN. This credits a fiat account;
+   it does not send crypto to the customer's wallet.
+3. Unigox automatically collects eligible incoming credits into your configured
+   operating account. A credit claimed to fund an on-ramp order follows that order
+   instead and is not also collected. Your integration does not submit a separate
+   transfer request.
+4. Read your operating account's balances and ledger to reconcile the collected
+   funds. Conversion and crypto withdrawal are separate operations, not an
+   automatic consequence of the deposit.
+
+Conversion and withdrawal are available in the B2B portal. The new Partner API
+flow is described below and is marked unavailable until its deployment. Both use
+your own UNIGOX wallet as the withdrawal destination; onward delivery to customers
+is outside this flow.
+
+**Confirm the setup with Unigox before accepting deposits.** Collection is off
+by default and enabled separately for each partner. Your retail accounts product
+must remain active, and an operating account must be configured as the collection
+destination. Account issuance being enabled in `GET /fiat-accounts/config` does
+not confirm that collection is enabled. An IBAN in your company's own name is a
+separate account-opening requirement; do not assume that collection creates one.
+
+The endpoints for reading the destination are:
+
+- `GET /api/v1/partner/operating-account` — available fiat and crypto balances.
+- `GET /api/v1/partner/operating-account/ledger?page=1` — entries on its ledger.
+- `GET /api/v1/partner/operating-account/payments?page=1` — bank transfers, not
+  a substitute for the ledger when following internal collection.
+
+See the [Operating Account API](https://developers.unigox.com/api-reference/business-customers#get-api-v1-partner-operating-account)
+and [operating account ledger](https://developers.unigox.com/api-reference/business-customers#get-api-v1-partner-operating-account-ledger).
+These endpoints return `403 NO_OPERATING_ACCOUNT` if no operating account is configured.
+The `transfer-to-partner` endpoint under business customers moves a business
+customer's balance; it is not a transfer endpoint for these retail accounts.
+
+**A deposit notification is not a collection confirmation.**
+`fiat_account.deposit.received` reports the credit to the customer's account.
+There is currently no published partner webhook confirming collection into your
+operating account: the historical `retail.settlement.completed` event is no longer
+published. Reconcile against the operating account's ledger and available balance
+before using the funds. Do not infer collection success from the deposit event or
+from the customer's incoming-transactions list. If a collection is unresolved,
+contact Unigox with the `fiat_account_id` and `transaction_id`; do not assume it
+completed or initiate a replacement transfer.
+
+## Converting and withdrawing your operating balance
+
+> **Not available yet.** These endpoints require the operating-account money API release. Do not integrate against them until Unigox confirms deployment.
+
+Use these calls with your partner `X-API-Key` after funds are available on your
+operating account. They do not change retail collection settings. The source
+account is resolved from your partner; no account ID is accepted in the body.
+
+### Convert fiat to crypto
+
+`POST /api/v1/partner/operating-account/conversions`
+
+Supply a unique `Idempotency-Key` header (1–128 letters, digits, dots, underscores,
+colons or hyphens). This submits a market conversion using the same balance and
+fee handling as the portal. It is not a price quote. Bank availability, supported
+pairs, balances and fees still apply.
+
+```json
+{"amount":"1.00","currency":"EUR","crypto_currency":"USDC"}
+```
+
+`amount` is the fiat amount to spend, a positive decimal string with at most two
+decimals. `currency` is `EUR` or `GBP`; `crypto_currency` is `USDC` or `USDT`.
+This endpoint buys crypto; it does not sell crypto for fiat. Read the operating
+balance after conversion before deciding how much crypto to withdraw.
+
+### Withdraw to your own UNIGOX wallet
+
+`POST /api/v1/partner/operating-account/withdrawals`
+
+Use another unique `Idempotency-Key` and supply:
+
+```json
+{"amount":"1.00","currency":"USDC"}
+```
+
+`amount` is a positive crypto amount with at most six decimals; `currency` is
+`USDC` or `USDT`. Unigox resolves the **single partner owner's own UNIGOX EVM
+deposit address** on the server, exactly the destination used by the portal for
+that owner. The partner must have exactly one live owner with a configured wallet.
+Missing or ambiguous ownership returns `422 OWNER_WALLET_REQUIRED` before any
+withdrawal is submitted. An unavailable deposit address returns `503 WALLET_UNAVAILABLE`.
+
+Do not send a destination address, chain, operator ID or source account ID. Unknown
+fields are rejected. This endpoint does not send directly to end-customer wallets.
+The banking leg uses Ethereum to the owner's UNIGOX deposit address. Subsequent
+credit to the UNIGOX wallet is separate from acceptance of the banking withdrawal;
+check the wallet balance before spending it. Withdrawal/network fees still apply.
+
+### Receipts and safe retries
+
+A recorded submission returns `202` with the Partner API envelope:
+
+```json
+{
+  "success": true,
+  "data": {
+    "operation_id": "ef5ecacb-80cf-42f6-bd9d-f5060d607869",
+    "type": "conversion",
+    "status": "submitted",
+    "amount": "1",
+    "currency": "EUR",
+    "crypto_currency": "USDC"
+  }
+}
+```
+
+Read the recorded outcome with
+`GET /api/v1/partner/operating-account/operations/{operation_id}`. It is scoped to
+your partner and returns `404 OPERATION_NOT_FOUND` for another partner's receipt.
+Conversion receipts may include `conversion` (reported amounts, price, bank fee
+and bank status) and `fee` (the recorded Unigox fee). Withdrawal receipts include
+the server-resolved `destination_address`. Provider identifiers are not exposed.
+
+| Status | Meaning and next step |
+| --- | --- |
+| `in_progress` | The request was durably recorded but its outcome is not yet recorded. Read again or repeat the identical request with the same key. If it persists, contact Unigox. |
+| `submitted` | The bank acknowledged the request. This is not confirmation of final wallet delivery or settled conversion balances. Read the operating ledger/balances and, for withdrawal, the destination wallet. |
+| `failed` | The request was definitively rejected before acceptance. Correct the cause before submitting a new operation with a new key. |
+| `needs_review` | The outcome is uncertain. Contact Unigox with `operation_id`; do not submit a replacement. |
+
+The GET endpoint returns the stored submission receipt, not a live bank or blockchain
+status poll. No new operation-status webhook is published by this release.
+
+Retry a lost or timed-out response with the **same key and identical request**.
+A replay returns the stored receipt with `200` and does not submit money again.
+Reusing a key for a different amount, currency or operation type returns
+`409 IDEMPOTENCY_CONFLICT`. Keys are scoped to the partner and shared by both POST
+endpoints. They are retained, including after a failed request; they do not expire.
+
+Only one unresolved operation per partner may be submitted. A new key while another
+operation is `in_progress` or `needs_review` returns `409 OPERATION_UNRESOLVED`.
+An interrupted process does not clear this protection. `503 OPERATION_UNCONFIRMED`
+means the outcome could not be persisted; its error details contain `operation_id`.
+Use the same key to read the retained claim and ask Unigox to reconcile it.
+
+These safeguards cover these API calls. Do not issue a replacement through the portal
+while an API operation is unresolved. Example amounts above illustrate request shape;
+confirm current provider minimums and fees before initiating a real transaction.
 
 ## Unused accounts are closed
 
@@ -285,6 +442,10 @@ not retried.
 
 Register your endpoint with `POST /api/v1/partner/webhooks` as usual; there is
 no per-event subscription.
+
+`fiat_account.deposit.received` does not confirm collection into your operating
+account. See [collection and reconciliation](#collecting-deposits-into-your-operating-account);
+`retail.settlement.completed` is no longer published.
 
 Accounts of business customers send `fiat_account.deposit.received` too, with
 `holder_type: business`, and `fiat_account.payment.sent` when money leaves. See
@@ -318,8 +479,10 @@ can use it for a new order.
 
 ### Paying from money already on the account
 
-A deposit that arrives with no open order stays on the customer's account
-(`fiat_account.deposit.received` with `order_id: null`). To use it for an
+With collection disabled, a deposit that arrives with no open order stays on
+the customer's account (`fiat_account.deposit.received` with `order_id: null`).
+Funds already collected into your operating account cannot be spent from the
+customer's account with this endpoint. To use it for an
 on-ramp, open the order as usual, then pay it from the balance instead of
 asking for a new transfer:
 

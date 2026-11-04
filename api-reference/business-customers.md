@@ -408,6 +408,13 @@ All the events on this page are listed. The retail
 
 ## Your operating account
 
+This is also the destination for automatic collection of retail deposits when
+Unigox has enabled that arrangement for your partner. See
+[Collecting deposits into your operating account](../fiat-accounts.md#collecting-deposits-into-your-operating-account)
+for enablement and reconciliation. Retail collection does not use the business
+customer `transfer-to-partner` endpoint.
+
+
 What `transfer-to-partner` moves lands on your own operating account, and crypto
 withdrawals leave from there. Three read-only calls show it:
 
@@ -460,3 +467,11 @@ If no operating account is set up for you, these answer
 | `ACCOUNT_CLOSED` | 422 | The account is closed |
 | `BANKING_TIMEOUT_UNKNOWN` | 504 | The bank did not confirm a transfer in time; do not retry with a new key |
 | `KYB_UNAVAILABLE`, `BANKING_UNAVAILABLE`, `BANKING_ERROR`, `SERVICE_UNAVAILABLE` | 5xx | Try again shortly |
+
+## Operating account money API
+
+> **Not available yet.** Requires the operating-account money API release.
+
+The new conversion and withdrawal routes use the partner's operating balance.
+Withdrawals go only to the single partner owner's own UNIGOX wallet. See the
+[request examples, receipts and retry rules](../fiat-accounts.md#converting-and-withdrawing-your-operating-balance).
