@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2026-11-06
 
 **Operating-account conversion and withdrawal through the Partner API.** Adds
 fiat-to-crypto conversion, withdrawal to the single partner owner's own UNIGOX
@@ -10,9 +10,6 @@ No change to automatic collection settings or destination-wallet withdrawals.
 See [Converting and withdrawing your operating balance](./fiat-accounts.md#converting-and-withdrawing-your-operating-balance).
 
 See also the [Operating account money API](./api-reference/business-customers.md#operating-account-money-api).
-
-Deploy the account migration and service, then the API gateway, before publishing
-this release. Remove the unavailable notice and date this entry only after validation.
 
 ## 2026-11-04
 

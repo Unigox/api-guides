@@ -470,7 +470,6 @@ If no operating account is set up for you, these answer
 
 ## Operating account money API
 
-> **Not available yet.** Requires the operating-account money API release.
 
 The new conversion and withdrawal routes use the partner's operating balance.
 Withdrawals go only to the single partner owner's own UNIGOX wallet. See the

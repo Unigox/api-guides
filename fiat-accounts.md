@@ -320,7 +320,6 @@ completed or initiate a replacement transfer.
 
 ## Converting and withdrawing your operating balance
 
-> **Not available yet.** These endpoints require the operating-account money API release. Do not integrate against them until Unigox confirms deployment.
 
 Use these calls with your partner `X-API-Key` after funds are available on your
 operating account. They do not change retail collection settings. The source
