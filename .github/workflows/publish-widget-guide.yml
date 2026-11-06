@@ -1,0 +1,37 @@
+name: Publish widget guide to GitBook
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - integration-guide/partner-integration-instructions.md
+      - .github/workflows/publish-widget-guide.yml
+  pull_request:
+    paths:
+      - integration-guide/partner-integration-instructions.md
+      - .github/workflows/publish-widget-guide.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-widget-guide
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    env:
+      GITBOOK_SPACE: R5WxtczoTRZuTKmBWr2I
+      GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}
+      SOURCE_FILE: integration-guide/partner-integration-instructions.md
+      PAGE_PATH: integration-guide/partner-integration-instructions
+      GITBOOK_DRY_RUN: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/publish-page.mjs
