@@ -49,6 +49,9 @@ jobs:
           GITBOOK_SPACE: ${{ vars.GITBOOK_SPACE }}
           GITBOOK_SPEC: ${{ vars.GITBOOK_SPEC }}
         run: node scripts/publish-memo-guides.mjs --dry-run
+      - name: Refuse unpublished releases
+        if: github.event_name != 'pull_request'
+        run: node scripts/check-release.mjs
       - name: Publish the memo pages
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:

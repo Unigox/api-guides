@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-06
+
+**Operating-account conversion and withdrawal through the Partner API.** Adds
+fiat-to-crypto conversion, withdrawal to the single partner owner's own UNIGOX
+wallet, and durable submission receipts. Both money calls require an
+`Idempotency-Key`; an uncertain debit blocks another submission until reconciled.
+No change to automatic collection settings or destination-wallet withdrawals.
+See [Converting and withdrawing your operating balance](./fiat-accounts.md#converting-and-withdrawing-your-operating-balance).
+
+See also the [Operating account money API](./api-reference/business-customers.md#operating-account-money-api).
+
+## 2026-11-04
+
+**Clarified retail deposit collection; no API behavior change.** The fiat accounts
+guide now explains optional collection into the partner's operating account,
+separate enablement, reconciliation, and the distinction between a deposit
+notification and collection completion. `retail.settlement.completed` remains
+unpublished. See [Collecting deposits into your operating account](./fiat-accounts.md#collecting-deposits-into-your-operating-account).
+
 ## 2026-11-02
 
 Partner KYC status responses add `rejection_reasons` from the customer’s own verification session. Existing `rejection_reason` and `provider_messages` fields remain available.
@@ -190,6 +209,11 @@ Error codes removed: `CLIENT_NOT_APPROVED`, `ACCOUNT_HOLDER_NOT_FOUND`, `IDENTIF
 
 ## 2026-09-14
 
+> **Current integration guidance:** references below to `retail.settlement.completed`
+> describe historical behavior. That event is no longer published. See
+> [collection and reconciliation](./fiat-accounts.md#collecting-deposits-into-your-operating-account).
+
+
 **An on-ramp order can be paid from the fiat account you issued the customer.** Instead of wiring the order's fiat to a vendor and calling `confirm-payment-sent`, the customer transfers the amount into their own account and the order moves on by itself.
 
 - On-ramp orders carry `fiat_funding_source`: `own_iban` (pay into the customer's own account; renamed `own_account` on 2026-09-18) or `vendor_details` (pay the vendor, as before). Read it on every order: it depends on whether the customer holds a payable account in the order's currency, not on a setting you pass.
@@ -206,6 +230,11 @@ Error codes removed: `CLIENT_NOT_APPROVED`, `ACCOUNT_HOLDER_NOT_FOUND`, `IDENTIF
 - Removed error codes: `INVALID_HOLDER_TYPE`, `LEDGER_NOT_ATTRIBUTABLE`.
 
 ## 2026-09-09
+
+> **Current integration guidance:** references below to `retail.settlement.completed`
+> describe historical behavior. That event is no longer published. See
+> [collection and reconciliation](./fiat-accounts.md#collecting-deposits-into-your-operating-account).
+
 
 **Retail accounts became Fiat accounts, and the `/api/v1/partner/retail/*` endpoints were removed.** Superseded by 2026-09-10 and 2026-09-18.
 
@@ -257,6 +286,11 @@ Neither appears on a widget order: your customer funded that escrow and signs fo
 - Retry with a fresh quote after the patch, as before.
 
 ## 2026-08-26
+
+> **Current integration guidance:** references below to `retail.settlement.completed`
+> describe historical behavior. That event is no longer published. See
+> [collection and reconciliation](./fiat-accounts.md#collecting-deposits-into-your-operating-account).
+
 
 **`allowed_actions` is now empty for a widget order.** It is derived from crypto custody as well as status, so it no longer lists actions that would return `404`. A widget order returns `"allowed_actions": []` at every status, including `awaiting_crypto_transfer_authorization`, where it used to list `["authorize-crypto-transfer", "cancel"]` and both calls then failed.
 

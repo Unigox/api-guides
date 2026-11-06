@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Refuse unpublished releases
+        if: github.event_name != 'pull_request'
+        run: node scripts/check-release.mjs
       - name: Publish fiat-accounts.md to GitBook
         env:
           GITBOOK_TOKEN: ${{ secrets.GITBOOK_TOKEN }}

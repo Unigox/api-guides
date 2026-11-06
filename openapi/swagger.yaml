@@ -110,6 +110,11 @@ tags:
       through the customer's account by Unigox itself, on to the bank you named: see
       `payout_via_own_account` on the order.
 
+      Optional automatic collection into the partner's operating account is configured separately
+      by Unigox; it does not require a retail transfer API call. Issuance enablement does not confirm
+      collection enablement. A deposit notification does not confirm collection completion.
+      See [collection and reconciliation](https://developers.unigox.com/tutorials/fiat-accounts#collecting-deposits-into-your-operating-account).
+
       An optional product Unigox activates per partner. `GET /api/v1/partner/fiat-accounts/config`
       answers whether it is on for you, before any customer is in scope.
     x-page-icon: building-columns
@@ -7454,6 +7459,218 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/operating-account/conversions:
+    post:
+      tags: [Business Customers]
+      summary: Convert operating fiat balance to crypto
+      operationId: convertOperatingAccount
+      description: |
+        Not available until the operating-account money API release is deployed.
+        Buys USDC or USDT with EUR or GBP using the portal conversion and fee path. This is a market submission, not a quote.
+        Requires Idempotency-Key. Repeating the identical normalized request returns its stored receipt
+        without executing it again. Keys are shared by both operating-account money endpoints.
+        An in_progress or needs_review operation blocks another key for this partner.
+        submitted means bank acknowledgement, not final delivery. Read balances/ledger before spending.
+        See [integration and retry rules](https://developers.unigox.com/tutorials/fiat-accounts#converting-and-withdrawing-your-operating-balance).
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9._:-]{1,128}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, currency, crypto_currency]
+              properties:
+                amount:
+                  type: string
+                  pattern: '^[0-9]{1,12}(\.[0-9]{1,2})?$'
+                  description: Positive decimal amount. Exponents, zero and excess precision are rejected.
+                  example: '1.00'
+                currency:
+                  type: string
+                  enum: [EUR, GBP]
+                crypto_currency:
+                  type: string
+                  enum: [USDC, USDT]
+      responses:
+        '202':
+          description: Recorded submission outcome; inspect status, which may also be failed or needs_review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatingMoneyResponse'
+        '200':
+          description: Idempotent replay of a recorded operation; no new debit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatingMoneyResponse'
+        '400':
+          description: INVALID_REQUEST, INVALID_AMOUNT or INVALID_IDEMPOTENCY_KEY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '403':
+          description: NO_OPERATING_ACCOUNT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: IDEMPOTENCY_CONFLICT or OPERATION_UNRESOLVED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: OWNER_WALLET_REQUIRED for withdrawal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '503':
+          description: SERVICE_UNAVAILABLE, WALLET_UNAVAILABLE or OPERATION_UNCONFIRMED; retry only with the same key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/operating-account/withdrawals:
+    post:
+      tags: [Business Customers]
+      summary: Withdraw operating crypto to your own UNIGOX wallet
+      operationId: withdrawOperatingAccount
+      description: |
+        Not available until the operating-account money API release is deployed.
+        Withdraws to the single partner owner's server-resolved UNIGOX deposit address on Ethereum. No caller-supplied destination, network, owner or source account is accepted. Does not pay end-customer wallets.
+        Requires Idempotency-Key. Repeating the identical normalized request returns its stored receipt
+        without executing it again. Keys are shared by both operating-account money endpoints.
+        An in_progress or needs_review operation blocks another key for this partner.
+        submitted means bank acknowledgement, not final delivery. Read balances/ledger before spending.
+        See [integration and retry rules](https://developers.unigox.com/tutorials/fiat-accounts#converting-and-withdrawing-your-operating-balance).
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9._:-]{1,128}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, currency]
+              properties:
+                amount:
+                  type: string
+                  pattern: '^[0-9]{1,12}(\.[0-9]{1,6})?$'
+                  description: Positive decimal amount. Exponents, zero and excess precision are rejected.
+                  example: '1.00'
+                currency:
+                  type: string
+                  enum: [USDC, USDT]
+      responses:
+        '202':
+          description: Recorded submission outcome; inspect status, which may also be failed or needs_review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatingMoneyResponse'
+        '200':
+          description: Idempotent replay of a recorded operation; no new debit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatingMoneyResponse'
+        '400':
+          description: INVALID_REQUEST, INVALID_AMOUNT or INVALID_IDEMPOTENCY_KEY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '403':
+          description: NO_OPERATING_ACCOUNT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '409':
+          description: IDEMPOTENCY_CONFLICT or OPERATION_UNRESOLVED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '422':
+          description: OWNER_WALLET_REQUIRED for withdrawal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '503':
+          description: SERVICE_UNAVAILABLE, WALLET_UNAVAILABLE or OPERATION_UNCONFIRMED; retry only with the same key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/operating-account/operations/{operation_id}:
+    get:
+      tags: [Business Customers]
+      summary: Read an operating-account submission receipt
+      operationId: getOperatingOperation
+      description: |
+        Not available until the operating-account money API release is deployed.
+        Returns the durably recorded submission outcome, scoped to your partner. This is not a live
+        bank or blockchain status poll. submitted does not confirm final wallet delivery. No new
+        operation-status webhook is emitted. If in_progress persists or status is needs_review,
+        contact Unigox; do not submit a replacement under another key or through the portal.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: operation_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Recorded receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatingMoneyResponse'
+        '403':
+          description: NO_OPERATING_ACCOUNT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '404':
+          description: OPERATION_NOT_FOUND, also for another partner's operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
+        '503':
+          description: SERVICE_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerErrorResponse'
   /api/v1/partner/operating-account:
     get:
       tags:
@@ -7539,6 +7756,44 @@ paths:
                 $ref: '#/components/schemas/PartnerErrorResponse'
 components:
   schemas:
+    OperatingMoneyResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: object
+          required: [operation_id, type, status]
+          properties:
+            operation_id:
+              type: string
+              format: uuid
+            type:
+              type: string
+              enum: [conversion, withdrawal]
+            status:
+              type: string
+              enum: [in_progress, submitted, failed, needs_review]
+              description: Submission outcome, not final blockchain delivery or settled balance.
+            amount:
+              type: string
+            currency:
+              type: string
+            crypto_currency:
+              type: string
+            destination_address:
+              type: string
+              description: Server-resolved owner UNIGOX deposit address; withdrawal only.
+            message:
+              type: string
+            conversion:
+              type: object
+              description: Bank-reported fiat_amount, crypto_amount, price, bank_fee and bank_status, where available.
+            fee:
+              type: object
+              description: Recorded Unigox fee (rate, amount and currency), where available.
     WalletType:
       type: string
       enum: [partner_wallet, external_wallet]
