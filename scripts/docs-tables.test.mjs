@@ -44,7 +44,7 @@ test("a row after a paragraph inside a table is an orphan", () => {
 });
 
 test("no table row in the guides stands outside its table", () => {
-  for (const file of [...markdownFiles("."), ...markdownFiles("api-reference")]) {
+  for (const file of [...markdownFiles("."), ...markdownFiles("api-reference"), ...markdownFiles("integration-guide")]) {
     assert.deepEqual(orphanRows(readFileSync(join(root, file), "utf8")), [], `${file}: rows outside any table`);
   }
 });
