@@ -104,7 +104,7 @@ const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" ||
 export async function verifyTransfers(order, reported) {
   const memoHash = keccak256(toBytes(order.memo));
   const config = await unigoxGet("/config", "fetched");
-  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native) ?? [];
+  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native && /^USD/.test(t.symbol)) ?? [];
   const credits = new Map();
   for (const p of (Array.isArray(reported) ? reported : []).slice(0, 200)) {
     if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
@@ -187,7 +187,7 @@ export async function fulfilInvoice(memoLockId) {
   if (!order || order.status === "paid") return;
   const config = await unigoxCall("/config", "fetched");   // throws when Unigox cannot be read: the next pass retries
   if (!Array.isArray(config.data)) throw new Error("Unigox /config: no chains");
-  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native) ?? [];
+  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native && /^USD/.test(t.symbol)) ?? [];
 
   // An order paid on several networks has one address ID per address type: read each.
   const payments = [];

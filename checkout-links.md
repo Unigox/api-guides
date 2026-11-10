@@ -508,8 +508,10 @@ function paymentToken(link) {
   // A v2 memo ("<reference> · <amount> USD · v2 …", what the portal writes) states the link's terms itself: the link must
   // state exactly the same ones, or the checkout refuses it ("This payment link can't be used").
   const terms = linkTerms(link.memo);
+  const centsOf = (s) => { const [whole, fraction = ""] = s.split("."); return BigInt(whole + fraction.padEnd(2, "0")); };
+  const legacyAmount = / · (\d{1,12}(?:\.\d{1,2})?) USD$/.exec(link.memo)?.[1];
+  if (!terms && legacyAmount && centsOf(legacyAmount) !== centsOf(amount)) throw new Error(`amount: the memo says ${legacyAmount} USD`);
   if (terms) {
-    const centsOf = (s) => { const [whole, fraction = ""] = s.split("."); return BigInt(whole + fraction.padEnd(2, "0")); };
     if (centsOf(terms.amount) !== centsOf(amount)) throw new Error(`amount: the memo says ${terms.amount} USD`);
     // Whole seconds, as the payment page compares them: a sub-second time (Go writes nine digits) is the same deadline.
     const by = terms.expiresAt === null ? null : Math.floor(Date.parse(terms.expiresAt) / 1000);
@@ -714,10 +716,11 @@ export async function createDepositPage(customerId) {
   for (const type of ["evm", "tvm", "ton", "svm"]) {            // every address type you accept
     if (addresses[type]) continue;                              // reserved by an earlier run
     const made = await reserveAddress(type, memo);              // a new address, reserved for this customer
+    addresses[type] = { address: made.address, lockId: made.addressId, monitoring: made.monitoring };
+    await save();                                               // persist before a readiness read can fail
     // Step 3 of Option B: wait until it takes payments, or the page offers no network for it yet.
-    const monitoring = (await waitUntilReady(type, made.address)) ?? made.monitoring;
-    addresses[type] = { address: made.address, lockId: made.addressId, monitoring };
-    await save();                                               // each address as soon as it exists
+    addresses[type].monitoring = (await waitUntilReady(type, made.address)) ?? made.monitoring;
+    await save();
   }
   const token = topUpToken({
     merchant: "Northwind",                     // the name your customer sees

@@ -634,7 +634,7 @@ const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" ||
 export async function verifyTransfers(order, reported) {
   const memoHash = keccak256(toBytes(order.memo));
   const config = await unigoxGet("/config", "fetched");
-  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native) ?? [];
+  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native && /^USD/.test(t.symbol)) ?? [];
   const credits = new Map();
   for (const p of (Array.isArray(reported) ? reported : []).slice(0, 200)) {
     if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
@@ -717,7 +717,7 @@ export async function fulfilInvoice(memoLockId) {
   if (!order || order.status === "paid") return;
   const config = await unigoxCall("/config", "fetched");   // throws when Unigox cannot be read: the next pass retries
   if (!Array.isArray(config.data)) throw new Error("Unigox /config: no chains");
-  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native) ?? [];
+  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native && /^USD/.test(t.symbol)) ?? [];
 
   // An order paid on several networks has one address ID per address type: read each.
   const payments = [];
@@ -1299,8 +1299,10 @@ function paymentToken(link) {
   // A v2 memo ("<reference> · <amount> USD · v2 …", what the portal writes) states the link's terms itself: the link must
   // state exactly the same ones, or the checkout refuses it ("This payment link can't be used").
   const terms = linkTerms(link.memo);
+  const centsOf = (s) => { const [whole, fraction = ""] = s.split("."); return BigInt(whole + fraction.padEnd(2, "0")); };
+  const legacyAmount = / · (\d{1,12}(?:\.\d{1,2})?) USD$/.exec(link.memo)?.[1];
+  if (!terms && legacyAmount && centsOf(legacyAmount) !== centsOf(amount)) throw new Error(`amount: the memo says ${legacyAmount} USD`);
   if (terms) {
-    const centsOf = (s) => { const [whole, fraction = ""] = s.split("."); return BigInt(whole + fraction.padEnd(2, "0")); };
     if (centsOf(terms.amount) !== centsOf(amount)) throw new Error(`amount: the memo says ${terms.amount} USD`);
     // Whole seconds, as the payment page compares them: a sub-second time (Go writes nine digits) is the same deadline.
     const by = terms.expiresAt === null ? null : Math.floor(Date.parse(terms.expiresAt) / 1000);
@@ -1505,10 +1507,11 @@ export async function createDepositPage(customerId) {
   for (const type of ["evm", "tvm", "ton", "svm"]) {            // every address type you accept
     if (addresses[type]) continue;                              // reserved by an earlier run
     const made = await reserveAddress(type, memo);              // a new address, reserved for this customer
+    addresses[type] = { address: made.address, lockId: made.addressId, monitoring: made.monitoring };
+    await save();                                               // persist before a readiness read can fail
     // Step 3 of Option B: wait until it takes payments, or the page offers no network for it yet.
-    const monitoring = (await waitUntilReady(type, made.address)) ?? made.monitoring;
-    addresses[type] = { address: made.address, lockId: made.addressId, monitoring };
-    await save();                                               // each address as soon as it exists
+    addresses[type].monitoring = (await waitUntilReady(type, made.address)) ?? made.monitoring;
+    await save();
   }
   const token = topUpToken({
     merchant: "Northwind",                     // the name your customer sees
@@ -1797,22 +1800,24 @@ const CALLBACK_URL = "https://shop.example/webhooks/unigox/production";
 const KEY_ID = /^[A-Za-z0-9._-]{1,64}$/;                   // the form every Unigox key id has
 const KEYS_MAX_AGE = 600_000;                              // keys are read again once they are ten minutes old
 let keys = new Map();                                      // keyId -> KeyObject, from GET /config
-let keysReadAt = 0;                                        // when GET /config was last asked for keys
+let keysAttemptAt = 0; // rate-limit attempts independently of successful reads
+let keysReadAt = 0;                                        // when keys were last successfully read
 let keysFailed = false;                                    // whether that read failed
 let keysReading = null;                                    // the read in progress, shared by every request
 
 // At most one GET /config a minute, and one at a time, so unknown key ids cannot flood Unigox from your server.
-// A read replaces every key, so a key Unigox withdrew is gone; a failed read keeps the keys you have.
+// A read replaces every key, so a key Unigox withdrew is gone; a failed read never extends their ten-minute lifetime.
 function refreshKeys() {
-  if (keysReading || Date.now() - keysReadAt < 60_000) return keysReading;
-  keysReadAt = Date.now();
+  if (keysReading || Date.now() - keysAttemptAt < 60_000) return keysReading;
+  keysAttemptAt = Date.now();
   keysReading = unigoxCall("/config", "fetched").then((config) => {
     if (!Array.isArray(config.webhookKeys)) throw new Error("Unigox /config: no webhookKeys");
     keys = new Map(config.webhookKeys
       .filter((k) => k.algorithm === "ed25519" && (k.status === "active" || k.status === "retiring"))
       .map((k) => [k.keyId, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: Buffer.from(k.publicKey, "base64").toString("base64url") }, format: "jwk" })]));
+    keysReadAt = Date.now();
     keysFailed = false;
-  }, (error) => {
+  }).catch((error) => {
     keysFailed = true;
     throw error;
   }).finally(() => { keysReading = null; });
@@ -1833,9 +1838,9 @@ async function handler(req, res) {
       await refreshKeys();
     } catch (error) {
       console.error("GET /config", error);
-      if (!keys.has(keyId)) return res.sendStatus(503);    // Unigox cannot be read: it delivers again later
+      return res.sendStatus(503);    // Unigox cannot be read: it delivers again later
     }
-    if (!keys.has(keyId) && keysFailed) return res.sendStatus(503);
+    if (keysFailed || Date.now() - keysReadAt >= KEYS_MAX_AGE) return res.sendStatus(503);
   }
   const key = keys.get(keyId);
   const signed = Buffer.concat([Buffer.from(`${timestamp}.`, "utf8"), rawBody]);
@@ -1865,7 +1870,7 @@ What the receiver answers:
 
 - **400** when the body is empty or not `application/json` (Express then leaves `req.body` unread), or the event is not yours.
 - **401** for a timestamp more than five minutes off, something that is not a key id, an unknown key or a wrong signature. An unknown key id makes it read `GET /config` once, and again at most once a minute; a delivery signed with a key Unigox published within that minute is answered 401 once and delivered again later. The keys are also read again once they are ten minutes old, so a key Unigox has withdrawn from `GET /config` stops being accepted.
-- **503** while `GET /config` cannot be read: an error page, a broken answer, no answer within 10 seconds or `status: "not_fetched"`. The keys it already has stay in use.
+- **503** while `GET /config` cannot be read: an error page, a broken answer, no answer within 10 seconds or `status: "not_fetched"`. Cached keys remain usable only within ten minutes of the last successful read; a failed refresh does not extend that lifetime.
 - **500** when anything else throws, for example your database. Unigox delivers again later.
 - **200** once the event is stored, before fulfilment runs.
 
