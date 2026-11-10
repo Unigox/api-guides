@@ -14,6 +14,14 @@ Raw OpenAPI URL:
 
 - https://raw.githubusercontent.com/Unigox/api-guides/main/openapi/swagger.yaml
 
+## Widget integration documentation
+
+- [Integration Guide](./integration-guide/README.md) links the widget and Partner API instructions.
+- [Widget and API integration](./integration-guide/partner-integration-instructions.md) is the source for the existing `integration-guide/partner-integration-instructions` page.
+- [Personal widget settings](./integration-guide/partner-integration-instructions.md#personal-widget-settings) describes the upcoming per-user fee configuration. **Not available yet.**
+
+The personal section is prepared ahead of release. Keep its availability notice and the linked `Unreleased` changelog entry until the coordinated feature is live. No widget publication workflow is added by these edits; publishing this page to GitBook remains a separate release step. Existing company widget and Partner API instructions retain their own settings and authorization contract.
+
 ## Publishing to GitBook
 
 GitBook does **not** render the API reference directly from `openapi/swagger.yaml`.

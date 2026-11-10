@@ -100,6 +100,8 @@ For USD invoices, select the destination shown in your supplier’s bank details
 
 If you run a crypto publication, community or website, the [crypto widget](https://www.unigox.com/crypto-widget) lets visitors buy and sell crypto alongside your content. Embed ready-made trading screens; Unigox provides the trading and customer verification flows.
 
+The terms below describe existing **company widgets**. The upcoming [personal widget settings](https://guide.unigox.com/integration-guide/partner-integration-instructions#personal-widget-settings) will let individual users configure a separate fee without a partner account. **Not available yet.** Personal settings do not change company widget or Partner API fees.
+
 - Earn **20% of Unigox’s trading fee** on completed buys and sells through your widget.
 - Add your own markup on sell trades and adjust it in your partner dashboard.
 - Track orders, statuses, completed volume and markup earned in the dashboard.

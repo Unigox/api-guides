@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+**Personal widget fees.** The upcoming personal widget belongs to a user account and does not require a partner account. Its fee, receiving address and public key are managed separately from company widgets and explicit Partner API fees. See [Personal widget settings](./integration-guide/partner-integration-instructions.md#personal-widget-settings).
+
 ## 2026-11-06
 
 **Operating-account conversion and withdrawal through the Partner API.** Adds
