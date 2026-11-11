@@ -439,7 +439,7 @@ No `onError` code means that a payment failed or that the payer must pay again. 
 | `UNIGOX_CHECKOUT_UNDERPAID` | less than the amount was credited, short by more than the tolerance (step 4); the rest can still come |
 | `UNIGOX_CHECKOUT_PAID` | the credited sum covers the amount, or falls short of it by at most 0.5 % and never more than 1.00 USD |
 | `UNIGOX_CHECKOUT_OVERPAID` | more than the amount was credited |
-| `UNIGOX_CHECKOUT_PAID_LATE` | paid after the pay-by date (`x`) while the address still took this payment. The pay-by date lives only in the link: Unigox credits the payment like any other, and the portal and history show it as paid. Whether a late payment still fulfils the order is your server's decision, by your own order deadline. A transfer after the reservation has ended shows as `RECEIVED_WITHOUT_REFERENCE` instead |
+| `UNIGOX_CHECKOUT_PAID_LATE` | a transfer sent after the pay-by date (`x`) was needed to cover the payment, while the address still took this payment. An extra sent after an already covered payment does not make the invoice late. The pay-by date lives only in the link: Unigox credits the payment like any other. Whether a late payment still fulfils the order is your server's decision, by your own order deadline. A transfer after the reservation has ended shows as `RECEIVED_WITHOUT_REFERENCE` instead |
 | `UNIGOX_CHECKOUT_EXPIRED` | the pay-by date passed with nothing received |
 | `UNIGOX_CHECKOUT_CANCELLED` | the payer cancelled on the page, a newer payment now uses the address, or the payment link was closed. Transfers to the address are still credited |
 | `UNIGOX_CHECKOUT_FAILED` | a transfer was not completed or was returned. A refund still on its way is reported as `failed` too; the payer's page says the money is being sent back |
@@ -554,7 +554,7 @@ choosing ─▶ awaiting_payment ─▶ detected ─▶ confirming ─▶ paid  
                                                            ├─▶ on_hold    UNIGOX_CHECKOUT_ON_HOLD: under review, then paid or failed
                                                            └─▶ failed     UNIGOX_CHECKOUT_FAILED: not credited, or being returned
 awaiting_payment ─▶ expired      the pay-by date passed with nothing received   UNIGOX_CHECKOUT_EXPIRED
-late transfer, now credited ─▶ paid_late                                         UNIGOX_CHECKOUT_PAID_LATE (onComplete)
+late transfer needed to cover the amount, now credited ─▶ paid_late              UNIGOX_CHECKOUT_PAID_LATE (onComplete)
 ```
 
 | Status | What it means | What your server does |
@@ -564,7 +564,7 @@ late transfer, now credited ─▶ paid_late                                    
 | `paid` | Credited in full, or within the link's small-shortfall allowance; **Full amount only** allows no shortfall | Verify the credit and that the order can still be fulfilled |
 | `overpaid` | Credited, more than the amount | Verify the credit and order; agree with the customer how to handle the extra |
 | `underpaid` | Credited, short by more than the tolerance | Wait for the rest, or decide to fulfil anyway |
-| `paid_late` | Enough has been credited, and a credited transfer arrived on its source network after the pay-by date | Record the money; your order policy decides whether to fulfil |
+| `paid_late` | Enough has been credited, but transfers sent by the pay-by date did not cover the amount, including any allowed shortfall; a later transfer was needed | Record the money; your order policy decides whether to fulfil |
 | `on_hold` | Received, under review by Unigox; not in your wallet | Wait |
 | `failed` | Not credited, or being returned | Do not fulfil; see [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) |
 | `expired` | The pay-by date passed and nothing came | Make a new link if the order still stands |
@@ -1023,7 +1023,7 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
 
 The whole path of one order, from "order created" to "order paid", in two files: `unigox.mjs` holds the blocks of this guide, pasted once; `server.mjs` is your shop. It keeps orders in memory to stay short: use your own database.
 
-- **What it does:** when an order is placed, your server reserves an address for it and builds its link once the address is ready (a few minutes); when the payer presses **Pay with crypto**, the checkout shows that link; your page reports each transfer; your server checks it with Unigox and marks the order paid once. A job checks every reported transfer of every open order each minute, so one that was still pending when the payer closed the page is credited later. A transfer no page reported to your server (the payer closed the page before it posted, or paid from another device) is not among those hints and this job cannot find it: `fulfilInvoice()` of [Confirm](#4-confirm-the-payment-on-your-server) finds it in your signed history (count both by `quoteId`, so a payment seen both ways counts once), or look it up in the portal's **Payments**.
+- **What it does:** when an order is placed, your server reserves an address for it and builds its link once the address is ready (a few minutes); when the payer presses **Pay with crypto**, the checkout shows that link; your page reports each transfer; your server checks it with Unigox and marks the order paid once. A job checks outstanding reported transfers on every order each minute, including paid, cancelled and expired orders. A pending transfer can therefore be recorded later even if the payer closed the page, without fulfilling the order again. A transfer no page reported to your server (the payer closed the page before it posted, or paid from another device) is not among those hints and this job cannot find it: `fulfilInvoice()` of [Confirm](#4-confirm-the-payment-on-your-server) finds it in your signed history (count both by `quoteId`, so a payment seen both ways counts once), or look it up in the portal's **Payments**.
 - **What you keep:** with each order, its reference text, the signed request for its address and then the address, whether a `Lock` for its memo was sent, its address IDs, the transfer hints still to prove and the transfer IDs you counted. Each is written before the next step starts, so an attempt that fails is resumed, never redone.
 - **What can go wrong:** written next to each step in the code.
 
@@ -1202,10 +1202,11 @@ createServer(async (req, res) => {
 // Your shop places its orders: start making each order's link now, so it is ready when the payer presses Pay.
 for (const id of shop.keys()) linkFor(id).catch(console.error);
 
-// 3. The job: every open order's reported transfers, every minute, also when the payer closed the page. A transfer no
+// 3. The job: outstanding reported transfers on every order, every minute, even after payment or cancellation.
+//    Keep recording money without fulfilling an order again or reopening a closed one. A transfer no
 //    page reported needs your signed history (fulfilInvoice() in "Confirm") or the portal's Payments: it is not here.
 setInterval(() => {
-  for (const order of orders.values()) if (order.status === "open") check(order).catch(console.error);
+  for (const order of orders.values()) if (order.reported.length > 0) check(order).catch(console.error);
 }, 60_000);
 ```
 
@@ -1691,7 +1692,7 @@ If you give customers deposit addresses ([Customer deposit addresses](#customer-
 - Crypto processing is on for your production business account, and its **Developers** page shows **Environment** Production.
 - Your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
 - Every network you offer shows `confirmed: true` for your addresses.
-- Your periodic check (`verifyTransfers` or `fulfilInvoice`) runs for every open order, passed tests 9 and 10 on staging, and one small real payment passes tests 1 and 7.
+- Your periodic check (`verifyTransfers` or `fulfilInvoice`) covers open orders and additional or delayed credits on paid and closed orders. It passed tests 9 and 10 on staging, and one small real payment passes tests 1 and 7.
 - With deposit addresses: your periodic deposit job (with the key), or the person who credits deposits from **Payments**, runs at least as often as customers expect their balance to update, and passed tests 11 to 13 on staging.
 - Only if Unigox turned notifications on for you: your receiver passed [its tests](#tests-for-your-receiver) and its production URL is not staging's.
 - Your server confirms payments by one of the ways of step 4. If Unigox exported your wallet's private key, it is only in your secrets store.
@@ -1748,7 +1749,7 @@ If you give customers deposit addresses ([Customer deposit addresses](#customer-
 
 **What if they pay too little or too much?** Too little shows as `underpaid` and the customer can send the rest to the same address; more is credited and shows as `overpaid`. [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) lists every case and what to do.
 
-**What if they pay late or on the wrong network?** After the pay-by date the payment still arrives, as `paid_late`, and your server decides. A coin or network the page offers is usually credited; one it does not offer is not credited to the payment and not returned by itself: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
+**What if they pay late or on the wrong network?** If a transfer sent after the pay-by date is needed to cover the amount, the payment is `paid_late`, and your server decides whether the order still stands. An extra sent after an on-time payment stays recorded without making that invoice late. A coin or network the page offers is usually credited; one it does not offer is not credited to the payment and not returned by itself: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
 
 **Can I test without money?** Yes, with the [samples](#test-your-page-without-money). There is no test mode for real links: a real link takes real money, so finish with one small real payment.
 

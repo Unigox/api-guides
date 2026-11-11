@@ -71,7 +71,7 @@ If you give customers deposit addresses ([Customer deposit addresses](https://de
 - Crypto processing is on for your production business account, and its **Developers** page shows **Environment** Production.
 - Your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
 - Every network you offer shows `confirmed: true` for your addresses.
-- Your periodic check (`verifyTransfers` or `fulfilInvoice`) runs for every open order, passed tests 9 and 10 on staging, and one small real payment passes tests 1 and 7.
+- Your periodic check (`verifyTransfers` or `fulfilInvoice`) covers open orders and additional or delayed credits on paid and closed orders. It passed tests 9 and 10 on staging, and one small real payment passes tests 1 and 7.
 - With deposit addresses: your periodic deposit job (with the key), or the person who credits deposits from **Payments**, runs at least as often as customers expect their balance to update, and passed tests 11 to 13 on staging.
 - Only if Unigox turned notifications on for you: your receiver passed [its tests](https://developers.unigox.com/tutorials/crypto-checkout-reference#tests-for-your-receiver) and its production URL is not staging's.
 - Your server confirms payments by one of the ways of step 4. If Unigox exported your wallet's private key, it is only in your secrets store.

@@ -224,7 +224,7 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
 
 The whole path of one order, from "order created" to "order paid", in two files: `unigox.mjs` holds the blocks of this guide, pasted once; `server.mjs` is your shop. It keeps orders in memory to stay short: use your own database.
 
-- **What it does:** when an order is placed, your server reserves an address for it and builds its link once the address is ready (a few minutes); when the payer presses **Pay with crypto**, the checkout shows that link; your page reports each transfer; your server checks it with Unigox and marks the order paid once. A job checks every reported transfer of every open order each minute, so one that was still pending when the payer closed the page is credited later. A transfer no page reported to your server (the payer closed the page before it posted, or paid from another device) is not among those hints and this job cannot find it: `fulfilInvoice()` of [Confirm](https://developers.unigox.com/tutorials/crypto-checkout-confirm#4-confirm-the-payment-on-your-server) finds it in your signed history (count both by `quoteId`, so a payment seen both ways counts once), or look it up in the portal's **Payments**.
+- **What it does:** when an order is placed, your server reserves an address for it and builds its link once the address is ready (a few minutes); when the payer presses **Pay with crypto**, the checkout shows that link; your page reports each transfer; your server checks it with Unigox and marks the order paid once. A job checks outstanding reported transfers on every order each minute, including paid, cancelled and expired orders. A pending transfer can therefore be recorded later even if the payer closed the page, without fulfilling the order again. A transfer no page reported to your server (the payer closed the page before it posted, or paid from another device) is not among those hints and this job cannot find it: `fulfilInvoice()` of [Confirm](https://developers.unigox.com/tutorials/crypto-checkout-confirm#4-confirm-the-payment-on-your-server) finds it in your signed history (count both by `quoteId`, so a payment seen both ways counts once), or look it up in the portal's **Payments**.
 - **What you keep:** with each order, its reference text, the signed request for its address and then the address, whether a `Lock` for its memo was sent, its address IDs, the transfer hints still to prove and the transfer IDs you counted. Each is written before the next step starts, so an attempt that fails is resumed, never redone.
 - **What can go wrong:** written next to each step in the code.
 
@@ -403,10 +403,11 @@ createServer(async (req, res) => {
 // Your shop places its orders: start making each order's link now, so it is ready when the payer presses Pay.
 for (const id of shop.keys()) linkFor(id).catch(console.error);
 
-// 3. The job: every open order's reported transfers, every minute, also when the payer closed the page. A transfer no
+// 3. The job: outstanding reported transfers on every order, every minute, even after payment or cancellation.
+//    Keep recording money without fulfilling an order again or reopening a closed one. A transfer no
 //    page reported needs your signed history (fulfilInvoice() in "Confirm") or the portal's Payments: it is not here.
 setInterval(() => {
-  for (const order of orders.values()) if (order.status === "open") check(order).catch(console.error);
+  for (const order of orders.values()) if (order.reported.length > 0) check(order).catch(console.error);
 }, 60_000);
 ```
 

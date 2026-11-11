@@ -24,7 +24,7 @@ choosing ─▶ awaiting_payment ─▶ detected ─▶ confirming ─▶ paid  
                                                            ├─▶ on_hold    UNIGOX_CHECKOUT_ON_HOLD: under review, then paid or failed
                                                            └─▶ failed     UNIGOX_CHECKOUT_FAILED: not credited, or being returned
 awaiting_payment ─▶ expired      the pay-by date passed with nothing received   UNIGOX_CHECKOUT_EXPIRED
-late transfer, now credited ─▶ paid_late                                         UNIGOX_CHECKOUT_PAID_LATE (onComplete)
+late transfer needed to cover the amount, now credited ─▶ paid_late              UNIGOX_CHECKOUT_PAID_LATE (onComplete)
 ```
 
 | Status | What it means | What your server does |
@@ -34,7 +34,7 @@ late transfer, now credited ─▶ paid_late                                    
 | `paid` | Credited in full, or within the link's small-shortfall allowance; **Full amount only** allows no shortfall | Verify the credit and that the order can still be fulfilled |
 | `overpaid` | Credited, more than the amount | Verify the credit and order; agree with the customer how to handle the extra |
 | `underpaid` | Credited, short by more than the tolerance | Wait for the rest, or decide to fulfil anyway |
-| `paid_late` | Enough has been credited, and a credited transfer arrived on its source network after the pay-by date | Record the money; your order policy decides whether to fulfil |
+| `paid_late` | Enough has been credited, but transfers sent by the pay-by date did not cover the amount, including any allowed shortfall; a later transfer was needed | Record the money; your order policy decides whether to fulfil |
 | `on_hold` | Received, under review by Unigox; not in your wallet | Wait |
 | `failed` | Not credited, or being returned | Do not fulfil; see [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) |
 | `expired` | The pay-by date passed and nothing came | Make a new link if the order still stands |

@@ -79,7 +79,7 @@ Native coins (ETH, TRX, TON, SOL and the like) are not taken. A coin or network 
 
 **What if they pay too little or too much?** Too little shows as `underpaid` and the customer can send the rest to the same address; more is credited and shows as `overpaid`. [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) lists every case and what to do.
 
-**What if they pay late or on the wrong network?** After the pay-by date the payment still arrives, as `paid_late`, and your server decides. A coin or network the page offers is usually credited; one it does not offer is not credited to the payment and not returned by itself: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
+**What if they pay late or on the wrong network?** If a transfer sent after the pay-by date is needed to cover the amount, the payment is `paid_late`, and your server decides whether the order still stands. An extra sent after an on-time payment stays recorded without making that invoice late. A coin or network the page offers is usually credited; one it does not offer is not credited to the payment and not returned by itself: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
 
 **Can I test without money?** Yes, with the [samples](https://developers.unigox.com/tutorials/crypto-checkout-testing#test-your-page-without-money). There is no test mode for real links: a real link takes real money, so finish with one small real payment.
 
