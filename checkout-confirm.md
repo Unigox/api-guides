@@ -6,14 +6,14 @@
 
 ## 4. Confirm the payment on your server
 
-Fulfil an order only when your server has seen the payment credited. There are two ways to see it. Both read the payment's status from Unigox and apply the same rule:
+Fulfil an order only after your server verifies that the money was credited and the order is still eligible for fulfilment. There are two ways to verify the credit:
 
 | Way | Needs | Sees |
 | --- | --- | --- |
 | [Confirm without the key](#confirm-without-the-key) | Nothing secret: the link's memo, its address IDs and your wallet address | The transfers your page reports, and any transfer whose hash you are given |
 | [History](#fulfilinvoicememolockid), `fulfilInvoice` | Your wallet's private key | Every payment to the link's address IDs |
 
-Unigox does not notify your server of a payment yet: run your check from your return page and from a periodic job for every open order. You do not need to build a notification receiver. [Notifications to your server (not available yet)](https://developers.unigox.com/tutorials/crypto-checkout-reference#notifications-to-your-server-not-available-yet) says what changes once Unigox turns them on for you.
+Unigox does not notify your server of a payment yet: run your check from your return page and from a periodic job for every open order. Also reconcile the history of your payment addresses for paid and closed orders, so you record additional or delayed credits without fulfilling an order again. You do not need to build a notification receiver. [Notifications to your server (not available yet)](https://developers.unigox.com/tutorials/crypto-checkout-reference#notifications-to-your-server-not-available-yet) says what changes once Unigox turns them on for you.
 
 The statuses a payment goes through, with the event your page receives for each:
 
@@ -24,20 +24,22 @@ choosing ─▶ awaiting_payment ─▶ detected ─▶ confirming ─▶ paid  
                                                            ├─▶ on_hold    UNIGOX_CHECKOUT_ON_HOLD: under review, then paid or failed
                                                            └─▶ failed     UNIGOX_CHECKOUT_FAILED: not credited, or being returned
 awaiting_payment ─▶ expired      the pay-by date passed with nothing received   UNIGOX_CHECKOUT_EXPIRED
-credited after the pay-by date ─▶ paid_late                                      UNIGOX_CHECKOUT_PAID_LATE (onComplete)
+late transfer, now credited ─▶ paid_late                                         UNIGOX_CHECKOUT_PAID_LATE (onComplete)
 ```
 
 | Status | What it means | What your server does |
 | --- | --- | --- |
 | `choosing`, `awaiting_payment` | The payer is choosing, or the address and amount are shown | Nothing yet |
 | `detected`, `confirming` | A transfer is on its network, not credited | Nothing yet: it can still fail |
-| `paid` | Credited in full, or short by at most 0.5 % and never more than 1.00 USD | Check it with Unigox, then fulfil |
-| `overpaid` | Credited, more than the amount | Fulfil; keep the extra or send it back |
+| `paid` | Credited in full, or within the link's small-shortfall allowance; **Full amount only** allows no shortfall | Verify the credit and that the order can still be fulfilled |
+| `overpaid` | Credited, more than the amount | Verify the credit and order; agree with the customer how to handle the extra |
 | `underpaid` | Credited, short by more than the tolerance | Wait for the rest, or decide to fulfil anyway |
-| `paid_late` | Credited after the pay-by date | Your own deadline decides |
+| `paid_late` | Enough has been credited, and a credited transfer arrived on its source network after the pay-by date | Record the money; your order policy decides whether to fulfil |
 | `on_hold` | Received, under review by Unigox; not in your wallet | Wait |
 | `failed` | Not credited, or being returned | Do not fulfil; see [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) |
 | `expired` | The pay-by date passed and nothing came | Make a new link if the order still stands |
+
+Lateness uses the transfer's source-network timestamp, not the time the money was credited or your server checked it. A transfer recorded on its network before the deadline can be credited afterwards without being late. If that network timestamp is unavailable, the checkout does not infer lateness from the time it found the transfer. The checkout's result does not reopen an expired or cancelled order in your system.
 
 ### Confirm without the key
 
