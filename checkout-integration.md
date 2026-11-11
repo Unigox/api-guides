@@ -714,7 +714,7 @@ const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" ||
 
 export async function fulfilInvoice(memoLockId) {
   const order = await db.orderByLockId(memoLockId);        // your own record: amount, tolerance, addresses, address IDs, status
-  if (!order || order.status === "paid") return;
+  if (!order) return;
   const config = await unigoxCall("/config", "fetched");   // throws when Unigox cannot be read: the next pass retries
   if (!Array.isArray(config.data)) throw new Error("Unigox /config: no chains");
   const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native && /^USD/.test(t.symbol)) ?? [];
@@ -742,12 +742,16 @@ export async function fulfilInvoice(memoLockId) {
 
   // One database transaction: each (environment, intentId) counts once, and the order changes with it.
   await db.transaction(async (q) => {
+    const current = await q.orderForUpdate(order.id); // SELECT ... FOR UPDATE; cancellation uses the same row lock
+    if (!current) return;
     for (const p of payments) if (await q.claimIntentOnce(ENVIRONMENT, p.intentId, order.id)) await q.addCredited(order.id, p.micros);
+    // Keep money received for cancelled, expired or already paid orders in the ledger, without shipping again.
+    if (current.status !== "open") return; // "open" is your order state that still allows fulfilment
     // The checkout's tolerance: short by at most 0.5 % of the amount, never more than 1.00 USD (1_000_000 micro-USD),
     // or nothing short for a link made with "Full amount only" (tolerance "none", kept in your order record).
     const due = BigInt(order.amountMicroUsd);
     const allowed = order.tolerance === "none" ? 0n : (due / 200n < 1_000_000n ? due / 200n : 1_000_000n);
-    // markPaid is one conditional update, UPDATE orders SET status = 'paid' WHERE id = $1 AND status <> 'paid', and
+    // markPaid is one conditional update, UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'open', and
     // returns whether it changed the row: of passes running at the same moment, only one queues the shipment.
     if (BigInt(await q.creditedTotal(order.id)) >= due - allowed && await q.markPaid(order.id)) await q.queueShipment(order.id);
   });
@@ -757,6 +761,8 @@ export async function fulfilInvoice(memoLockId) {
 - Count each `(environment, intentId)` once, in the same database transaction as the order update. One source transaction can hold several payments, each with its own `intentId`.
 - Keep one ledger per order. `verifyTransfers()` counts a payment by its `quoteId` and `fulfilInvoice()` by its `intentId`: never let both add to the same order, or one payment counts twice. To use both, key both by `quoteId`, which history records carry too.
 - Mark the order paid with one conditional update and ship only when that update changed the row. Checking `order.status` before the transaction is not enough: two passes that start together both see the order open.
+- Payment receipt and order fulfilment are separate. Implement `orderForUpdate` as a locking read in the same transaction, and have cancellation use that lock too. Here, only your `open` state allows shipment; cancelled, expired, refunded and already paid orders still record new credits but never reopen automatically. Map this state to your own order lifecycle. Check your deadline and stock rules under the same lock before `markPaid`: the link's pay-by date does not enforce your order policy. For a late payment, keep the money recorded and decide whether to accept the order or arrange a refund.
+- Reconciliation must also revisit paid and closed orders that can still receive transfers. A job that only checks open orders cannot discover an extra payment after fulfilment. Use your signed wallet history to find new credits, match their address IDs to orders and call the same function; repeat recent history reads to pick up transfers that settle later. These reads must never queue a second shipment.
 - Compare with your order's amount, not with the token or anything the browser said.
 - The checkout counts a payment short by at most 0.5 % of the amount, and never more than 1.00 USD, as paid: it shows Payment completed and sends `UNIGOX_CHECKOUT_PAID`. The code above applies the same rule, so your server and the payer's screen agree. Keep the link's tolerance with your order: `"none"` for a link made with **Full amount only** (in the portal) or with `tol: "none"` in its token, `"default"` otherwise. For such a link the checkout itself asks the payer for the rest of any shortfall, and the code above allows none.
 - A larger shortfall leaves the order open: the customer can send the rest to the same address. More than the amount is credited as received.
