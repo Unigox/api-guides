@@ -187,37 +187,44 @@ The link under the frame appears only when the frame cannot load (10 seconds wit
 
 ### React
 
-```jsx
-import { useEffect, useRef } from "react";
+Give `PayWithCrypto` the `payUrl` your server created for the order. It remains a normal payment link when the SDK is blocked or has not loaded. Load `checkout.js` once in your app shell. The inline example also keeps a hosted link until its frame is ready.
 
-// Load https://www.unigox.com/checkout.js once, in your HTML or with a script tag in your app shell.
-export function PayWithCrypto({ orderId }) {
+```jsx
+import { useEffect, useRef, useState } from "react";
+
+export function PayWithCrypto({ orderId, payUrl }) {
   const checkout = useRef(null);
-  useEffect(() => () => {
-    checkout.current?.destroy();
-    checkout.current = null;
-  }, [orderId]);
-  const pay = () => {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+    return () => { checkout.current?.destroy(); checkout.current = null; };
+  }, [orderId, payUrl]);
+  const pay = (event) => {
+    if (!window.UnigoxCheckout || failed) return; // follow the real href
+    event.preventDefault();
     checkout.current ??= window.UnigoxCheckout.create({
-      // Your server creates (or finds) the payment for this order and returns its token.
       token: () => fetch(`/api/orders/${orderId}/crypto-token`, { method: "POST" })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
         .then((d) => d.token),
-      onComplete: () => window.location.assign(`/orders/${orderId}`), // that page asks your server
+      onError: () => setFailed(true), // next click uses the hosted page, never a dead button
+      onComplete: () => window.location.assign(`/orders/${orderId}`),
     });
     checkout.current.open();
   };
-  return <button onClick={pay}>Pay with crypto</button>;
+  return <a href={payUrl} onClick={pay}>Pay with crypto</a>;
 }
 
 export function InlineCheckout({ token }) {
   const box = useRef(null);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    const checkout = window.UnigoxCheckout.create({ token, mode: "inline" });
+    setReady(false);
+    if (!window.UnigoxCheckout) return;
+    const checkout = window.UnigoxCheckout.create({ token, mode: "inline", onReady: () => setReady(true), onError: () => setReady(false) });
     checkout.mount(box.current);
     return () => checkout.destroy();
   }, [token]);
-  return <div ref={box} />;
+  return <><div ref={box} />{!ready && <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`}>Open checkout</a>}</>;
 }
 ```
 
@@ -238,33 +245,37 @@ export default function PayButton({ token }) {
   }, [token]);
   return (
     <>
-      <Script src="https://www.unigox.com/checkout.js" strategy="afterInteractive" onReady={() => setLoaded(true)} />
-      <button
-        disabled={!loaded}
-        onClick={() => (checkout.current ??= window.UnigoxCheckout.create({ token })).open()}
-      >
-        Pay with crypto
-      </button>
+      <Script src="https://www.unigox.com/checkout.js" strategy="afterInteractive" onReady={() => setLoaded(true)} onError={() => setLoaded(false)} />
+      <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`} onClick={(event) => {
+        if (!loaded || !window.UnigoxCheckout) return;
+        event.preventDefault();
+        (checkout.current ??= window.UnigoxCheckout.create({ token, onError: () => setLoaded(false) })).open();
+      }}>Pay with crypto</a>
     </>
   );
 }
 ```
 
-The script only runs in the browser and does nothing until `open()` or `mount()`, so it is safe in server-rendered pages.
+The server-rendered link works before hydration and when the SDK cannot load. A ready SDK opens the same payment in a modal.
 
 ### Vue
 
+Load `checkout.js` once in your app shell. Until the frame is ready, or when the SDK cannot load, customers can use the hosted link.
+
 ```vue
-<template><div ref="box" /></template>
+<template><div ref="box" /><a v-if="!ready" :href="`https://www.unigox.com/pay/${encodeURIComponent(props.token)}`">Open checkout</a></template>
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 const props = defineProps({ token: String });
 const box = ref(null);
+const ready = ref(false);
 let checkout;
 function mountCheckout() {
   if (!box.value) return;
   checkout?.destroy();
-  checkout = window.UnigoxCheckout.create({ token: props.token, mode: "inline" });
+  ready.value = false;
+  if (!window.UnigoxCheckout) return;
+  checkout = window.UnigoxCheckout.create({ token: props.token, mode: "inline", onReady: () => { ready.value = true; }, onError: () => { ready.value = false; } });
   checkout.mount(box.value);
 }
 onMounted(mountCheckout);

@@ -265,37 +265,44 @@ The link under the frame appears only when the frame cannot load (10 seconds wit
 
 ### React
 
-```jsx
-import { useEffect, useRef } from "react";
+Give `PayWithCrypto` the `payUrl` your server created for the order. It remains a normal payment link when the SDK is blocked or has not loaded. Load `checkout.js` once in your app shell. The inline example also keeps a hosted link until its frame is ready.
 
-// Load https://www.unigox.com/checkout.js once, in your HTML or with a script tag in your app shell.
-export function PayWithCrypto({ orderId }) {
+```jsx
+import { useEffect, useRef, useState } from "react";
+
+export function PayWithCrypto({ orderId, payUrl }) {
   const checkout = useRef(null);
-  useEffect(() => () => {
-    checkout.current?.destroy();
-    checkout.current = null;
-  }, [orderId]);
-  const pay = () => {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+    return () => { checkout.current?.destroy(); checkout.current = null; };
+  }, [orderId, payUrl]);
+  const pay = (event) => {
+    if (!window.UnigoxCheckout || failed) return; // follow the real href
+    event.preventDefault();
     checkout.current ??= window.UnigoxCheckout.create({
-      // Your server creates (or finds) the payment for this order and returns its token.
       token: () => fetch(`/api/orders/${orderId}/crypto-token`, { method: "POST" })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
         .then((d) => d.token),
-      onComplete: () => window.location.assign(`/orders/${orderId}`), // that page asks your server
+      onError: () => setFailed(true), // next click uses the hosted page, never a dead button
+      onComplete: () => window.location.assign(`/orders/${orderId}`),
     });
     checkout.current.open();
   };
-  return <button onClick={pay}>Pay with crypto</button>;
+  return <a href={payUrl} onClick={pay}>Pay with crypto</a>;
 }
 
 export function InlineCheckout({ token }) {
   const box = useRef(null);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    const checkout = window.UnigoxCheckout.create({ token, mode: "inline" });
+    setReady(false);
+    if (!window.UnigoxCheckout) return;
+    const checkout = window.UnigoxCheckout.create({ token, mode: "inline", onReady: () => setReady(true), onError: () => setReady(false) });
     checkout.mount(box.current);
     return () => checkout.destroy();
   }, [token]);
-  return <div ref={box} />;
+  return <><div ref={box} />{!ready && <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`}>Open checkout</a>}</>;
 }
 ```
 
@@ -316,33 +323,37 @@ export default function PayButton({ token }) {
   }, [token]);
   return (
     <>
-      <Script src="https://www.unigox.com/checkout.js" strategy="afterInteractive" onReady={() => setLoaded(true)} />
-      <button
-        disabled={!loaded}
-        onClick={() => (checkout.current ??= window.UnigoxCheckout.create({ token })).open()}
-      >
-        Pay with crypto
-      </button>
+      <Script src="https://www.unigox.com/checkout.js" strategy="afterInteractive" onReady={() => setLoaded(true)} onError={() => setLoaded(false)} />
+      <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`} onClick={(event) => {
+        if (!loaded || !window.UnigoxCheckout) return;
+        event.preventDefault();
+        (checkout.current ??= window.UnigoxCheckout.create({ token, onError: () => setLoaded(false) })).open();
+      }}>Pay with crypto</a>
     </>
   );
 }
 ```
 
-The script only runs in the browser and does nothing until `open()` or `mount()`, so it is safe in server-rendered pages.
+The server-rendered link works before hydration and when the SDK cannot load. A ready SDK opens the same payment in a modal.
 
 ### Vue
 
+Load `checkout.js` once in your app shell. Until the frame is ready, or when the SDK cannot load, customers can use the hosted link.
+
 ```vue
-<template><div ref="box" /></template>
+<template><div ref="box" /><a v-if="!ready" :href="`https://www.unigox.com/pay/${encodeURIComponent(props.token)}`">Open checkout</a></template>
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 const props = defineProps({ token: String });
 const box = ref(null);
+const ready = ref(false);
 let checkout;
 function mountCheckout() {
   if (!box.value) return;
   checkout?.destroy();
-  checkout = window.UnigoxCheckout.create({ token: props.token, mode: "inline" });
+  ready.value = false;
+  if (!window.UnigoxCheckout) return;
+  checkout = window.UnigoxCheckout.create({ token: props.token, mode: "inline", onReady: () => { ready.value = true; }, onError: () => { ready.value = false; } });
   checkout.mount(box.value);
 }
 onMounted(mountCheckout);
@@ -905,6 +916,24 @@ Your server makes the link of each order itself, in seven steps. Here a payment 
      const lock = result.data?.lock;
      if (!response.ok || lock?.status !== "ACTIVE") throw new Error(result.details ?? result.status ?? `HTTP ${response.status}`);
      return { address, addressId: lock.lockId, monitoring: result.data.monitoring };
+   }
+
+   // A repeated Lock is not idempotent. Read first, and recover a lost answer by reading again.
+   // Never replace another payment's active reservation or unlock anything here.
+   export async function ensureMemo(chainType, address, memo) {
+     const accept = (lock) => {
+       if (lock?.status !== "ACTIVE") return null;
+       if (lock.wallet?.toLowerCase() !== WALLET.toLowerCase() || lock.memo !== memo) throw new Error("address reserved for another payment");
+       return { address, addressId: lock.lockId, monitoring: lock.monitoring };
+     };
+     const existing = accept(await newestReservation(chainType, address));
+     if (existing) return existing;
+     try { return await reserveMemo(chainType, address, memo); }
+     catch (error) {
+       const recovered = accept(await newestReservation(chainType, address));
+       if (recovered) return recovered;
+       throw error;
+     }
    }
 
    const memo = `${order.reference} · ${order.amount} USD`; // e.g. "NW-20418 · 250.00 USD"
@@ -1493,7 +1522,7 @@ A deposit address belongs to one customer for good: every transfer to it is that
 - **What you keep:** the customer's reference text and every address ID, old and new, with the customer.
 - **What can go wrong:** the same as step 2 of Option B. A network that is not ready yet is left out of the page until you build the link again.
 
-A complete example, from a new customer to the link of their deposit page, with `reserveAddress()` and `waitUntilReady()` of [Option B](#option-b-from-your-server) and `topUpToken()` of [The token builders](#the-token-builders) in the same file:
+A complete example, from a new customer to the link of their deposit page, with `allocationRequest()`, `reserveAddress()`, `ensureMemo()` and `waitUntilReady()` of [Option B](#option-b-from-your-server) and `topUpToken()` of [The token builders](#the-token-builders) in the same file:
 
 ```js
 // Node 20+. Your server holds your wallet's key (reserveAddress signs with it). db is your own database.
@@ -1502,33 +1531,99 @@ import { randomInt } from "node:crypto";
 const TAG_LETTERS = "abcdefghijklmnopqrstuvwxyz234567";
 const newTag = () => Array.from({ length: 10 }, () => TAG_LETTERS[randomInt(TAG_LETTERS.length)]).join("");
 
-// customerId: your own ID for the customer (shown on their page, so no personal data), up to 64 characters.
+// withCustomerLock must serialize this customer across ALL your workers, including first creation.
+// Every saveCustomer must commit before it resolves, even if a later API call fails. See the storage contract below.
 export async function createDepositPage(customerId) {
-  // A run that stopped part way (a lost answer, a refused request) left its memo and addresses: carry on with them,
-  // so calling this again never gives the customer a second set of addresses.
-  const saved = await db.customer(customerId);
-  const memo = saved?.memo ?? `Top-up · ${customerId} · ${newTag()}`; // keep this memo for the customer's lifetime
-  const openedAt = saved?.openedAt ?? Date.now();
-  const addresses = { ...saved?.addresses };
-  // Keep the memo and every address ID with the customer, from before the first address: crediting needs all of them.
-  const save = () => db.saveCustomer({ id: customerId, memo, openedAt, addresses, lockIds: Object.values(addresses).map((a) => String(a.lockId)) });
-  await save();
-  for (const type of ["evm", "tvm", "ton", "svm"]) {            // every address type you accept
-    if (addresses[type]) continue;                              // reserved by an earlier run
-    const made = await reserveAddress(type, memo);              // a new address, reserved for this customer
-    addresses[type] = { address: made.address, lockId: made.addressId, monitoring: made.monitoring };
-    await save();                                               // persist before a readiness read can fail
-    // Step 3 of Option B: wait until it takes payments, or the page offers no network for it yet.
-    addresses[type].monitoring = (await waitUntilReady(type, made.address)) ?? made.monitoring;
+  if (typeof customerId !== "string" || !customerId.trim() || customerId !== customerId.trim() || Array.from(customerId).length > 64 || /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(customerId)) throw new Error("customerId: 1 to 64 plain characters");
+  return db.withCustomerLock(customerId, async (store) => {
+    const saved = await store.customer(customerId);
+    const memo = saved?.memo ?? `Top-up · ${customerId} · ${newTag()}`;
+    if (Buffer.byteLength(memo, "utf8") > 256) throw new Error("customer reference is too long in UTF-8");
+    const openedAt = saved?.openedAt ?? Date.now();
+    const addresses = { ...saved?.addresses };
+    const allocations = { ...saved?.allocations }; // kept signed request, or an allocated address still needing its memo
+    const lockIds = new Set((saved?.lockIds ?? []).map(String));
+    const save = () => {
+      for (const a of Object.values(addresses)) lockIds.add(String(a.lockId));
+      return store.saveCustomer({ ...saved, id: customerId, memo, openedAt, addresses, allocations, lockIds: [...lockIds] });
+    };
     await save();
-  }
-  const token = topUpToken({
-    merchant: "Northwind",                     // the name your customer sees
-    memo, wallet: WALLET, openedAt, addresses,
-    supportEmail: "billing@shop.example",      // optional: where the customer can write to you
+    for (const type of ["evm", "tvm", "ton", "svm"]) {
+      if (!addresses[type]) {
+        const attempt = allocations[type] ??= {};
+        let made;
+        if (!attempt.address) {
+          if (!attempt.request) {
+            attempt.request = await allocationRequest(type, memo);
+            await save(); // durable BEFORE any write; a timeout reuses these exact signed bytes
+          }
+          try { made = await reserveAddress(type, memo, attempt.request); }
+          catch (error) {
+            if (error.code !== "memo_lock_signature_expired") throw error;
+            attempt.address = error.allocated?.address ?? null;
+            attempt.request = null;
+            await save(); // preserve an allocated address even if its memo was not reserved
+            if (!attempt.address) throw error; // definitively unused request: next call may sign a new one
+          }
+        }
+        if (!made) made = await ensureMemo(type, attempt.address, memo);
+        addresses[type] = { address: made.address, lockId: made.addressId, monitoring: made.monitoring };
+        delete allocations[type];
+        await save(); // retain the address and its ID before any readiness read
+      }
+      // Existing addresses still need fresh readiness: never skip this on a retry or a regenerated link.
+      const monitoring = await waitUntilReady(type, addresses[type].address);
+      addresses[type].monitoring = monitoring ?? { watched: false, chains: [] };
+      await save();
+    }
+    const token = topUpToken({
+      merchant: "Northwind",
+      memo, wallet: WALLET, openedAt, addresses,
+      supportEmail: "billing@shop.example",
+    });
+    return `https://www.unigox.com/pay/${token}`;
   });
-  return `https://www.unigox.com/pay/${token}`; // the customer's deposit page
 }
+```
+
+**Storage contract.** `db.withCustomerLock(customerId, run)` must acquire exclusive ownership for this customer across all server processes, including when the customer does not exist yet, then call `run(store)`. `store.customer` and `store.saveCustomer` use your existing customer storage. Saves must be durable before returning and must survive an exception later in the callback. Do not put the entire callback in a transaction that rolls back those saves: Unigox may already have accepted the request. A JavaScript `Map` or a row lock on a row that does not exist cannot provide this guarantee. Use the same lock for archive and restore; keep all historical `lockIds` when restoring. Never run this function for an archived customer until your restore operation has updated their reservations.
+
+For PostgreSQL, a session advisory lock requires no table or schema change. Supply your existing storage adapter bound to this connection; each save commits independently, without an enclosing transaction. Use a direct or session-pooled connection (not a transaction-pooling proxy). Every worker must use the same database and key prefix. The dedicated connection stays checked out until the operation ends; a connection failure must abort the operation, never continue writes on another connection.
+
+```js
+export async function withCustomerLock(pool, customerId, storageFor, run) {
+  const client = await pool.connect();
+  const key = `unigox-topup:${customerId}`;
+  let locked = false;
+  let broken = false;
+  const failed = () => { broken = true; };
+  client.on("error", failed);
+  try {
+    try {
+      await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [key]);
+      locked = true;
+    } catch (error) {
+      broken = true; // the server may have acquired the lock before its answer was lost
+      throw error;
+    }
+    const store = storageFor(client); // your existing customer reader/writer, each save committed
+    const guard = (fn) => async (...args) => {
+      if (broken) throw new Error("customer lock connection lost");
+      const result = await fn(...args);
+      if (broken) throw new Error("customer lock connection lost");
+      return result;
+    };
+    return await run({ customer: guard(store.customer.bind(store)), saveCustomer: guard(store.saveCustomer.bind(store)) });
+  } finally {
+    if (locked && !broken) {
+      try { await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [key]); }
+      catch { broken = true; }
+    }
+    client.removeListener("error", failed);
+    client.release(broken); // discard a broken session, never leak its advisory lock into the pool
+  }
+}
+// db.withCustomerLock = (id, run) => withCustomerLock(pool, id, storageFor, run);
 ```
 
 If an address type answers `addresses_preparing`, the page already works on the networks that are ready; build the link again once every network is confirmed (step 3 of [Option B](#option-b-from-your-server)).
