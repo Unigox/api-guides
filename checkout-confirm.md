@@ -102,15 +102,23 @@ const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" ||
 
 // order: your own record of the link, e.g. { wallet: "0x…", memo: "NW-20418 · 250.00 USD · v2", lockIds: ["27", "28"],
 //   amount: "250.00", tolerance: "default" }. reported: the `payments` your page received; never trusted, each one is
-//   read again here. Returns the credits it proved, one per transfer: [{ id, micros }].
+//   read again here. Returns [{ id, micros, fromTxMinedAt }]; the timestamp comes from Unigox, never the browser.
 export async function verifyTransfers(order, reported) {
+  // A hash can contain several transfers. Refuse to silently count only its first sibling.
+  const hints = (Array.isArray(reported) ? reported : []).slice(0, 200);
+  for (const p of hints) {
+    if (Number.isSafeInteger(p?.chainId) && typeof p.txHash === "string" && /^[\w-]{8,128}$/.test(p.txHash) &&
+        !(typeof p.quoteId === "string" && p.quoteId.length > 0) && !(typeof p.logIndex === "string" && /^\d+$/.test(p.logIndex))) {
+      throw Object.assign(new Error("Pass each transfer's quoteId or logIndex; reconcile signed history if it is unavailable"), { code: "TRANSFER_ID_REQUIRED" });
+    }
+  }
   const memoHash = keccak256(toBytes(order.memo));
   const config = await unigoxGet("/config", "fetched");
-  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native && /^USD/.test(t.symbol)) ?? [];
+  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => !t.native && /^USD/.test(t.symbol)) ?? [];
   const credits = new Map();
-  for (const p of (Array.isArray(reported) ? reported : []).slice(0, 200)) {
+  for (const p of hints) {
     if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
-    const pick = typeof p.quoteId === "string" ? `?quoteId=${encodeURIComponent(p.quoteId)}`
+    const pick = typeof p.quoteId === "string" && p.quoteId.length > 0 ? `?quoteId=${encodeURIComponent(p.quoteId)}`
       : typeof p.logIndex === "string" ? `?logIndex=${encodeURIComponent(p.logIndex)}` : "";
     let tx;
     try {
@@ -128,7 +136,7 @@ export async function verifyTransfers(order, reported) {
     const units = BigInt(tx.actualToAmount ?? tx.toAmount);
     const decimals = Number(token.decimals);
     const micros = decimals >= 6 ? units / 10n ** BigInt(decimals - 6) : units * 10n ** BigInt(6 - decimals);
-    credits.set(tx.quoteId, { id: tx.quoteId, micros });  // the same transfer reported twice counts once
+    credits.set(tx.quoteId, { id: tx.quoteId, micros, fromTxMinedAt: tx.fromTxMinedAt ?? null });  // the same transfer reported twice counts once
   }
   return [...credits.values()];
 }
@@ -136,6 +144,7 @@ export async function verifyTransfers(order, reported) {
 // Paid as the checkout grades it: short by at most 0.5 % of the amount and never more than 1.00 USD, or nothing short
 // for a link made with "full amount only" (tolerance "none").
 export function isPaid(order, creditedMicros) {
+  if (typeof order.amount !== "string" || !/^\d{1,12}(\.\d{1,2})?$/.test(order.amount) || !/[1-9]/.test(order.amount)) throw new Error("amount: a positive decimal string, at most two decimals");
   const [whole, fraction = ""] = order.amount.split(".");
   const due = BigInt(whole + fraction.padEnd(6, "0"));
   const allowed = order.tolerance === "none" ? 0n : due / 200n < 1_000_000n ? due / 200n : 1_000_000n;
@@ -143,9 +152,13 @@ export function isPaid(order, creditedMicros) {
 }
 ```
 
+`verifyTransfers` proves only the transfers you name. Preserve `quoteId` from each SDK payment/deposit event (or `logIndex` from a source-chain receipt). A bare transaction hash is not enough: this helper raises `TRANSFER_ID_REQUIRED` instead of silently counting the first transfer. Obtain selectors from the SDK event or reconcile signed history. For batched sends, pass every transfer ID; for transfers the browser missed, reconcile your signed history. A malformed or incomplete event must stay pending until it carries a selector; it must not mark an order paid.
+
+`fromTxMinedAt` is the source-chain timestamp supplied by Unigox. Keep the order's own `expiresAt` with its record. `isPaid` compares amounts only: for a deadline policy, classify each proven credit against that deadline using `fromTxMinedAt`; an absent or invalid timestamp needs review, not a guess from the browser clock. Record late credits too, then apply your cancellation, fulfilment or refund policy separately.
+
 Then, in one database transaction, count each credit `id` (the transfer's `quoteId`) once per environment, add it to the order, and mark the order paid with one conditional update when `isPaid` holds, exactly as `fulfilInvoice` below does. A transfer that is not credited yet (`PENDING`, `PROCESSING`, on hold) is simply not counted: run `verifyTransfers` again on the next event, from your return page and from a periodic job while the order is open.
 
-What it cannot see: a transfer your page never heard about. A customer who pays from another device, or closes the page before your page posted the event, or pays from a link you sent by email (the hosted page reports to no page of yours), is not seen. For those, look the payment up in the portal's **Payments**, or ask the customer for the transaction hash and pass `{ chainId, txHash }` to `verifyTransfers`. History (below) sees every payment, and needs the key.
+What it cannot see: a transfer your page never heard about. A customer who pays from another device, or closes the page before your page posted the event, or pays from a link you sent by email (the hosted page reports to no page of yours), is not seen. For those, look the payment up in the portal's **Payments**, or obtain the transaction hash together with the transfer selector and pass `{ chainId, txHash, quoteId }` (or `logIndex`) to `verifyTransfers`. A hash alone cannot distinguish batched transfers. History (below) sees every payment, and needs the key.
 
 ### `fulfilInvoice(memoLockId)`
 
@@ -189,7 +202,7 @@ export async function fulfilInvoice(memoLockId) {
   if (!order) return;
   const config = await unigoxCall("/config", "fetched");   // throws when Unigox cannot be read: the next pass retries
   if (!Array.isArray(config.data)) throw new Error("Unigox /config: no chains");
-  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => t.active && !t.native && /^USD/.test(t.symbol)) ?? [];
+  const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => !t.native && /^USD/.test(t.symbol)) ?? [];
 
   // An order paid on several networks has one address ID per address type: read each.
   const payments = [];
@@ -222,6 +235,7 @@ export async function fulfilInvoice(memoLockId) {
     // The checkout's tolerance: short by at most 0.5 % of the amount, never more than 1.00 USD (1_000_000 micro-USD),
     // or nothing short for a link made with "Full amount only" (tolerance "none", kept in your order record).
     const due = BigInt(order.amountMicroUsd);
+    if (due <= 0n) throw new Error("Order amount must be positive");
     const allowed = order.tolerance === "none" ? 0n : (due / 200n < 1_000_000n ? due / 200n : 1_000_000n);
     // markPaid is one conditional update, UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'open', and
     // returns whether it changed the row: of passes running at the same moment, only one queues the shipment.
@@ -252,7 +266,7 @@ The portal writes three files, with English column names in every language so th
 
 - **Payments → Export CSV** asks which columns: **Readable**, for people (named in the [Payments help](https://www.unigox.com/crypto-processing/help/payments#export-csv)), in `crypto-payments-<from>-<to>.csv`, or **For developers**, the columns and codes below, in `crypto-payments-dev-<from>-<to>.csv`. `<from>` is `all` and `<to>` today when no period is set. The developer columns are `reference`, `status`, `amount_due_usd`, `received`, `expected`, `coin`, `source_coin`, `source_amount`, `source_network`, `source_tx`, `transfer`, `credit_tx`, `seen_at`, `credited_at`, `sender`, `address_id`, `deposit_address`, `payment_key`, `source`, `amount_check`, `link_received_usd`, `link_gap_usd`, `credited_amount`, `credited_coin`, `refund_tx`, `sent_at_recorded_by`, `timezone`, `environment`, `date_basis` and `date`. `address_id` is the receiving address's ID; `transfer` numbers the transfers of one source transaction; `payment_key` is the **Payment ID** of the readable file; `source` is `payment_link`, `deposit_address` or `other_credit`.
 - **Payment links → Export CSV** writes `crypto-payment-links-<open|paid|closed|all>-<YYYY-MM-DD>.csv`, one row per link. Its developer columns are `reference`, `amount_usd`, `received_usd`, `remaining_usd`, `status`, `paid_late` (`yes` or `no`), `pay_by`, `tolerance` (`default`, `none`, or `not_recorded` for a link whose terms were not saved), `description`, `created_at`, `closed_at`, `payments` (how many), `address_ids` (the link's payment address IDs, separated by spaces), `timezone`, `coins` and `networks` (separated by `;`, or `all`), and `payment_link` (the link itself). Its `status` is one of the link statuses `awaiting`, `detected`, `hold`, `failed`, `refunding`, `paid`, `underpaid`, `overpaid` and `unknown` (its payments were not loaded), or `closed_unpaid` (closed before it was paid) or `closing_unfinished` (closing stopped part way: open the link and press **Finish closing**).
-- **Deposit addresses → Export CSV** asks the same: **Readable** columns (named in the [Payments help](https://www.unigox.com/crypto-processing/help/payments#export-deposit-addresses)) in `crypto-deposit-addresses-<YYYY-MM-DD>.csv`, or **For developers** in `crypto-deposit-addresses-dev-<YYYY-MM-DD>.csv`, one row per customer and address type. The developer columns are `customer`, `reference_text`, `status`, `created_at`, `archived_at`, `address_type`, `address`, `address_id`, `address_status`, `customer_total_deposits`, `customer_total_credited_usd`, `customer_total_credited_by_coin`, `customer_total_in_progress`, `customer_total_on_hold`, `last_deposit_at`, `history_complete` and `timezone`, with the codes below. The `customer_total_*` columns and `last_deposit_at` are written on the customer's first row only, so a column sum counts each customer once.
+- **Deposit addresses → Export CSV** asks the same: **Readable** columns (named in the [Payments help](https://www.unigox.com/crypto-processing/help/payments#export-deposit-addresses)) in `crypto-deposit-addresses-<YYYY-MM-DD>.csv`, or **For developers** in `crypto-deposit-addresses-dev-<YYYY-MM-DD>.csv`, one row per customer and address type. The developer columns are `customer`, `reference_text`, `status`, `created_at`, `archived_at`, `address_type`, `address`, `address_id`, `address_status`, `customer_total_deposits`, `customer_total_credited_usd`, `customer_total_credited_by_coin`, `customer_total_in_progress`, `customer_total_on_hold`, `last_deposit_at`, `history_complete`, `timezone` and `address_ids`, with the codes below. `address_id` is the current reservation ID for this address type; `address_ids` contains all current and historical reservation IDs for this customer and address type, separated by `;` (current first). Keep every ID when reconciling deposits received before a restore. The `customer_total_*` columns and `last_deposit_at` are written on the customer's first row only, so a column sum counts each customer once.
 
 | Column | Code | Meaning |
 | --- | --- | --- |

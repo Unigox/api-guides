@@ -36,7 +36,7 @@ Each word in code font is a name you type in requests and code; the guide explai
 | Payment link code (`token`) | The last part of a payment link: the reference text, the amount and the addresses. It is not signed; see [Link format](https://developers.unigox.com/tutorials/crypto-checkout-links#link-format-advanced). |
 | Your Unigox wallet | Where Unigox credits every payment. "Balance" in this guide is only ever an amount in it. |
 | `UNIGOX_BALANCE_CHAIN_ID` (`660279`) | A fixed number Unigox uses to mark a payment as credited to your wallet. Copy it as is. |
-| Transfer ID (`quoteId`) | Unigox's ID for one incoming transfer, as the API gives it. Use it to count each payment or deposit once on your server. It is not the **Payment ID** of the portal and its exports: that one is `<network>:<transaction>:<number>` (`payment_key` in the developer export). |
+| Transfer ID (`quoteId`) | Unigox's ID for one incoming transfer, as the API gives it. Use it to count each payment or deposit once on your server. It is not the **Payment ID** of the portal and its exports: that one is an opaque identifier (`payment_key` in the developer export). Store it whole; do not parse its suffix or substitute the displayed transfer number. |
 | Pay-by date (`x`) | The deadline your customer sees. It lives only in the link: a payment after it is still credited, as paid late. |
 | Deposit page (`p: "topup"`, `mode: "topup"`) | A customer's own page with their deposit addresses, for any amount, any number of times. `topup` is its code in the link and in events. |
 

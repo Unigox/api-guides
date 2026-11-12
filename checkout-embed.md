@@ -308,7 +308,7 @@ add_shortcode('unigox_checkout', function ($atts) {
 | `container` | none | inline: an element or a selector, used when `mount()` gets none |
 | `theme` | light | `"light"` or `"dark"`, to match your page |
 | `locale` | `"auto"` | `"en"`, `"es"`, `"fr"` or `"pt"`. `"auto"` follows the payer's browser (the first of the four it prefers, else English); anything else is English. A link with a language in its path (`/es/pay/…`) keeps it |
-| `readyTimeoutMs` | `10000` | how long to wait for the checkout before offering the hosted page (at least 3000) |
+| `readyTimeoutMs` | `10000` | maximum wait for a token function or the checkout, in milliseconds: positive finite values are clamped to 3000–120000; other values use the default |
 | `keepAlive` | `true` | modal: retain the frame and its state while closed; payment polling pauses until it reopens |
 | `zIndex` | `2147483000` | stacking order of the dialog |
 | `walletNavigation` | `"checkout"` | **Planned, does nothing yet.** `"host"` will let your page open the payer's wallet app (`onOpenWallet`) instead of the checkout, for a page inside an app's WebView. Today the checkout ignores it and opens the wallet itself; [Changes](https://developers.unigox.com/tutorials/crypto-checkout-reference#changes) will say when it works |
@@ -317,7 +317,7 @@ add_shortcode('unigox_checkout', function ($atts) {
 
 | | |
 | --- | --- |
-| `UnigoxCheckout.create(options)` | Returns a checkout. Nothing is added to the page until it is used. The same token returns the same checkout. |
+| `UnigoxCheckout.create(options)` | Returns a checkout. Nothing is added to the page until it is used. The same token and the same options reuse a checkout. A different mode, container or callback creates an independent checkout. |
 | `checkout.open()` | Modal: shows the dialog (again). Returns a promise that settles when the checkout is ready, falls back or fails, or when the dialog is closed before it loaded. Calling it again does not add a second checkout. |
 | `checkout.close()` | Hides the dialog. The payment is not cancelled: the checkout keeps its state, pauses its checks while hidden and catches up when opened again. |
 | `checkout.mount(container)` | Inline: shows the checkout in the container. A container that already holds a checkout keeps it. |
@@ -352,10 +352,12 @@ No `onError` code means that a payment failed or that the payer must pay again. 
 
 | Code | Meaning, and what to do |
 | --- | --- |
+| `TOKEN_TIMEOUT` | Your token function did not finish within `readyTimeoutMs`. Let the payer retry: `open()` or `mount()` calls the provider again. Keep the same server-side order so a retry cannot allocate a second payment. |
 | `TOKEN_MISSING` | No token: neither `token` nor `url` was given, or your token function returned nothing or failed. Nothing is shown; call `open()` or `mount()` again once you have a token. |
 | `TOKEN_INVALID` | The link is cut off, edited, or names an address that is no longer set aside for this payment by your wallet (`UNIGOX_CHECKOUT_INVALID_LINK`): the payer sees "This payment link can't be used" and is told not to pay. Copy the link again from **Payment links**, or build it again on your server. |
 | `CHECKOUT_UNAVAILABLE` | **Temporary, and not a failed payment: keep the order open.** Do not cancel it or ask the payer to pay again on this code; the payment's real status follows in `onStatusChange` as soon as the checkout can read it, and only your server decides about the order. The checkout cannot reach Unigox right now (`UNIGOX_CHECKOUT_UNAVAILABLE`). What the payer sees depends on when it happens. **Before the link is checked or the coins are loaded**, the payer sees no address, only a message and **Try again**: nothing can be paid yet, so offer your own retry or `checkout.hostedUrl`. **Once the address is shown**, the checkout cannot read the payment's status for a moment: it keeps trying by itself and the payer can still pay; nothing has failed. The same code comes when the payment has no coin or network the payer can use (the payer is told to contact you). |
 | `FRAME_ERROR` | Something else failed while the checkout was being set up on your page; the browser console shows it after `[UnigoxCheckout]`. Call `open()` or `mount()` again, or send the payer to `checkout.hostedUrl`. |
+| `CONTAINER_OCCUPIED` | Inline: another checkout already owns this element. Use another element, or destroy its checkout first. The existing checkout stays intact. |
 | `CONTAINER_NOT_FOUND` | Inline: `mount()` got no element, and `container` names none that exists. |
 | `FRAME_TIMEOUT` | The checkout did not load within `readyTimeoutMs`, or your Content Security Policy blocked it: the dialog or container shows **Continue to secure checkout** (see "When the checkout cannot load"). Not final: if `onReady` follows, the checkout loaded late and replaced the fallback; treat `FRAME_TIMEOUT` as temporary, not as a failed payment. |
 
@@ -446,7 +448,7 @@ If `checkout.js` itself does not load (an ad blocker, the network, a CSP without
 ## 3. Return to your site
 
 - **Modal and inline:** `onReturn` is called; the checkout never navigates your page.
-- **Hosted:** with `returnUrl` in the token, the page shows "Back to {merchant}", with your merchant name from the token. It is never opened automatically.
+- **Hosted:** with `returnUrl` in the token, the page shows **Back to {hostname}**, using the destination hostname so the payer can see where the link leads. It is never opened automatically.
 
 Either way, the page you return to asks your server for the order's status.
 
@@ -457,7 +459,7 @@ The checkout shows your customer four steps. Each sample below is the real page 
 1. **Choose the coin and the network** they will send on ([`/pay/demo`](https://www.unigox.com/pay/demo)). A link that offers one coin on one network skips this step.
 2. **Send the amount to the address**: the address, the exact amount, a QR code, and **Copy address** and **Copy amount** ([`/pay/demo-awaiting`](https://www.unigox.com/pay/demo-awaiting)). No memo or tag is needed.
 3. **Payment detected**, then **Confirming your payment**, while the transfer confirms on its network ([`/pay/demo-detected`](https://www.unigox.com/pay/demo-detected)).
-4. **Payment completed** once it is credited ([`/pay/demo-paid`](https://www.unigox.com/pay/demo-paid)), with **Print receipt** on the hosted page (a checkout.js frame cannot open the print dialog), and "Back to {merchant}" when the link has a `returnUrl`.
+4. **Payment completed** once it is credited ([`/pay/demo-paid`](https://www.unigox.com/pay/demo-paid)), with **Print receipt** on the hosted page (a checkout.js frame cannot open the print dialog), and a return link when the token has a `returnUrl`: the hosted page names the destination hostname; the embedded checkout names the merchant.
 
 ![The checkout in a window over a shop's page, on a computer](https://www.unigox.com/crypto-processing/help/checkout-modal.png)
 
