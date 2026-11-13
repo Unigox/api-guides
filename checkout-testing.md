@@ -55,7 +55,7 @@ Write to support@unigox.com for staging access (the portal's **Developers** page
 4. Two transfers that together make the amount.
 5. A payment after the pay-by date, on a link whose `x` is earlier than the reservation's end: Payment arrived after the deadline.
 6. Close the modal in the middle, pay, and open it again: the same state.
-7. Close your page before the payment is credited, then pay: your periodic pass finds the payment (`fulfilInvoice` in history with the key; without the key, `verifyTransfers` with the transaction hash and each transfer's `quoteId` or `logIndex`).
+7. Close your page before the payment is credited, then pay: your periodic pass finds the payment (`fulfilInvoice` in history with the key; without the key, `verifyTransfers` with the transaction hash, and the transfer's `quoteId` or `logIndex` when you have it).
 8. Block the checkout with your CSP (`frame-src 'none'`): Continue to secure checkout opens the same payment.
 9. Your periodic pass when Unigox cannot be read: with `UNIGOX_PAYMENTS_API` pointing at an address that answers 502, broken JSON or nothing, the pass logs the error, keeps running and pays the order on the next pass once Unigox answers.
 10. Run `fulfilInvoice` for one paid order from two places at once: the order is marked paid and shipped once.

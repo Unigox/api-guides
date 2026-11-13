@@ -647,14 +647,9 @@ const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" ||
 //   amount: "250.00", tolerance: "default" }. reported: the `payments` your page received; never trusted, each one is
 //   read again here. Returns [{ id, micros, fromTxMinedAt }]; the timestamp comes from Unigox, never the browser.
 export async function verifyTransfers(order, reported) {
-  // A hash can contain several transfers. Refuse to silently count only its first sibling.
+  // One transaction can hold several transfers. quoteId or logIndex names one of them exactly. A hash alone reads the
+  // first transfer of that transaction: it is counted only when it is this link's credit, and can miss the others.
   const hints = (Array.isArray(reported) ? reported : []).slice(0, 200);
-  for (const p of hints) {
-    if (Number.isSafeInteger(p?.chainId) && typeof p.txHash === "string" && /^[\w-]{8,128}$/.test(p.txHash) &&
-        !(typeof p.quoteId === "string" && p.quoteId.length > 0) && !(typeof p.logIndex === "string" && /^\d+$/.test(p.logIndex))) {
-      throw Object.assign(new Error("Pass each transfer's quoteId or logIndex; reconcile signed history if it is unavailable"), { code: "TRANSFER_ID_REQUIRED" });
-    }
-  }
   const memoHash = keccak256(toBytes(order.memo));
   const config = await unigoxGet("/config", "fetched");
   const settlement = config.data.find((c) => Number(c.chainId) === UNIGOX_BALANCE_CHAIN_ID)?.tokens.filter((t) => !t.native && /^USD/.test(t.symbol)) ?? [];
@@ -662,7 +657,7 @@ export async function verifyTransfers(order, reported) {
   for (const p of hints) {
     if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
     const pick = typeof p.quoteId === "string" && p.quoteId.length > 0 ? `?quoteId=${encodeURIComponent(p.quoteId)}`
-      : typeof p.logIndex === "string" ? `?logIndex=${encodeURIComponent(p.logIndex)}` : "";
+      : typeof p.logIndex === "string" && /^\d+$/.test(p.logIndex) ? `?logIndex=${encodeURIComponent(p.logIndex)}` : "";
     let tx;
     try {
       tx = (await unigoxGet(`/transaction/${p.chainId}/${encodeURIComponent(p.txHash)}${pick}`, "found")).data;
@@ -695,13 +690,15 @@ export function isPaid(order, creditedMicros) {
 }
 ```
 
-`verifyTransfers` proves only the transfers you name. Preserve `quoteId` from each SDK payment/deposit event (or `logIndex` from a source-chain receipt). A bare transaction hash is not enough: this helper raises `TRANSFER_ID_REQUIRED` instead of silently counting the first transfer. Obtain selectors from the SDK event or reconcile signed history. For batched sends, pass every transfer ID; for transfers the browser missed, reconcile your signed history. A malformed or incomplete event must stay pending until it carries a selector; it must not mark an order paid.
+`verifyTransfers` proves the transfers you name. Keep the `quoteId` of each payment or deposit event and pass it: it names one transfer exactly, and so does `logIndex`. A transaction hash alone works too: Unigox answers with the first transfer of that transaction, and the helper counts it only when it is a credit of this link to your wallet.
+
+One transaction can hold several transfers: an exchange that pays many withdrawals in one transaction, or a customer who sends two parts in one. A hash alone then proves at most one of them, and none when the first transfer belongs to someone else. So a hash alone can miss a transfer, but it never counts one twice or for the wrong order. For a transfer it missed, pass that transfer's `quoteId` or `logIndex`, look the payment up in the portal's **Payments**, or read your signed history. An event that is not credited yet stays pending; it must not mark an order paid.
 
 `fromTxMinedAt` is the source-chain timestamp supplied by Unigox. Keep the order's own `expiresAt` with its record. `isPaid` compares amounts only: for a deadline policy, classify each proven credit against that deadline using `fromTxMinedAt`; an absent or invalid timestamp needs review, not a guess from the browser clock. Record late credits too, then apply your cancellation, fulfilment or refund policy separately.
 
 Then, in one database transaction, count each credit `id` (the transfer's `quoteId`) once per environment, add it to the order, and mark the order paid with one conditional update when `isPaid` holds, exactly as `fulfilInvoice` below does. A transfer that is not credited yet (`PENDING`, `PROCESSING`, on hold) is simply not counted: run `verifyTransfers` again on the next event, from your return page and from a periodic job while the order is open.
 
-What it cannot see: a transfer your page never heard about. A customer who pays from another device, or closes the page before your page posted the event, or pays from a link you sent by email (the hosted page reports to no page of yours), is not seen. For those, look the payment up in the portal's **Payments**, or obtain the transaction hash together with the transfer selector and pass `{ chainId, txHash, quoteId }` (or `logIndex`) to `verifyTransfers`. A hash alone cannot distinguish batched transfers. History (below) sees every payment, and needs the key.
+What it cannot see: a transfer your page never heard about. A customer who pays from another device, or closes the page before your page posted the event, or pays from a link you sent by email (the hosted page reports to no page of yours), is not seen. For those, look the payment up in the portal's **Payments**, or ask the customer for the transaction hash and pass `{ chainId, txHash }` to `verifyTransfers` (add `quoteId` or `logIndex` when you have it: a hash alone reads only the first transfer of a transaction, see above). History (below) sees every payment, and needs the key.
 
 ### `fulfilInvoice(memoLockId)`
 
@@ -1196,8 +1193,8 @@ async function check(order) {
     console.log(`${order.id}: credited ${Number(credit.micros) / 1e6} USD`);
   }
   // A hint Unigox knows as a transfer of this order (pending, not credited yet) is kept until it is credited; the
-  // others (not indexed yet, or made up) are the ones a full queue lets go, oldest first. A hint with logIndex but no
-  // quoteId is read again here, so it leaves the queue once its transfer was counted above.
+  // others (not indexed yet, or made up) are the ones a full queue lets go, oldest first. A hint without a
+  // quoteId (a logIndex, or only the transaction) is read again here, so it leaves the queue once its transfer was counted above.
   for (const r of order.reported) {
     if (r.known && r.quoteId) continue;           // leaves through the credits loop above once Unigox credits it
     const tx = await hintTransfer(order, r);
@@ -1244,7 +1241,6 @@ createServer(async (req, res) => {
       // serve this route only to the session that owns the order, as your shop does for its other order routes.
       for (const p of JSON.parse(body || "{}").payments ?? []) {
         if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
-        if (!(typeof p.quoteId === "string" && p.quoteId.length > 0) && !(typeof p.logIndex === "string" && /^\d+$/.test(p.logIndex))) return json(res, 400, { error: "TRANSFER_ID_REQUIRED" });
         const hint = { chainId: p.chainId, txHash: p.txHash, logIndex: p.logIndex ?? null, quoteId: typeof p.quoteId === "string" ? p.quoteId : null, known: false };
         if ((hint.quoteId && counted.has(hint.quoteId)) || order.reported.some((r) => sameHint(r, hint))) continue;
         if (order.reported.length >= HINTS_MAX) {
@@ -1712,7 +1708,7 @@ Production sends your server no notification of a deposit, so your server asks U
 
 A standing deposit address is paid mostly when your page is not open. For deposits at scale you need the key, or a person who credits deposits from **Payments** (see the [Deposit addresses help](https://www.unigox.com/crypto-processing/help/deposit-addresses)).
 
-**Without the key.** Run `verifyTransfers()` of [Confirm without the key](#confirm-without-the-key) with the customer's memo and every address ID the customer ever had, and skip `isPaid`: a deposit has no amount due. The transfers to check come from `onDeposit` (or `UNIGOX_CHECKOUT_DEPOSIT_CREDITED` in your own frame) on a deposit page shown on your site, or from a transaction hash plus its `quoteId` or `logIndex` selector. A bare hash needs a lookup or signed-history reconciliation first. The page sends the same deposit again each time it opens: `creditDeposits` counts each `quoteId` once, so a repeat adds nothing.
+**Without the key.** Run `verifyTransfers()` of [Confirm without the key](#confirm-without-the-key) with the customer's memo and every address ID the customer ever had, and skip `isPaid`: a deposit has no amount due. The transfers to check come from `onDeposit` (or `UNIGOX_CHECKOUT_DEPOSIT_CREDITED` in your own frame) on a deposit page shown on your site, or from a transaction hash a customer gives you (with its `quoteId` or `logIndex` when you have it: a hash alone reads only the first transfer of a transaction). The page sends the same deposit again each time it opens: `creditDeposits` counts each `quoteId` once, so a repeat adds nothing.
 
 - **What it does:** checks each deposit your page reported with Unigox and adds the ones Unigox proves were credited to the customer's balance.
 - **What you keep:** every transfer ID (`quoteId`) you counted, once per environment.
@@ -1725,7 +1721,7 @@ const ENVIRONMENT = "production"; // one ledger per environment
 // customer: your record, e.g. { id: "CUST-7", wallet: "0x…", memo: "Top-up · CUST-7 · abcdefghij", lockIds: ["31", "32", "57"] },
 //   with every address ID the customer ever had (a restore adds new ones). reported: [{ chainId: payload.chainId,
 //   txHash: payload.txHash, quoteId: payload.quoteId }] from an onDeposit payload (one deposit per payload, no payments
-//   list), or [{ chainId, txHash, quoteId }] for a transfer you looked up. A hash alone is refused. Returns how many new credits it added.
+//   list), or [{ chainId, txHash }] for a hash a customer gave you (add quoteId or logIndex when you have it). Returns how many new credits it added.
 export async function creditDeposits(customer, reported) {
   const credits = await verifyTransfers(customer, reported); // each one proven by Unigox, never taken from the browser
   let added = 0;
@@ -1860,7 +1856,7 @@ Write to support@unigox.com for staging access (the portal's **Developers** page
 4. Two transfers that together make the amount.
 5. A payment after the pay-by date, on a link whose `x` is earlier than the reservation's end: Payment arrived after the deadline.
 6. Close the modal in the middle, pay, and open it again: the same state.
-7. Close your page before the payment is credited, then pay: your periodic pass finds the payment (`fulfilInvoice` in history with the key; without the key, `verifyTransfers` with the transaction hash and each transfer's `quoteId` or `logIndex`).
+7. Close your page before the payment is credited, then pay: your periodic pass finds the payment (`fulfilInvoice` in history with the key; without the key, `verifyTransfers` with the transaction hash, and the transfer's `quoteId` or `logIndex` when you have it).
 8. Block the checkout with your CSP (`frame-src 'none'`): Continue to secure checkout opens the same payment.
 9. Your periodic pass when Unigox cannot be read: with `UNIGOX_PAYMENTS_API` pointing at an address that answers 502, broken JSON or nothing, the pass logs the error, keeps running and pays the order on the next pass once Unigox answers.
 10. Run `fulfilInvoice` for one paid order from two places at once: the order is marked paid and shipped once.
