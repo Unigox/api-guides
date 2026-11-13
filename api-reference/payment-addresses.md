@@ -1,6 +1,8 @@
 # API reference: payment addresses
 
-API reference for [crypto payments on EVM, TON, Solana and Tron](../crypto-payments.md). The Unigox payments API gives you payment addresses, reserves them for your references (memos) and credits each payment to your Unigox wallet. Notifications to your server (the `deposit.credited` webhook) are not available in production yet; this page documents them for when Unigox turns them on. Paths are relative to `UNIGOX_PAYMENTS_API` (the API address on the portal's **Developers** page).
+Use the Unigox payments API to allocate receiving addresses, associate them with orders or customers, and read payment records. For a step-by-step integration, start with [Build your own payment page](../crypto-payments.md). Funds are credited to your Unigox wallet; your application decides when to fulfil an order or update a customer's balance.
+
+All endpoint paths are relative to `UNIGOX_PAYMENTS_API`, shown on the portal's **Developers** page. Production payment notifications (`deposit.credited` webhooks) are not available yet. The webhook sections document the contract for environments where Unigox enables them; use payment-status reads and wallet history in production.
 
 ## Authentication
 
@@ -16,7 +18,7 @@ The domain's name is a fixed label of the signature format: type it exactly; it 
 
 There is no `verifyingContract`. `chainId` in the body must equal the signed domain chain ID. It identifies the signing/verification network, not the customer's deposit network. `chainType` selects the address type.
 
-EOAs sign directly. Deployed contract wallets require ERC-1271 support enabled for their verification chain. Undeployed contract-wallet signatures are not supported by this memo API. Solana owner signatures are not supported, even for `chainType: "svm"`.
+An ordinary wallet controlled by a private key (an externally owned account, or EOA) signs directly. A deployed smart-contract wallet needs ERC-1271 signature verification enabled on its verification chain. This API does not accept signatures from undeployed contract wallets or Solana owners, even when requesting Solana deposit addresses with `chainType: "svm"`.
 
 ## Signing types
 

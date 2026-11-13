@@ -10,7 +10,7 @@ Without code you make each order's link in the portal (option A). To make a link
 
 ### Option B: from your server
 
-> **Is this for you?** What you gain: a payment link made for every order automatically, with nobody copying links from the portal. What it costs: a developer; your Unigox wallet's private key on your server, a key that can move every balance in that wallet; and a job that checks your open orders every few minutes. The alternative: make each link in the portal (**Payment links → Create payment link**) and paste it into your button or email. That needs no key and no code beyond the button. [Server integration in one page](#server-integration-in-one-page) shows the whole path in one file.
+Use this integration to create a link automatically for each order. You need a developer, secure storage for your wallet's private key and a scheduled payment-checking job. The key can move all funds in that wallet; see [What you need](https://developers.unigox.com/tutorials/crypto-checkout#what-you-need) before requesting it. For manual orders, you can continue creating links in **Payment links → Create payment link** without handling a key. [Server integration in one page](#server-integration-in-one-page) combines the examples into a working flow.
 
 Your server makes the link of each order itself, in seven steps. Here a payment is your memo (the reference text, see [Words used in this guide](https://developers.unigox.com/tutorials/crypto-checkout#words-used-in-this-guide)) reserved on one payment address for each address type you accept (`evm` for every Ethereum-style network, `tvm` for TRON, `ton`, `svm` for Solana), and a link that tells the checkout what to show. Each step ends with what you should see; the cases you meet less often are under "If something goes wrong". A complete example for one customer's deposit page is under [Customer deposit addresses](#customer-deposit-addresses).
 
@@ -738,7 +738,7 @@ function supportMailbox(value, unsafe) {
 
 ## Customer deposit addresses
 
-A deposit address belongs to one customer for good: every transfer to it is that customer's deposit, there is no amount and no "paid" state. The customer gets a deposit page with their addresses, for any amount, any number of times. The portal makes them under **Deposit addresses** (see the [Deposit addresses help](https://www.unigox.com/crypto-processing/help/deposit-addresses)); your server can make them too, with your wallet's private key. In this section, `quoteId` is Unigox's ID for one incoming transfer: use it to count each deposit once.
+Give each customer reusable deposit addresses for topping up their account with your business. Unlike an order, a deposit has no amount due: verify each transfer separately and credit the customer's balance once. Unigox credits your wallet; updating the customer's balance is your application's responsibility. Create addresses in **Deposit addresses** or on your server using your wallet's private key. See the [Deposit addresses help](https://www.unigox.com/crypto-processing/help/deposit-addresses) for the portal steps. In the examples below, `quoteId` identifies one transfer and prevents duplicate credits.
 
 1. **Get one new address for each address type** with the customer's memo, `Top-up · <customer reference> · <tag>`, with `reserveAddress()` of [Option B](#option-b-from-your-server). The tag is 10 random characters of `a-z` and `2-7` that you make once and keep for the customer's lifetime. Use your customer ID as the reference, never personal data: the customer sees it. Never use these addresses for anything else, even after the customer leaves.
 2. **Keep every address ID** with the customer, old and new: crediting deposits needs all of them.
@@ -872,7 +872,7 @@ export async function withCustomerLock(pool, customerId, storageFor, run) {
 
 If an address type answers `addresses_preparing`, the page already works on the networks that are ready; build the link again once every network is confirmed (step 3 of [Option B](#option-b-from-your-server)).
 
-A deposit address has no amount due: nothing is underpaid, overpaid or late, and every transfer is credited for what arrives. Where a coin has a smallest amount that can be credited on its network, the deposit page shows it as the minimum per transfer: a smaller transfer is neither credited nor returned.
+A deposit address has no amount due or payment deadline, so deposits are not classified as underpaid, overpaid or late. Count only confirmed credits. The deposit page shows the minimum per transfer where one applies; smaller transfers are neither credited nor returned. Other exceptions, including reviews and failed transfers, follow the same status checks as order payments.
 
 ### Credit customer deposits in your system
 
@@ -881,7 +881,7 @@ Production sends your server no notification of a deposit, so your server asks U
 | Way | What it sees | What it misses |
 | --- | --- | --- |
 | Without the key | Deposits that `onDeposit` reports while your page with the deposit page is open, and transaction hashes your customers give you | Every other deposit: one sent from the shared link, from another device, or after the customer closed your page. You find those only in the portal's **Payments** |
-| With the key | Every deposit, from a periodic job that reads your signed history | Nothing, once the job has run |
+| With the key | Indexed deposits from a scheduled job that reads your signed history | Transfers not yet indexed or settled; retry pending records and reconcile again after outages |
 
 A standing deposit address is paid mostly when your page is not open. For deposits at scale you need the key, or a person who credits deposits from **Payments** (see the [Deposit addresses help](https://www.unigox.com/crypto-processing/help/deposit-addresses)).
 
@@ -939,12 +939,12 @@ export async function creditCustomerHistory(customer, transactions) {
 
 ## Headless: your own payment page
 
-> **For special cases.** Use the checkout unless you cannot: a page of your own has to do everything below itself, and keep doing it as networks, coins and rules change. Without it you lose the checks Unigox keeps up to date for you: every network of each address type and its readiness, late, unreferenced and returned payments, the tolerance rule, the link check that stops an edited link, new coins, four languages and accessibility.
+Build your own payment page when you need an interface that Unigox Checkout cannot provide. Your application must then maintain the supported coin and network list, address checks, payment states, shortfall rules, translations and accessibility. Follow the checks below before displaying an address or confirming a payment.
 
 The checkout uses only public endpoints. To build your own page instead:
 
 - Options: `GET /config`. Offer a token on a network only if the network is active, the token is active and not native, it has exactly one matching coin on `UNIGOX_BALANCE_CHAIN_ID`, and your address is confirmed for that network (API reference, "Supported payment assets").
-- Link check: before you show an address from a link, read `GET {UNIGOX_LINK_CHECK_API}/crypto-checkout/memo-locks/{lockId}?wallet=<your wallet, lowercase>&memoHash=<keccak256 of the memo>` and show it only when the reservation is `ACTIVE` and its wallet, address and memo fingerprint are yours. This is what keeps an edited link from showing someone else's address. `UNIGOX_LINK_CHECK_API` is the **Link check address** the portal's **Developers** page shows, without its `/crypto-checkout/memo-locks/{lockId}` end. No signature, no body.
+- Link check: before displaying an address, read `GET {UNIGOX_LINK_CHECK_API}/crypto-checkout/memo-locks/{lockId}?wallet=<your wallet, lowercase>&memoHash=<keccak256 of the memo>`. Require an `ACTIVE` reservation and compare its wallet, address and memo fingerprint with your own saved order. The check proves the reservation matches those values; it does not prove the merchant's identity if the values came from an untrusted link. `UNIGOX_LINK_CHECK_API` is the **Link check address** on **Developers**, without `/crypto-checkout/memo-locks/{lockId}`. No signature or request body is required.
   - 200 `memo_lock_retrieved`: `data.serverTime` is the server UTC time (RFC 3339, including fractional seconds); `data.lock` has `lockId`, `wallet`, `chainType`, `address`, `memoHash`, `expiresAt`, `monitoring` and `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`); never the memo text or the callback URL. Check every field yourself. Other fields may appear in `data`: ignore them.
   - 404 `memo_lock_not_found`: no open or closed reservation with this address ID, wallet and memo fingerprint. An unknown ID and a reservation of another wallet or memo get the same answer, so ids cannot be walked.
   - 400 `validation_memo_lock_request_invalid`: `wallet` or `memoHash` is missing, malformed or given twice.

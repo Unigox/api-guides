@@ -6,7 +6,7 @@
 
 ## 1. Create the payment
 
-A payment is a payment link: an amount, your reference and an address on each network. You make it in the portal (option A, below), or your server makes it ([option B](https://developers.unigox.com/tutorials/crypto-checkout-links#option-b-from-your-server), which needs your wallet's private key).
+Create a separate payment link for each order. The link carries the amount due, your order reference and the addresses the customer can pay. Create it in the portal (option A below), or automate creation on your server ([option B](https://developers.unigox.com/tutorials/crypto-checkout-links#option-b-from-your-server), which requires your wallet's private key). One order may be paid in several transfers.
 
 ### Option A: in the portal
 
@@ -26,7 +26,7 @@ Link to the checkout, redirect to it, or send it by email:
 <a href="https://www.unigox.com/pay/{token}">Pay with crypto</a>
 ```
 
-For Spanish, French or Portuguese use `https://www.unigox.com/es/pay/{token}`, `/fr/…` or `/pt/…`. The page works without any script on your site, and it is the fallback for the other two ways. It needs JavaScript in the payer's browser: with JavaScript off it shows a card that says so instead of the payment.
+To set the language explicitly, use `/en/pay/{token}`, `/es/pay/{token}`, `/fr/pay/{token}` or `/pt/pay/{token}` on `https://www.unigox.com`. Your site needs no checkout script for a hosted link. The payment page itself requires JavaScript and asks the payer to enable it when disabled. Hosted links also provide the fallback when an embedded checkout cannot load.
 
 ### Modal and inline with checkout.js
 

@@ -2,23 +2,23 @@
 
 > **Not available yet.** This page describes Unigox Checkout ahead of its release. Until this notice is gone, `https://www.unigox.com/checkout.js`, the help pages and the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
 
-> **Release status.** Crypto processing is in early access. Unigox turns it on for your business; then payment links, deposit addresses and the checkout appear in your business portal. Not available yet: notifications to your server (callbacks are off in production), a test mode, a server key that can only read payments, a published confirmation depth for each network, and screening of incoming payments on every network. This guide says where each of these matters and what to do instead.
+Add stablecoin payments to your website without building a payment interface. Unigox Checkout lets customers choose a coin and network, shows the amount and receiving address, and tracks the transfer to your Unigox wallet. Use this guide to display checkout, create links for orders and verify payments on your server.
 
-> **Not a developer?** You need no code to take payments. The [crypto processing help](https://www.unigox.com/crypto-processing/help) explains payment links, deposit addresses and the checkout for your site in plain words, and [How to pay a payment link](https://www.unigox.com/crypto-processing/help/how-to-pay) is the page to send your customers.
+> **Looking for the no-code setup?** Start with [crypto processing help](https://www.unigox.com/crypto-processing/help). It covers payment links, customer top-ups and adding checkout to your site. Share [How to pay a payment link](https://www.unigox.com/crypto-processing/help/how-to-pay) with customers who need help paying.
 
-Unigox Checkout is the page your customer pays on: it shows who is paid and how much, lets the customer pick a dollar stablecoin (USDT, USDC, or another one the network offers, such as USDG or USDT0) and a network, and gives an address, the exact amount and a QR code. It follows the payment until it is credited to your Unigox wallet. In this guide the **checkout** is that page shown on your site, and the **payment page** is the same page at `https://www.unigox.com/pay/…`.
+> **Availability.** Crypto processing is in early access and must be enabled for your business. Production payment notifications, a payment test mode and a read-only server key are not available yet. Your server must check payment status itself. Unigox has not published guaranteed confirmation depths, and screening does not cover every network. See [Networks and coins](#networks-and-coins).
 
-Every payment link is `https://www.unigox.com/pay/{token}`, where `{token}` is the code at the end of the link: it carries the amount, your reference and the payment addresses. You can show a payment three ways, and they all show the same payment in the same state:
+A payment link has the form `https://www.unigox.com/pay/{token}`. The `token` contains the amount, order reference and payment addresses. Display the same payment in any of these ways:
 
 - **Hosted:** a link or a redirect to the checkout page.
 - **Modal:** a dialog over your page, opened by `checkout.js`.
 - **Inline:** the checkout inside a container on your page, mounted by `checkout.js`.
 
-Nothing in the browser decides whether a payment arrived. Your server confirms it by reading the payment's status from Unigox (step 4): without any key, by checking each transfer the checkout reports ([Confirm without the key](#confirm-without-the-key)); with your wallet's key, from your wallet's signed history. Opening the checkout does not create a payment: a payment exists only once coins arrive.
+Before fulfilling an order, your server must verify that its payment was credited. It can [check reported transfers without a key](#confirm-without-the-key), or use your wallet's private key to read payment history and find transfers the browser missed. Checkout events update your interface; they do not authorize fulfilment. Creating a link or opening checkout does not move money.
 
 ## Words used in this guide
 
-Each word in code font is a name you type in requests and code; the guide explains it once here.
+These terms connect the business portal to the API. Names in code font are the exact fields or values used in requests and examples.
 
 | Word | Meaning |
 | --- | --- |
@@ -84,7 +84,7 @@ To make each order's link on your server instead of in the portal, see [Option B
 
 ## 1. Create the payment
 
-A payment is a payment link: an amount, your reference and an address on each network. You make it in the portal (option A, below), or your server makes it ([option B](#option-b-from-your-server), which needs your wallet's private key).
+Create a separate payment link for each order. The link carries the amount due, your order reference and the addresses the customer can pay. Create it in the portal (option A below), or automate creation on your server ([option B](#option-b-from-your-server), which requires your wallet's private key). One order may be paid in several transfers.
 
 ### Option A: in the portal
 
@@ -104,7 +104,7 @@ Link to the checkout, redirect to it, or send it by email:
 <a href="https://www.unigox.com/pay/{token}">Pay with crypto</a>
 ```
 
-For Spanish, French or Portuguese use `https://www.unigox.com/es/pay/{token}`, `/fr/…` or `/pt/…`. The page works without any script on your site, and it is the fallback for the other two ways. It needs JavaScript in the payer's browser: with JavaScript off it shows a card that says so instead of the payment.
+To set the language explicitly, use `/en/pay/{token}`, `/es/pay/{token}`, `/fr/pay/{token}` or `/pt/pay/{token}` on `https://www.unigox.com`. Your site needs no checkout script for a hosted link. The payment page itself requires JavaScript and asks the payer to enable it when disabled. Hosted links also provide the fallback when an embedded checkout cannot load.
 
 ### Modal and inline with checkout.js
 
@@ -553,7 +553,7 @@ Fulfil an order only after your server verifies that the money was credited and 
 
 | Way | Needs | Sees |
 | --- | --- | --- |
-| [Confirm without the key](#confirm-without-the-key) | Nothing secret: the link's memo, its address IDs and your wallet address | The transfers your page reports, and the first transfer of any transaction whose hash you are given |
+| [Confirm without the key](#confirm-without-the-key) | The link's memo, address IDs and your wallet address; no secret key | Known transfers identified by a checkout event or customer-provided transaction details; a hash alone returns only the first transfer |
 | [History](#fulfilinvoicememolockid), `fulfilInvoice` | Your wallet's private key | Every payment to the link's address IDs |
 
 Unigox does not notify your server of a payment yet: run your check from your return page and from a periodic job for every open order. Also reconcile the history of your payment addresses for paid and closed orders, so you record additional or delayed credits without fulfilling an order again. You do not need to build a notification receiver. [Notifications to your server (not available yet)](#notifications-to-your-server-not-available-yet) says what changes once Unigox turns them on for you.
@@ -706,7 +706,7 @@ Call it from your return page and from a periodic job that runs it every few min
 
 - **What it does:** reads every payment to the order's address IDs from your signed history and marks the order paid once they cover the amount.
 - **What you keep:** the order's amount, tolerance, addresses and address IDs, and each payment you counted.
-- **What can go wrong:** when Unigox cannot be read, it throws and the order stays open; the next pass pays it.
+- **What can go wrong:** if Unigox cannot be reached, the check fails and leaves the order open. The next run retries verification; it marks the order paid only when the required credit is confirmed.
 
 ```js
 // Node 20+. Your server holds your wallet's key: signHistory() returns { chainId, authorization, signature }, the History
@@ -833,7 +833,7 @@ Without code you make each order's link in the portal (option A). To make a link
 
 ### Option B: from your server
 
-> **Is this for you?** What you gain: a payment link made for every order automatically, with nobody copying links from the portal. What it costs: a developer; your Unigox wallet's private key on your server, a key that can move every balance in that wallet; and a job that checks your open orders every few minutes. The alternative: make each link in the portal (**Payment links → Create payment link**) and paste it into your button or email. That needs no key and no code beyond the button. [Server integration in one page](#server-integration-in-one-page) shows the whole path in one file.
+Use this integration to create a link automatically for each order. You need a developer, secure storage for your wallet's private key and a scheduled payment-checking job. The key can move all funds in that wallet; see [What you need](#what-you-need) before requesting it. For manual orders, you can continue creating links in **Payment links → Create payment link** without handling a key. [Server integration in one page](#server-integration-in-one-page) combines the examples into a working flow.
 
 Your server makes the link of each order itself, in seven steps. Here a payment is your memo (the reference text, see [Words used in this guide](#words-used-in-this-guide)) reserved on one payment address for each address type you accept (`evm` for every Ethereum-style network, `tvm` for TRON, `ton`, `svm` for Solana), and a link that tells the checkout what to show. Each step ends with what you should see; the cases you meet less often are under "If something goes wrong". A complete example for one customer's deposit page is under [Customer deposit addresses](#customer-deposit-addresses).
 
@@ -1561,7 +1561,7 @@ function supportMailbox(value, unsafe) {
 
 ## Customer deposit addresses
 
-A deposit address belongs to one customer for good: every transfer to it is that customer's deposit, there is no amount and no "paid" state. The customer gets a deposit page with their addresses, for any amount, any number of times. The portal makes them under **Deposit addresses** (see the [Deposit addresses help](https://www.unigox.com/crypto-processing/help/deposit-addresses)); your server can make them too, with your wallet's private key. In this section, `quoteId` is Unigox's ID for one incoming transfer: use it to count each deposit once.
+Give each customer reusable deposit addresses for topping up their account with your business. Unlike an order, a deposit has no amount due: verify each transfer separately and credit the customer's balance once. Unigox credits your wallet; updating the customer's balance is your application's responsibility. Create addresses in **Deposit addresses** or on your server using your wallet's private key. See the [Deposit addresses help](https://www.unigox.com/crypto-processing/help/deposit-addresses) for the portal steps. In the examples below, `quoteId` identifies one transfer and prevents duplicate credits.
 
 1. **Get one new address for each address type** with the customer's memo, `Top-up · <customer reference> · <tag>`, with `reserveAddress()` of [Option B](#option-b-from-your-server). The tag is 10 random characters of `a-z` and `2-7` that you make once and keep for the customer's lifetime. Use your customer ID as the reference, never personal data: the customer sees it. Never use these addresses for anything else, even after the customer leaves.
 2. **Keep every address ID** with the customer, old and new: crediting deposits needs all of them.
@@ -1695,7 +1695,7 @@ export async function withCustomerLock(pool, customerId, storageFor, run) {
 
 If an address type answers `addresses_preparing`, the page already works on the networks that are ready; build the link again once every network is confirmed (step 3 of [Option B](#option-b-from-your-server)).
 
-A deposit address has no amount due: nothing is underpaid, overpaid or late, and every transfer is credited for what arrives. Where a coin has a smallest amount that can be credited on its network, the deposit page shows it as the minimum per transfer: a smaller transfer is neither credited nor returned.
+A deposit address has no amount due or payment deadline, so deposits are not classified as underpaid, overpaid or late. Count only confirmed credits. The deposit page shows the minimum per transfer where one applies; smaller transfers are neither credited nor returned. Other exceptions, including reviews and failed transfers, follow the same status checks as order payments.
 
 ### Credit customer deposits in your system
 
@@ -1704,7 +1704,7 @@ Production sends your server no notification of a deposit, so your server asks U
 | Way | What it sees | What it misses |
 | --- | --- | --- |
 | Without the key | Deposits that `onDeposit` reports while your page with the deposit page is open, and transaction hashes your customers give you | Every other deposit: one sent from the shared link, from another device, or after the customer closed your page. You find those only in the portal's **Payments** |
-| With the key | Every deposit, from a periodic job that reads your signed history | Nothing, once the job has run |
+| With the key | Indexed deposits from a scheduled job that reads your signed history | Transfers not yet indexed or settled; retry pending records and reconcile again after outages |
 
 A standing deposit address is paid mostly when your page is not open. For deposits at scale you need the key, or a person who credits deposits from **Payments** (see the [Deposit addresses help](https://www.unigox.com/crypto-processing/help/deposit-addresses)).
 
@@ -1788,12 +1788,12 @@ Native coins (ETH, TRX, TON, SOL and the like) are not taken. A coin or network 
 
 ## Headless: your own payment page
 
-> **For special cases.** Use the checkout unless you cannot: a page of your own has to do everything below itself, and keep doing it as networks, coins and rules change. Without it you lose the checks Unigox keeps up to date for you: every network of each address type and its readiness, late, unreferenced and returned payments, the tolerance rule, the link check that stops an edited link, new coins, four languages and accessibility.
+Build your own payment page when you need an interface that Unigox Checkout cannot provide. Your application must then maintain the supported coin and network list, address checks, payment states, shortfall rules, translations and accessibility. Follow the checks below before displaying an address or confirming a payment.
 
 The checkout uses only public endpoints. To build your own page instead:
 
 - Options: `GET /config`. Offer a token on a network only if the network is active, the token is active and not native, it has exactly one matching coin on `UNIGOX_BALANCE_CHAIN_ID`, and your address is confirmed for that network (API reference, "Supported payment assets").
-- Link check: before you show an address from a link, read `GET {UNIGOX_LINK_CHECK_API}/crypto-checkout/memo-locks/{lockId}?wallet=<your wallet, lowercase>&memoHash=<keccak256 of the memo>` and show it only when the reservation is `ACTIVE` and its wallet, address and memo fingerprint are yours. This is what keeps an edited link from showing someone else's address. `UNIGOX_LINK_CHECK_API` is the **Link check address** the portal's **Developers** page shows, without its `/crypto-checkout/memo-locks/{lockId}` end. No signature, no body.
+- Link check: before displaying an address, read `GET {UNIGOX_LINK_CHECK_API}/crypto-checkout/memo-locks/{lockId}?wallet=<your wallet, lowercase>&memoHash=<keccak256 of the memo>`. Require an `ACTIVE` reservation and compare its wallet, address and memo fingerprint with your own saved order. The check proves the reservation matches those values; it does not prove the merchant's identity if the values came from an untrusted link. `UNIGOX_LINK_CHECK_API` is the **Link check address** on **Developers**, without `/crypto-checkout/memo-locks/{lockId}`. No signature or request body is required.
   - 200 `memo_lock_retrieved`: `data.serverTime` is the server UTC time (RFC 3339, including fractional seconds); `data.lock` has `lockId`, `wallet`, `chainType`, `address`, `memoHash`, `expiresAt`, `monitoring` and `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`); never the memo text or the callback URL. Check every field yourself. Other fields may appear in `data`: ignore them.
   - 404 `memo_lock_not_found`: no open or closed reservation with this address ID, wallet and memo fingerprint. An unknown ID and a reservation of another wallet or memo get the same answer, so ids cannot be walked.
   - 400 `validation_memo_lock_request_invalid`: `wallet` or `memoHash` is missing, malformed or given twice.
@@ -1925,7 +1925,7 @@ If you give customers deposit addresses ([Customer deposit addresses](#customer-
 
 **How do I know a payment arrived without notifications?** Your server checks: [Confirm without the key](#confirm-without-the-key) for the transfers your page heard about, or your signed history with the key. Run it from your return page and from a periodic job. **Payments** in the portal shows every payment too.
 
-**Can my customer pay from an exchange?** Yes, if the exchange can withdraw the coin on the network the page shows. Exchanges often keep a fee: a shortfall of at most 0.5 % of the amount, and never more than 1.00 USD, counts as paid.
+**Can my customer pay from an exchange?** Yes, if it supports withdrawals in the selected coin and network. The customer must allow for withdrawal fees. By default, a shortfall of at most 0.5% of the amount, capped at 1.00 USD, counts as paid. A link using **Full amount only** permits no shortfall.
 
 **What if they pay too little or too much?** Too little shows as `underpaid` and the customer can send the rest to the same address; more is credited and shows as `overpaid`. [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) lists every case and what to do.
 
@@ -1935,7 +1935,7 @@ If you give customers deposit addresses ([Customer deposit addresses](#customer-
 
 **Which languages does the checkout speak?** English, Spanish, French and Portuguese: it follows the payer's browser, or the `locale` you pass.
 
-**Can I refund a payment?** Unigox does not send money back for you. Ask the payer for an address they control and send from your Unigox wallet.
+**Can I refund a payment?** You arrange refunds for funds already credited to your wallet. Confirm a receiving address and network with the payer, then send from your Unigox wallet. This is separate from Unigox returning a transfer it could not credit. See [Returning money](https://www.unigox.com/crypto-processing/help/exceptions#returning-money).
 
 **Where do I see payments made on my site?** In **Crypto processing → Payments**, with the link's reference, exactly like payments to links you sent yourself.
 

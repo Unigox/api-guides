@@ -10,7 +10,7 @@ Fulfil an order only after your server verifies that the money was credited and 
 
 | Way | Needs | Sees |
 | --- | --- | --- |
-| [Confirm without the key](#confirm-without-the-key) | Nothing secret: the link's memo, its address IDs and your wallet address | The transfers your page reports, and the first transfer of any transaction whose hash you are given |
+| [Confirm without the key](#confirm-without-the-key) | The link's memo, address IDs and your wallet address; no secret key | Known transfers identified by a checkout event or customer-provided transaction details; a hash alone returns only the first transfer |
 | [History](#fulfilinvoicememolockid), `fulfilInvoice` | Your wallet's private key | Every payment to the link's address IDs |
 
 Unigox does not notify your server of a payment yet: run your check from your return page and from a periodic job for every open order. Also reconcile the history of your payment addresses for paid and closed orders, so you record additional or delayed credits without fulfilling an order again. You do not need to build a notification receiver. [Notifications to your server (not available yet)](https://developers.unigox.com/tutorials/crypto-checkout-reference#notifications-to-your-server-not-available-yet) says what changes once Unigox turns them on for you.
@@ -163,7 +163,7 @@ Call it from your return page and from a periodic job that runs it every few min
 
 - **What it does:** reads every payment to the order's address IDs from your signed history and marks the order paid once they cover the amount.
 - **What you keep:** the order's amount, tolerance, addresses and address IDs, and each payment you counted.
-- **What can go wrong:** when Unigox cannot be read, it throws and the order stays open; the next pass pays it.
+- **What can go wrong:** if Unigox cannot be reached, the check fails and leaves the order open. The next run retries verification; it marks the order paid only when the required credit is confirmed.
 
 ```js
 // Node 20+. Your server holds your wallet's key: signHistory() returns { chainId, authorization, signature }, the History

@@ -53,6 +53,7 @@ test("the reference gives every status and subStatus of a transaction and the li
   assert.match(reference, /An omitted `chainType` includes all address types/);
   assert.doesNotMatch(reference.replace(/"Unigox Bridge Memo Locks"/g, ""), /lock ID|memo lock|\bfamil(y|ies)\b|`ACTIVE` lock\b|active lock\b|closed locks?\b/i);
   // The reference speaks of the Unigox payments API and payment addresses, never of internal service names.
-  assert.match(reference, /The Unigox payments API gives you payment addresses/);
+  assert.match(reference, /Unigox payments API to allocate receiving addresses/);
+  assert.match(reference, /your application decides when to fulfil an order or update a customer's balance/);
   assert.doesNotMatch(reference.replace(/"Unigox Bridge (Memo Locks|History)"|name: "Unigox Bridge (Memo Locks|History)"|`BRIDGE_\w+`/g, ""), /\bBridge\b|\bXAI\b|collection address|memo association/i);
 });

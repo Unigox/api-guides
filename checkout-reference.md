@@ -75,7 +75,7 @@ Native coins (ETH, TRX, TON, SOL and the like) are not taken. A coin or network 
 
 **How do I know a payment arrived without notifications?** Your server checks: [Confirm without the key](https://developers.unigox.com/tutorials/crypto-checkout-confirm#confirm-without-the-key) for the transfers your page heard about, or your signed history with the key. Run it from your return page and from a periodic job. **Payments** in the portal shows every payment too.
 
-**Can my customer pay from an exchange?** Yes, if the exchange can withdraw the coin on the network the page shows. Exchanges often keep a fee: a shortfall of at most 0.5 % of the amount, and never more than 1.00 USD, counts as paid.
+**Can my customer pay from an exchange?** Yes, if it supports withdrawals in the selected coin and network. The customer must allow for withdrawal fees. By default, a shortfall of at most 0.5% of the amount, capped at 1.00 USD, counts as paid. A link using **Full amount only** permits no shortfall.
 
 **What if they pay too little or too much?** Too little shows as `underpaid` and the customer can send the rest to the same address; more is credited and shows as `overpaid`. [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) lists every case and what to do.
 
@@ -85,7 +85,7 @@ Native coins (ETH, TRX, TON, SOL and the like) are not taken. A coin or network 
 
 **Which languages does the checkout speak?** English, Spanish, French and Portuguese: it follows the payer's browser, or the `locale` you pass.
 
-**Can I refund a payment?** Unigox does not send money back for you. Ask the payer for an address they control and send from your Unigox wallet.
+**Can I refund a payment?** You arrange refunds for funds already credited to your wallet. Confirm a receiving address and network with the payer, then send from your Unigox wallet. This is separate from Unigox returning a transfer it could not credit. See [Returning money](https://www.unigox.com/crypto-processing/help/exceptions#returning-money).
 
 **Where do I see payments made on my site?** In **Crypto processing → Payments**, with the link's reference, exactly like payments to links you sent yourself.
 

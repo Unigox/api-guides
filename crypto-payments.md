@@ -2,9 +2,9 @@
 
 > **Most businesses do not need this page.** To get paid, send payment links from the business portal: no code. To take payments on your website, show Unigox Checkout there. Both are described under [Unigox Checkout and the business portal](#unigox-checkout-and-the-business-portal) below.
 
-This page is for developers who build their own payment page on the Unigox payments API. Give each invoice its own payment address, reserved for its reference, and let the customer pay in a supported coin.
+Use this guide if you are building your own payment interface. The API lets you assign receiving addresses to orders or customers and verify incoming transfers. If you want a ready-made payment page, start with [Unigox Checkout](https://developers.unigox.com/tutorials/crypto-checkout).
 
-The invoice reference is stored as the **memo** of the payment address: a text Unigox keeps with the address and returns only to you. Payments are standard token transfers, without an on-chain memo or tag.
+The API stores your order or customer reference as a `memo` attached to a receiving address. It returns that text only to the authorized wallet owner. Customers send a normal token transfer; they do not enter a memo or tag in their wallet.
 
 ## Unigox Checkout and the business portal
 
@@ -69,7 +69,7 @@ Payments are taken in the configured ERC-20 tokens on Ethereum-style networks, T
 
 `GET /config` includes inactive and native assets as well as the coins customers can pay with. Offer a coin only on an active network, when it is an active, non-native token with exactly one matching coin on your balance's network, and your payment address is ready on that network. The [supported payment assets](api-reference/payment-addresses.md#supported-payment-assets) section defines the fields and matching rules.
 
-A coin or network your page offers is credited. Payments on a network or in a coin it does not offer are not credited and not returned by themselves: the customer contacts you, and you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
+Offering a supported coin and network does not guarantee that every transfer will be credited. Verify the receiving address and check the transfer's status: it may still be pending, under review, below the creditable minimum or unsuccessful. For an unsupported transfer, contact support@unigox.com with the network, transaction hash, coin, amount and receiving address. Automatic credit or return is not guaranteed, and recovery may not be possible.
 
 ## Credit to your wallet
 

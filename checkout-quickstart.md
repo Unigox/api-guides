@@ -4,23 +4,23 @@
 
 > **Unigox Checkout guide:** **Quickstart** · [Embed](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Links and deposit pages from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference) · [All on one page](https://www.unigox.com/checkout-integration.md)
 
-> **Release status.** Crypto processing is in early access. Unigox turns it on for your business; then payment links, deposit addresses and the checkout appear in your business portal. Not available yet: notifications to your server (callbacks are off in production), a test mode, a server key that can only read payments, a published confirmation depth for each network, and screening of incoming payments on every network. This guide says where each of these matters and what to do instead.
+Add stablecoin payments to your website without building a payment interface. Unigox Checkout lets customers choose a coin and network, shows the amount and receiving address, and tracks the transfer to your Unigox wallet. Use this guide to display checkout, create links for orders and verify payments on your server.
 
-> **Not a developer?** You need no code to take payments. The [crypto processing help](https://www.unigox.com/crypto-processing/help) explains payment links, deposit addresses and the checkout for your site in plain words, and [How to pay a payment link](https://www.unigox.com/crypto-processing/help/how-to-pay) is the page to send your customers.
+> **Looking for the no-code setup?** Start with [crypto processing help](https://www.unigox.com/crypto-processing/help). It covers payment links, customer top-ups and adding checkout to your site. Share [How to pay a payment link](https://www.unigox.com/crypto-processing/help/how-to-pay) with customers who need help paying.
 
-Unigox Checkout is the page your customer pays on: it shows who is paid and how much, lets the customer pick a dollar stablecoin (USDT, USDC, or another one the network offers, such as USDG or USDT0) and a network, and gives an address, the exact amount and a QR code. It follows the payment until it is credited to your Unigox wallet. In this guide the **checkout** is that page shown on your site, and the **payment page** is the same page at `https://www.unigox.com/pay/…`.
+> **Availability.** Crypto processing is in early access and must be enabled for your business. Production payment notifications, a payment test mode and a read-only server key are not available yet. Your server must check payment status itself. Unigox has not published guaranteed confirmation depths, and screening does not cover every network. See [Networks and coins](https://developers.unigox.com/tutorials/crypto-checkout-reference#networks-and-coins).
 
-Every payment link is `https://www.unigox.com/pay/{token}`, where `{token}` is the code at the end of the link: it carries the amount, your reference and the payment addresses. You can show a payment three ways, and they all show the same payment in the same state:
+A payment link has the form `https://www.unigox.com/pay/{token}`. The `token` contains the amount, order reference and payment addresses. Display the same payment in any of these ways:
 
 - **Hosted:** a link or a redirect to the checkout page.
 - **Modal:** a dialog over your page, opened by `checkout.js`.
 - **Inline:** the checkout inside a container on your page, mounted by `checkout.js`.
 
-Nothing in the browser decides whether a payment arrived. Your server confirms it by reading the payment's status from Unigox (step 4): without any key, by checking each transfer the checkout reports ([Confirm without the key](https://developers.unigox.com/tutorials/crypto-checkout-confirm#confirm-without-the-key)); with your wallet's key, from your wallet's signed history. Opening the checkout does not create a payment: a payment exists only once coins arrive.
+Before fulfilling an order, your server must verify that its payment was credited. It can [check reported transfers without a key](https://developers.unigox.com/tutorials/crypto-checkout-confirm#confirm-without-the-key), or use your wallet's private key to read payment history and find transfers the browser missed. Checkout events update your interface; they do not authorize fulfilment. Creating a link or opening checkout does not move money.
 
 ## Words used in this guide
 
-Each word in code font is a name you type in requests and code; the guide explains it once here.
+These terms connect the business portal to the API. Names in code font are the exact fields or values used in requests and examples.
 
 | Word | Meaning |
 | --- | --- |
