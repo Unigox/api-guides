@@ -553,7 +553,7 @@ Fulfil an order only after your server verifies that the money was credited and 
 
 | Way | Needs | Sees |
 | --- | --- | --- |
-| [Confirm without the key](#confirm-without-the-key) | Nothing secret: the link's memo, its address IDs and your wallet address | The transfers your page reports, and any transfer whose hash you are given |
+| [Confirm without the key](#confirm-without-the-key) | Nothing secret: the link's memo, its address IDs and your wallet address | The transfers your page reports, and the first transfer of any transaction whose hash you are given |
 | [History](#fulfilinvoicememolockid), `fulfilInvoice` | Your wallet's private key | Every payment to the link's address IDs |
 
 Unigox does not notify your server of a payment yet: run your check from your return page and from a periodic job for every open order. Also reconcile the history of your payment addresses for paid and closed orders, so you record additional or delayed credits without fulfilling an order again. You do not need to build a notification receiver. [Notifications to your server (not available yet)](#notifications-to-your-server-not-available-yet) says what changes once Unigox turns them on for you.
@@ -657,7 +657,7 @@ export async function verifyTransfers(order, reported) {
   for (const p of hints) {
     if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
     const pick = typeof p.quoteId === "string" && p.quoteId.length > 0 ? `?quoteId=${encodeURIComponent(p.quoteId)}`
-      : typeof p.logIndex === "string" && /^\d+$/.test(p.logIndex) ? `?logIndex=${encodeURIComponent(p.logIndex)}` : "";
+      : /^\d+$/.test(typeof p.logIndex === "number" ? String(p.logIndex) : typeof p.logIndex === "string" ? p.logIndex : "") ? `?logIndex=${p.logIndex}` : "";
     let tx;
     try {
       tx = (await unigoxGet(`/transaction/${p.chainId}/${encodeURIComponent(p.txHash)}${pick}`, "found")).data;
@@ -692,7 +692,7 @@ export function isPaid(order, creditedMicros) {
 
 `verifyTransfers` proves the transfers you name. Keep the `quoteId` of each payment or deposit event and pass it: it names one transfer exactly, and so does `logIndex`. A transaction hash alone works too: Unigox answers with the first transfer of that transaction, and the helper counts it only when it is a credit of this link to your wallet.
 
-One transaction can hold several transfers: an exchange that pays many withdrawals in one transaction, or a customer who sends two parts in one. A hash alone then proves at most one of them, and none when the first transfer belongs to someone else. So a hash alone can miss a transfer, but it never counts one twice or for the wrong order. For a transfer it missed, pass that transfer's `quoteId` or `logIndex`, look the payment up in the portal's **Payments**, or read your signed history. An event that is not credited yet stays pending; it must not mark an order paid.
+One transaction can hold several transfers: an exchange that pays many withdrawals in one transaction, or a customer who sends two parts in one. A hash alone then proves at most one of them, and none when the first transfer belongs to someone else. So a hash alone can miss a transfer, but it never counts one twice or for the wrong order. For a transfer it missed, pass that transfer's `quoteId` or `logIndex` (on EVM networks, the transfer's log index in the transaction, as a block explorer shows it), look the payment up in the portal's **Payments**, or read your signed history. An event that is not credited yet stays pending; it must not mark an order paid.
 
 `fromTxMinedAt` is the source-chain timestamp supplied by Unigox. Keep the order's own `expiresAt` with its record. `isPaid` compares amounts only: for a deadline policy, classify each proven credit against that deadline using `fromTxMinedAt`; an absent or invalid timestamp needs review, not a guess from the browser clock. Record late credits too, then apply your cancellation, fulfilment or refund policy separately.
 
