@@ -57,10 +57,14 @@ You can also use Unigox’s [business account services](https://www.unigox.com/e
 
 ### Accept stablecoin payments
 
-[Crypto processing](https://www.unigox.com/crypto-processing) lets customers pay your business from a wallet or exchange. Use it for purchases, invoices or balance top-ups, with each payment linked to the right invoice or customer so your team does not have to match transfers by hand.
+[Crypto processing](https://www.unigox.com/crypto-processing) lets customers pay from a wallet or exchange while you keep track of the order or customer behind each payment.
 
-- **Connect your way:** integrate the API into your website or app, or use ready-made payment tools from Unigox.
-- **Manage the proceeds:** keep stablecoins, send them to your wallet, or convert and withdraw to your bank account in a supported currency.
+- **Request a payment:** create a link with an amount and order ID, or prepare an itemized invoice with a downloadable PDF.
+- **Add checkout to your website:** use a payment button, embed checkout in your page, or send the customer to a Unigox payment page. A developer can automate a separate link for every order.
+- **Let customers top up:** give each customer reusable deposit addresses. After a deposit reaches your Unigox wallet, update their balance in your own service.
+- **Keep your records together:** follow transfers in the Business Portal and export payments for reconciliation. Review shortfalls, extra payments and unmatched credits before fulfilling an order.
+
+Crypto processing must be enabled for your business. Payments arrive in your Unigox wallet. Conversion or bank withdrawal, where available to your account, is a separate step. Invoice documents are kept in your browser and the link you share; keep a PDF copy for your records.
 
 ## Build a trading or money app
 

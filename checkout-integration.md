@@ -42,7 +42,8 @@ These terms connect the business portal to the API. Names in code font are the e
 
 | You want to | Who does the work | You need | Start at |
 | --- | --- | --- | --- |
-| Send a customer an invoice to pay | No code | Crypto processing turned on for your business account | [Payment links](https://www.unigox.com/crypto-processing/help/payment-links) |
+| Request a set amount for an order | No code | Crypto processing turned on for your business account | [Payment links](https://www.unigox.com/crypto-processing/help/payment-links) |
+| Create an itemized invoice with a downloadable PDF | No code | Crypto processing turned on | [Invoices](https://www.unigox.com/crypto-processing/help/invoices) |
 | Give a repeat customer a permanent deposit address | No code in the portal, or a developer for your own server | Crypto processing turned on | [Deposit addresses](https://www.unigox.com/crypto-processing/help/deposit-addresses) (portal) or [Customer deposit addresses](#customer-deposit-addresses) (server) |
 | Show the checkout on your site: a button, a window or part of your page | Copy and paste | A payment link and a few lines of HTML | [2. Show the checkout](#2-show-the-checkout) |
 | Confirm each payment on your server, without a key | A developer | The link's reference text and address IDs (shown on the portal's **Developers** page), Node.js | [Confirm without the key](#confirm-without-the-key) |
@@ -64,7 +65,7 @@ That is all you need to take payments. The [Payment links guide](https://www.uni
 The payment on your own page, in six steps. Steps 1 to 3 are copy and paste; steps 4 and 5 are for a developer.
 
 1. Create a link in **Crypto processing → Payment links → Create payment link**.
-2. Open **Crypto processing → Developers**, paste the link under **Show the checkout on your site**, choose **Button** and copy the code into your page.
+2. Open **Crypto processing → Checkout → Payment button → Set up a button**, choose the unpaid order or paste its full link, and copy the provided code into your page. Choose **Embedded checkout** or **Payment page** if that suits your site better.
 3. Test it without money: in the code, put `demo-awaiting` in place of the link's code (the part after `/pay/`), open your page, press the button, then **Send the payment (sample)** in the checkout. Your page receives `READY`, `AWAITING_PAYMENT`, `PAYMENT_DETECTED` and `PAID`, every one with `livemode: false` ([Test your page without money](#test-your-page-without-money)).
 4. In `onComplete` (and `onStatusChange`), post `payload.payments` to your server with your order's ID.
 5. Your server checks each reported transfer with Unigox, with `verifyTransfers()` and `isPaid()` of [Confirm without the key](#confirm-without-the-key), and marks the order paid from its own order record, never from the browser.
@@ -90,7 +91,7 @@ Create a separate payment link for each order. The link carries the amount due, 
 
 Open **Crypto processing → Payment links → Create payment link**, enter the reference and the amount, and copy the link. The portal creates the link and its payment addresses for you; the link is `https://www.unigox.com/pay/{token}`. The [Payment links guide](https://www.unigox.com/crypto-processing/help/payment-links) explains every option.
 
-In **Settings**, **Support email for payers** puts your support address on every link you copy from that browser afterwards. The payer sees it on the screens that ask them to contact you, for example after an underpayment or a transfer that could not be credited.
+In **Settings → Payer page**, **Support email for payers (optional)** puts your support address on every link you copy from that browser afterwards. The payer sees it on the screens that ask them to contact you, for example after an underpayment or a transfer that could not be credited.
 
 For a customer who pays you again and again, open **Crypto processing → Deposit addresses → Add a customer** instead. The customer gets permanent addresses and one page that lists their deposits. Your own server can do the same: see [Customer deposit addresses](#customer-deposit-addresses).
 
@@ -105,6 +106,24 @@ Link to the checkout, redirect to it, or send it by email:
 ```
 
 To set the language explicitly, use `/en/pay/{token}`, `/es/pay/{token}`, `/fr/pay/{token}` or `/pt/pay/{token}` on `https://www.unigox.com`. Your site needs no checkout script for a hosted link. The payment page itself requires JavaScript and asks the payer to enable it when disabled. Hosted links also provide the fallback when an embedded checkout cannot load.
+
+### Keep an invoice with its payment link
+
+An itemized invoice created in **Payment links → Create invoice** uses an ordinary payment link with an attachment in its URL fragment: `#invoice=…`. The document stays in the merchant's browser and in the shared link; Unigox does not store an invoice document in its database. The browser checks that the document's number and total match the payment request, but the attachment is not signed and does not authenticate its issuer, customer or line items. Use your own order record for fulfilment and accounting decisions.
+
+Pass the **full link** as `url` to `UnigoxCheckout.create()`, or keep it as the `href` of a `data-unigox-checkout` link. The loader preserves the invoice in modal, inline and hosted fallback modes. Passing only `token` omits the attachment. Keep fragments after the query string when building your own iframe URL. Do not send the document to a payment API or place customer billing details in a memo.
+
+```js
+// invoicePaymentUrl is the complete link copied from the portal, including #invoice=…
+let checkout;
+document.querySelector("#pay").addEventListener("click", () => {
+  if (!window.UnigoxCheckout) return window.location.assign(invoicePaymentUrl);
+  checkout ??= UnigoxCheckout.create({ url: invoicePaymentUrl, mode: "modal" });
+  checkout.open();
+});
+```
+
+Treat the full link as customer information: anyone who receives it can read the invoice. Keep it out of analytics and logs. If your own server creates invoice documents, it must supply and retain those documents itself; the address API does not create or store them for you. See the [invoice guide](https://www.unigox.com/crypto-processing/help/invoices) for the portal workflow and PDF handling.
 
 ### Modal and inline with checkout.js
 
@@ -380,8 +399,8 @@ add_shortcode('unigox_checkout', function ($atts) {
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `token` | none | the payment token, or a function returning a promise of it (called once, on the first `open()` or `mount()`) |
-| `url` | none | a full `https://www.unigox.com/…/pay/{token}` link instead of `token` |
+| `token` | none | the payment token, or a function returning a promise of it (called once, on the first `open()` or `mount()`); use `url` to retain an attached invoice |
+| `url` | none | a full `https://www.unigox.com/…/pay/{token}` link instead of `token`; preserves `invoice`, `tx` and `incomplete` fragment fields |
 | `mode` | `"modal"`; in a browser without `<dialog>`, `"hosted"` | `"modal"`, `"inline"` or `"hosted"` (hosted navigates to the checkout page) |
 | `container` | none | inline: an element or a selector, used when `mount()` gets none |
 | `theme` | light | `"light"` or `"dark"`, to match your page |
@@ -699,6 +718,24 @@ One transaction can hold several transfers: an exchange that pays many withdrawa
 Then, in one database transaction, count each credit `id` (the transfer's `quoteId`) once per environment, add it to the order, and mark the order paid with one conditional update when `isPaid` holds, exactly as `fulfilInvoice` below does. A transfer that is not credited yet (`PENDING`, `PROCESSING`, on hold) is simply not counted: run `verifyTransfers` again on the next event, from your return page and from a periodic job while the order is open.
 
 What it cannot see: a transfer your page never heard about. A customer who pays from another device, or closes the page before your page posted the event, or pays from a link you sent by email (the hosted page reports to no page of yours), is not seen. For those, look the payment up in the portal's **Payments**, or ask the customer for the transaction hash and pass `{ chainId, txHash }` to `verifyTransfers` (add `quoteId` or `logIndex` when you have it: a hash alone reads only the first transfer of a transaction, see above). History (below) sees every payment, and needs the key.
+
+### Find every transfer in a Solana transaction
+
+A Solana transaction can contain several deposits. The public transaction-status endpoint remains a read of **one transfer**. Do not assume its first result is the complete transaction, and do not use a wallet balance change as proof of a payment.
+
+For a known checkout address ID and Solana signature, the checkout API provides a bounded discovery read on the same base URL as the public link check:
+
+`GET {UNIGOX_LINK_CHECK_API}/crypto-checkout/memo-locks/{lockId}/solana-transfers/{signature}?wallet={wallet}&memoHash={memoHash}`
+
+Use the owning wallet and memo fingerprint from your saved order. The signature is case-sensitive. This requires no secret key. A successful `checkout_transfers_retrieved` response contains `data.transfers`, each with `logIndex`, `token` and `amount`, plus `data.limited`.
+
+- `logIndex` identifies the stored source event, including `"0"`. It is **not** a Solana instruction index. Pass it with the same signature to the existing `/transaction/{fromChain}/{fromTx}?logIndex=…` read, then apply every wallet, memo, address ID, asset and credit check in `verifyTransfers()` above.
+- Discovery `amount` is a decimal string in the source token's smallest units. It is not a credited amount and must never increase an order or customer balance by itself.
+- The response contains at most 200 entries. `limited: true` means it is incomplete. An empty result means no matching entries were indexed at that moment. Neither means that payment failed.
+- Retry after an incomplete or empty read and after a first credit: sibling deposits can become available separately. Reconcile signed history when you need a complete wallet-wide record.
+- Closed addresses remain readable for the matching order. An unknown or mismatched address ID, wallet, memo or non-Solana address returns 404 `memo_lock_not_found`. Invalid parameters return 400 `validation_memo_lock_request_invalid`; an unavailable reader returns 503 `memo_lock_unavailable`. Respect 429 rate limits and retry later. Responses use `Cache-Control: no-store`.
+
+Before enabling this discovery flow, confirm that the endpoint is deployed in your integration environment.
 
 ### `fulfilInvoice(memoLockId)`
 
@@ -1784,7 +1821,7 @@ Each network takes its own coins. This is the list at the time of writing; `GET 
 
 These times are estimates, not a promise of finality. Unigox has not yet published a confirmation depth it commits to for each network, and incoming payments are not yet screened on every network: both are why the release is early access. Count a payment only once Unigox has credited it to your wallet (`DONE` / `COMPLETED`, as your server reads it in step 4), never when the checkout shows a transfer as seen or confirming.
 
-Native coins (ETH, TRX, TON, SOL and the like) are not taken. A coin or network that the payment page offers is usually credited, even when the payer chose another one on the page: the payer can enter the transaction hash in **Already sent? Find my payment**. A coin or network that the page does not offer is not credited to the payment and not returned by itself: the payer contacts you, and you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed. There is no minimum of your own per transfer, but a transfer too small to be credited on its network (a tiny fraction of a cent) is neither credited nor returned. Each coin is credited 1:1 to your Unigox wallet in the matching coin: a USDG payment arrives as USDG.
+Native coins (ETH, TRX, TON, SOL and the like) are not taken. A transfer on another offered coin or network may still be found, even when it differs from the payer's selection: the payer can enter the transaction hash in **Already sent? Find my payment**. A coin or network that the page does not offer is not credited to the payment and not returned by itself: the payer contacts you, and you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed. A payment link requests at least 1.00 USD in total. Individual transfers must also meet any minimum shown for their coin and network; do not assume that a small remainder is always payable. A transfer below that minimum is neither credited nor returned. Each coin is credited 1:1 to your Unigox wallet in the matching coin: a USDG payment arrives as USDG.
 
 ## Headless: your own payment page
 
@@ -1800,10 +1837,10 @@ The checkout uses only public endpoints. To build your own page instead:
   - 503 `memo_lock_unavailable` or 500: Unigox cannot check right now. Show no address; ask again later.
   - 429: more than 120 checks a minute from one IP address (many payers behind one office or mobile network share one). Wait and ask again.
 - Instructions: the address of the address type, the exact amount, the token and the network. No memo or tag is sent on chain.
-- Status of one transfer: `GET /transaction/{fromChain}/{fromTx}` with `?logIndex=` or `?quoteId=`. It needs the transaction hash.
+- Status of one transfer: `GET /transaction/{fromChain}/{fromTx}` with `?logIndex=` or `?quoteId=`. It needs the transaction hash. For multiple Solana transfers, first [discover each stored event](#find-every-transfer-in-a-solana-transaction), then verify each one separately.
 - Confirmation: exactly as in step 4.
 
-Unigox does not create invoices, amounts or sessions for you: the amount lives in your order and in the memo you reserve.
+The address API does not create an order or invoice document for you. Your server keeps the order and amount, and reserves the matching reference text on the payment address. The portal's optional invoice builder creates a browser-held document; it does not add an invoice record to this API.
 
 ## Test your page without money
 
@@ -1929,7 +1966,7 @@ If you give customers deposit addresses ([Customer deposit addresses](#customer-
 
 **What if they pay too little or too much?** Too little shows as `underpaid` and the customer can send the rest to the same address; more is credited and shows as `overpaid`. [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) lists every case and what to do.
 
-**What if they pay late or on the wrong network?** If a transfer sent after the pay-by date is needed to cover the amount, the payment is `paid_late`, and your server decides whether the order still stands. An extra sent after an on-time payment stays recorded without making that invoice late. A coin or network the page offers is usually credited; one it does not offer is not credited to the payment and not returned by itself: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
+**What if they pay late or on the wrong network?** If a transfer sent after the pay-by date is needed to cover the amount, the payment is `paid_late`, and your server decides whether the order still stands. An extra sent after an on-time payment stays recorded without making that invoice late. Check the actual status of a transfer on an offered coin and network; an unsupported transfer is not credited to the payment or returned automatically: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
 
 **Can I test without money?** Yes, with the [samples](#test-your-page-without-money). There is no test mode for real links: a real link takes real money, so finish with one small real payment.
 
@@ -1956,6 +1993,8 @@ The API address and the link check address on the Developers page are hosting ad
 ## Changes
 
 Each entry says whether it changes how money is counted ("Money").
+
+- **2026-11-15 · documentation and current integration behaviour:** portal setup now starts in **Checkout**; full invoice links retain their document in embedded and fallback pages; Account can discover separate Solana transfer selectors for one transaction. The transaction-status API remains unchanged. Money: discovery alone never counts as credit; verify each transfer separately. These changes are included in the current release candidate, not a claim of production deployment.
 
 - **2026-11-02 · types:** `checkout.d.ts` lists the `onClose` reason `return`, which `checkout.js` sends when the payer chooses Back and your page has no `onReturn`. `checkout.js` itself is unchanged. Money: no change.
 - **2026-10-30 · 1.1.0:** the checkout speaks the payer's browser language by default (`locale: "auto"`); TypeScript types at `/checkout.d.ts`. The loader accepts `walletNavigation` and `onOpenWallet` ahead of time, but they do nothing yet (planned). Money: no change.

@@ -12,7 +12,7 @@ Create a separate payment link for each order. The link carries the amount due, 
 
 Open **Crypto processing → Payment links → Create payment link**, enter the reference and the amount, and copy the link. The portal creates the link and its payment addresses for you; the link is `https://www.unigox.com/pay/{token}`. The [Payment links guide](https://www.unigox.com/crypto-processing/help/payment-links) explains every option.
 
-In **Settings**, **Support email for payers** puts your support address on every link you copy from that browser afterwards. The payer sees it on the screens that ask them to contact you, for example after an underpayment or a transfer that could not be credited.
+In **Settings → Payer page**, **Support email for payers (optional)** puts your support address on every link you copy from that browser afterwards. The payer sees it on the screens that ask them to contact you, for example after an underpayment or a transfer that could not be credited.
 
 For a customer who pays you again and again, open **Crypto processing → Deposit addresses → Add a customer** instead. The customer gets permanent addresses and one page that lists their deposits. Your own server can do the same: see [Customer deposit addresses](https://developers.unigox.com/tutorials/crypto-checkout-links#customer-deposit-addresses).
 
@@ -27,6 +27,24 @@ Link to the checkout, redirect to it, or send it by email:
 ```
 
 To set the language explicitly, use `/en/pay/{token}`, `/es/pay/{token}`, `/fr/pay/{token}` or `/pt/pay/{token}` on `https://www.unigox.com`. Your site needs no checkout script for a hosted link. The payment page itself requires JavaScript and asks the payer to enable it when disabled. Hosted links also provide the fallback when an embedded checkout cannot load.
+
+### Keep an invoice with its payment link
+
+An itemized invoice created in **Payment links → Create invoice** uses an ordinary payment link with an attachment in its URL fragment: `#invoice=…`. The document stays in the merchant's browser and in the shared link; Unigox does not store an invoice document in its database. The browser checks that the document's number and total match the payment request, but the attachment is not signed and does not authenticate its issuer, customer or line items. Use your own order record for fulfilment and accounting decisions.
+
+Pass the **full link** as `url` to `UnigoxCheckout.create()`, or keep it as the `href` of a `data-unigox-checkout` link. The loader preserves the invoice in modal, inline and hosted fallback modes. Passing only `token` omits the attachment. Keep fragments after the query string when building your own iframe URL. Do not send the document to a payment API or place customer billing details in a memo.
+
+```js
+// invoicePaymentUrl is the complete link copied from the portal, including #invoice=…
+let checkout;
+document.querySelector("#pay").addEventListener("click", () => {
+  if (!window.UnigoxCheckout) return window.location.assign(invoicePaymentUrl);
+  checkout ??= UnigoxCheckout.create({ url: invoicePaymentUrl, mode: "modal" });
+  checkout.open();
+});
+```
+
+Treat the full link as customer information: anyone who receives it can read the invoice. Keep it out of analytics and logs. If your own server creates invoice documents, it must supply and retain those documents itself; the address API does not create or store them for you. See the [invoice guide](https://www.unigox.com/crypto-processing/help/invoices) for the portal workflow and PDF handling.
 
 ### Modal and inline with checkout.js
 
@@ -302,8 +320,8 @@ add_shortcode('unigox_checkout', function ($atts) {
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `token` | none | the payment token, or a function returning a promise of it (called once, on the first `open()` or `mount()`) |
-| `url` | none | a full `https://www.unigox.com/…/pay/{token}` link instead of `token` |
+| `token` | none | the payment token, or a function returning a promise of it (called once, on the first `open()` or `mount()`); use `url` to retain an attached invoice |
+| `url` | none | a full `https://www.unigox.com/…/pay/{token}` link instead of `token`; preserves `invoice`, `tx` and `incomplete` fragment fields |
 | `mode` | `"modal"`; in a browser without `<dialog>`, `"hosted"` | `"modal"`, `"inline"` or `"hosted"` (hosted navigates to the checkout page) |
 | `container` | none | inline: an element or a selector, used when `mount()` gets none |
 | `theme` | light | `"light"` or `"dark"`, to match your page |

@@ -951,7 +951,7 @@ The checkout uses only public endpoints. To build your own page instead:
   - 503 `memo_lock_unavailable` or 500: Unigox cannot check right now. Show no address; ask again later.
   - 429: more than 120 checks a minute from one IP address (many payers behind one office or mobile network share one). Wait and ask again.
 - Instructions: the address of the address type, the exact amount, the token and the network. No memo or tag is sent on chain.
-- Status of one transfer: `GET /transaction/{fromChain}/{fromTx}` with `?logIndex=` or `?quoteId=`. It needs the transaction hash.
+- Status of one transfer: `GET /transaction/{fromChain}/{fromTx}` with `?logIndex=` or `?quoteId=`. It needs the transaction hash. For multiple Solana transfers, first [discover each stored event](https://developers.unigox.com/tutorials/crypto-checkout-confirm#find-every-transfer-in-a-solana-transaction), then verify each one separately.
 - Confirmation: exactly as in step 4.
 
-Unigox does not create invoices, amounts or sessions for you: the amount lives in your order and in the memo you reserve.
+The address API does not create an order or invoice document for you. Your server keeps the order and amount, and reserves the matching reference text on the payment address. The portal's optional invoice builder creates a browser-held document; it does not add an invoice record to this API.

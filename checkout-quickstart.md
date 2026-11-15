@@ -44,7 +44,8 @@ These terms connect the business portal to the API. Names in code font are the e
 
 | You want to | Who does the work | You need | Start at |
 | --- | --- | --- | --- |
-| Send a customer an invoice to pay | No code | Crypto processing turned on for your business account | [Payment links](https://www.unigox.com/crypto-processing/help/payment-links) |
+| Request a set amount for an order | No code | Crypto processing turned on for your business account | [Payment links](https://www.unigox.com/crypto-processing/help/payment-links) |
+| Create an itemized invoice with a downloadable PDF | No code | Crypto processing turned on | [Invoices](https://www.unigox.com/crypto-processing/help/invoices) |
 | Give a repeat customer a permanent deposit address | No code in the portal, or a developer for your own server | Crypto processing turned on | [Deposit addresses](https://www.unigox.com/crypto-processing/help/deposit-addresses) (portal) or [Customer deposit addresses](https://developers.unigox.com/tutorials/crypto-checkout-links#customer-deposit-addresses) (server) |
 | Show the checkout on your site: a button, a window or part of your page | Copy and paste | A payment link and a few lines of HTML | [2. Show the checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed#2-show-the-checkout) |
 | Confirm each payment on your server, without a key | A developer | The link's reference text and address IDs (shown on the portal's **Developers** page), Node.js | [Confirm without the key](https://developers.unigox.com/tutorials/crypto-checkout-confirm#confirm-without-the-key) |
@@ -66,7 +67,7 @@ That is all you need to take payments. The [Payment links guide](https://www.uni
 The payment on your own page, in six steps. Steps 1 to 3 are copy and paste; steps 4 and 5 are for a developer.
 
 1. Create a link in **Crypto processing → Payment links → Create payment link**.
-2. Open **Crypto processing → Developers**, paste the link under **Show the checkout on your site**, choose **Button** and copy the code into your page.
+2. Open **Crypto processing → Checkout → Payment button → Set up a button**, choose the unpaid order or paste its full link, and copy the provided code into your page. Choose **Embedded checkout** or **Payment page** if that suits your site better.
 3. Test it without money: in the code, put `demo-awaiting` in place of the link's code (the part after `/pay/`), open your page, press the button, then **Send the payment (sample)** in the checkout. Your page receives `READY`, `AWAITING_PAYMENT`, `PAYMENT_DETECTED` and `PAID`, every one with `livemode: false` ([Test your page without money](https://developers.unigox.com/tutorials/crypto-checkout-testing#test-your-page-without-money)).
 4. In `onComplete` (and `onStatusChange`), post `payload.payments` to your server with your order's ID.
 5. Your server checks each reported transfer with Unigox, with `verifyTransfers()` and `isPaid()` of [Confirm without the key](https://developers.unigox.com/tutorials/crypto-checkout-confirm#confirm-without-the-key), and marks the order paid from its own order record, never from the browser.

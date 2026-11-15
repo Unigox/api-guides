@@ -157,6 +157,24 @@ Then, in one database transaction, count each credit `id` (the transfer's `quote
 
 What it cannot see: a transfer your page never heard about. A customer who pays from another device, or closes the page before your page posted the event, or pays from a link you sent by email (the hosted page reports to no page of yours), is not seen. For those, look the payment up in the portal's **Payments**, or ask the customer for the transaction hash and pass `{ chainId, txHash }` to `verifyTransfers` (add `quoteId` or `logIndex` when you have it: a hash alone reads only the first transfer of a transaction, see above). History (below) sees every payment, and needs the key.
 
+### Find every transfer in a Solana transaction
+
+A Solana transaction can contain several deposits. The public transaction-status endpoint remains a read of **one transfer**. Do not assume its first result is the complete transaction, and do not use a wallet balance change as proof of a payment.
+
+For a known checkout address ID and Solana signature, the checkout API provides a bounded discovery read on the same base URL as the public link check:
+
+`GET {UNIGOX_LINK_CHECK_API}/crypto-checkout/memo-locks/{lockId}/solana-transfers/{signature}?wallet={wallet}&memoHash={memoHash}`
+
+Use the owning wallet and memo fingerprint from your saved order. The signature is case-sensitive. This requires no secret key. A successful `checkout_transfers_retrieved` response contains `data.transfers`, each with `logIndex`, `token` and `amount`, plus `data.limited`.
+
+- `logIndex` identifies the stored source event, including `"0"`. It is **not** a Solana instruction index. Pass it with the same signature to the existing `/transaction/{fromChain}/{fromTx}?logIndex=…` read, then apply every wallet, memo, address ID, asset and credit check in `verifyTransfers()` above.
+- Discovery `amount` is a decimal string in the source token's smallest units. It is not a credited amount and must never increase an order or customer balance by itself.
+- The response contains at most 200 entries. `limited: true` means it is incomplete. An empty result means no matching entries were indexed at that moment. Neither means that payment failed.
+- Retry after an incomplete or empty read and after a first credit: sibling deposits can become available separately. Reconcile signed history when you need a complete wallet-wide record.
+- Closed addresses remain readable for the matching order. An unknown or mismatched address ID, wallet, memo or non-Solana address returns 404 `memo_lock_not_found`. Invalid parameters return 400 `validation_memo_lock_request_invalid`; an unavailable reader returns 503 `memo_lock_unavailable`. Respect 429 rate limits and retry later. Responses use `Cache-Control: no-store`.
+
+Before enabling this discovery flow, confirm that the endpoint is deployed in your integration environment.
+
 ### `fulfilInvoice(memoLockId)`
 
 Call it from your return page and from a periodic job that runs it every few minutes for each open order (with any of its address IDs). It reads the payment's records from your wallet's history, so it gives the same answer whichever source triggered it. When Unigox cannot be read or a payment is not in history yet, it throws or leaves the order open, and the next pass tries again: nothing is dropped. It marks each order paid once, also when the return page and the periodic job run it at the same moment.

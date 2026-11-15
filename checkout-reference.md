@@ -28,7 +28,7 @@ Each network takes its own coins. This is the list at the time of writing; `GET 
 
 These times are estimates, not a promise of finality. Unigox has not yet published a confirmation depth it commits to for each network, and incoming payments are not yet screened on every network: both are why the release is early access. Count a payment only once Unigox has credited it to your wallet (`DONE` / `COMPLETED`, as your server reads it in step 4), never when the checkout shows a transfer as seen or confirming.
 
-Native coins (ETH, TRX, TON, SOL and the like) are not taken. A coin or network that the payment page offers is usually credited, even when the payer chose another one on the page: the payer can enter the transaction hash in **Already sent? Find my payment**. A coin or network that the page does not offer is not credited to the payment and not returned by itself: the payer contacts you, and you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed. There is no minimum of your own per transfer, but a transfer too small to be credited on its network (a tiny fraction of a cent) is neither credited nor returned. Each coin is credited 1:1 to your Unigox wallet in the matching coin: a USDG payment arrives as USDG.
+Native coins (ETH, TRX, TON, SOL and the like) are not taken. A transfer on another offered coin or network may still be found, even when it differs from the payer's selection: the payer can enter the transaction hash in **Already sent? Find my payment**. A coin or network that the page does not offer is not credited to the payment and not returned by itself: the payer contacts you, and you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed. A payment link requests at least 1.00 USD in total. Individual transfers must also meet any minimum shown for their coin and network; do not assume that a small remainder is always payable. A transfer below that minimum is neither credited nor returned. Each coin is credited 1:1 to your Unigox wallet in the matching coin: a USDG payment arrives as USDG.
 
 ## Troubleshooting
 
@@ -79,7 +79,7 @@ Native coins (ETH, TRX, TON, SOL and the like) are not taken. A coin or network 
 
 **What if they pay too little or too much?** Too little shows as `underpaid` and the customer can send the rest to the same address; more is credited and shows as `overpaid`. [When a payment is not exact](https://www.unigox.com/crypto-processing/help/exceptions) lists every case and what to do.
 
-**What if they pay late or on the wrong network?** If a transfer sent after the pay-by date is needed to cover the amount, the payment is `paid_late`, and your server decides whether the order still stands. An extra sent after an on-time payment stays recorded without making that invoice late. A coin or network the page offers is usually credited; one it does not offer is not credited to the payment and not returned by itself: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
+**What if they pay late or on the wrong network?** If a transfer sent after the pay-by date is needed to cover the amount, the payment is `paid_late`, and your server decides whether the order still stands. An extra sent after an on-time payment stays recorded without making that invoice late. Check the actual status of a transfer on an offered coin and network; an unsupported transfer is not credited to the payment or returned automatically: write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
 
 **Can I test without money?** Yes, with the [samples](https://developers.unigox.com/tutorials/crypto-checkout-testing#test-your-page-without-money). There is no test mode for real links: a real link takes real money, so finish with one small real payment.
 
@@ -106,6 +106,8 @@ The API address and the link check address on the Developers page are hosting ad
 ## Changes
 
 Each entry says whether it changes how money is counted ("Money").
+
+- **2026-11-15 · documentation and current integration behaviour:** portal setup now starts in **Checkout**; full invoice links retain their document in embedded and fallback pages; Account can discover separate Solana transfer selectors for one transaction. The transaction-status API remains unchanged. Money: discovery alone never counts as credit; verify each transfer separately. These changes are included in the current release candidate, not a claim of production deployment.
 
 - **2026-11-02 · types:** `checkout.d.ts` lists the `onClose` reason `return`, which `checkout.js` sends when the payer chooses Back and your page has no `onReturn`. `checkout.js` itself is unchanged. Money: no change.
 - **2026-10-30 · 1.1.0:** the checkout speaks the payer's browser language by default (`locale: "auto"`); TypeScript types at `/checkout.d.ts`. The loader accepts `walletNavigation` and `onOpenWallet` ahead of time, but they do nothing yet (planned). Money: no change.

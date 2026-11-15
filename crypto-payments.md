@@ -18,7 +18,11 @@ With Unigox Checkout or the business portal, write the memo as `<reference> · <
 
 For a customer who pays again and again, give them permanent deposit addresses with the memo `Top-up · <customer reference> · <tag>`: the portal does it under **Deposit addresses**, and the checkout guide's [Customer deposit addresses](https://developers.unigox.com/tutorials/crypto-checkout-links#customer-deposit-addresses) shows how your server does it and credits each deposit.
 
+For an itemized bill, choose **Payment links → Create invoice** in the portal. Customer details, line items and the PDF document are held in the browser and shared link, not stored as an invoice in the payment-address API. See the [invoice guide](https://www.unigox.com/crypto-processing/help/invoices). For website setup, start in **Checkout**; **Developers** contains the server integration and payment verification instructions.
+
 Production callbacks are off today: `GET /config` answers `memoLimits.maxCallbackUrlBytes: 0`. Confirm payments by reading their status: the public `GET /transaction/{fromChain}/{fromTx}` needs no key, and wallet-signed history covers every payment.
+
+For several transfers in one Solana transaction, the checkout API can list the transfer selectors for the matching payment address. Use each returned `logIndex` when checking its status; the list alone does not confirm credit. See [Find every transfer in a Solana transaction](checkout-confirm.md#find-every-transfer-in-a-solana-transaction) for the request, limits and retry behavior. Confirm this endpoint is deployed in your integration environment before relying on it.
 
 ## Words used on this page
 
