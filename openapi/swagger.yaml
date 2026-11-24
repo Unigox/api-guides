@@ -2370,7 +2370,7 @@ paths:
       description: |
         Update optional PII fields on existing KYC data. The user stays verified.
         Only optional fields can be updated.
-        Required fields (first_name, last_name, country_code) cannot be changed.
+        The name fields and country_code cannot be changed through this endpoint.
 
         For EUR/AUD/GBP offramp, provide address, city, and postal_code here.
         These will auto-populate into payment details for EUR/AUD/GBP payouts.
@@ -8965,13 +8965,17 @@ components:
           properties:
             pii:
               type: object
-              required: [first_name, last_name, country_code]
+              required: [last_name, country_code]
               properties:
                 first_name:
                   type: string
+                  pattern: '\S'
+                  description: Supply the given name when the ID lists one. Omit this field entirely for a single legal name.
                   example: John
                 last_name:
                   type: string
+                  pattern: '\S'
+                  description: Family name, or the full legal name exactly as shown on the ID for a single-name customer.
                   example: Doe
                 country_code:
                   type: string
