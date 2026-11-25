@@ -35,12 +35,12 @@ Creating a link and opening a checkout move no money. The checkout's messages to
 
 1. On `https://www.unigox.com/crypto-processing`, press **Start business onboarding**. Sign in or create an account if you have none.
 2. Answer **Your business** and **Your volume**, and under **Your products** pick **Crypto processing**.
-3. Answer **Before you start accepting crypto**: who you accept payments for (yourself, or a company and its name), your website and industry, how you plan to accept payments, whose goods or services customers pay for, where your customers are, the largest single payment you expect, and whether you can link payments to your customers. No documents are needed now.
+3. Answer **Before you start accepting crypto**: who you accept payments for (yourself, or a company and its name), your website and industry, how you plan to accept payments, whose goods or services customers pay for, where your customers are (pick countries, or **Worldwide**), and the largest single payment you expect. No documents are needed now. By finishing, you confirm you take no payments from sanctioned countries and regions, as the Terms of Service require.
 4. Press **Finish and open my portal**. **Crypto processing** opens in your business portal.
 
 <figure><img src="assets/crypto-processing/onboarding.gif" alt="Business onboarding: Crypto processing, then the questions of Before you start accepting crypto, filled in for a sample company"><figcaption><p>The crypto processing questions in business onboarding (sample answers).</p></figcaption></figure>
 
-Until your business is verified you can receive up to 1,000 USD in all. The **Overview** shows how much of it you have received, with **Verify business**. At 1,000 USD, new payment links, invoices and deposit addresses wait until your business is verified; payments to the ones you already made still arrive.
+Until your business is verified you can receive up to 1,000 USD in all. Every page of **Crypto processing** shows how much of it you have received, with **Verify business**. At 1,000 USD, new payment links, invoices and deposit addresses wait until your business is verified; payments to the ones you already made still arrive.
 
 ## What you need
 
