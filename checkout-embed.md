@@ -327,7 +327,7 @@ add_shortcode('unigox_checkout', function ($atts) {
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `token` | none | The payment token, or a function that returns it or a promise of it. Called once, on the first `open()` or `mount()`. |
+| `token` | none | The payment token, or a function that returns it or a promise of it. Called on the first `open()` or `mount()`, and again after an error or a timeout. |
 | `url` | none | The full link instead of `token`. Keeps an invoice attached after `#invoice=`. |
 | `mode` | `"modal"` | `"modal"`, `"inline"` or `"hosted"`. A browser without `<dialog>` gets `"hosted"`. |
 | `container` | none | Embedded: the element or a selector, used when `mount()` gets none. |
@@ -469,7 +469,7 @@ The page you return to asks your server for the order's status.
 <figure><img src="assets/crypto-processing/payer-checkout.gif" alt="The payer chooses a coin and network, sees the address and amount, then the payment is confirmed"><figcaption><p>The checkout as your customer sees it (sample page, no real payment).</p></figcaption></figure>
 
 1. **Choose a coin and network.** Coins and networks you did not accept are not offered.
-2. **Pay.** The amount and the address with copy buttons, a QR code behind **Show QR**, and the pay-by date when the link has one.
+2. **Pay.** The amount and the address with copy buttons, a QR code (on a phone, behind **Show QR**), and the pay-by date when the link has one.
 3. **Confirming.** The transfer is seen and confirming on its network.
 4. **Payment completed.** The payment is in your Unigox wallet. On the payment page the payer can **Print receipt**.
 

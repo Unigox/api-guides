@@ -238,7 +238,11 @@ An order is paid when its credits reach the amount, or fall short by at most 0.5
 
 ## Payments in the portal and exports
 
-**Payments** lists every payment with its status, its transactions and the link or customer it belongs to. **Export CSV** writes the list for a period:
+**Payments** lists every payment with its status, its transactions and the link or customer it belongs to. **Needs attention** gathers the ones that want a decision: short, late or held. Open a payment to see its details, the payer's and the receiving addresses, the transactions to check on chain, and a timeline of what happened.
+
+<figure><img src="assets/crypto-processing/payments.gif" alt="Payments in the portal: the list with statuses, Needs attention, and one payment with its details, addresses and timeline"><figcaption><p>Checking payments in the portal (sample data).</p></figcaption></figure>
+
+**Export CSV** writes the list for a period:
 
 - **Readable** columns for people, or **For developers**, with stable column names and codes. The developer file of payments has `reference`, `status`, `amount_due_usd`, `received`, `coin`, `source_network`, `source_tx`, `credit_tx`, `seen_at`, `credited_at`, `address_id`, `payment_key`, `source` and more.
 - **Payment links → Export CSV** writes one row per link, with its status, amounts and address IDs.
