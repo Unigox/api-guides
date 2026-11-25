@@ -84,7 +84,7 @@ test("the payment-addresses reference renames the page published at its former p
   const renamed = changes.find((c) => c.page === "old-reference");
   assert.equal(renamed.operation, "update_page");
   assert.equal(renamed.slug, "payment-addresses");
-  assert.equal(renamed.title, "API reference: payment addresses");
+  assert.equal(renamed.title, "API reference: crypto processing");
   assert.ok(!changes.some((c) => c.operation === "insert_page" && c.slug === "payment-addresses"), "a second reference page was created");
   assert.ok(!changes.some((c) => c.operation === "update_page" && c.page !== "old-reference" && c.slug), "only the moved page changes its address");
 });

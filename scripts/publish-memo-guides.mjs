@@ -7,19 +7,19 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 export const guides = [
-  { source: "crypto-payments.md", path: "tutorials/crypto-payments", sibling: "tutorials/fiat-accounts", title: "Payments API: payment addresses for your own payment page" },
+  { source: "crypto-payments.md", path: "tutorials/crypto-payments", sibling: "tutorials/fiat-accounts", title: "Crypto processing: build your own payment page" },
   // The integrator guide of Unigox Checkout as six pages, the Quickstart first at the path the portal's Developers page
   // links. unigox.com scripts/crypto-checkout-guide-sync.mjs writes them (and checkout-integration.md, the whole guide on
   // one page) from its public/checkout-integration.md; its tests keep them the same.
-  { source: "checkout-quickstart.md", path: "tutorials/crypto-checkout", sibling: "tutorials/fiat-accounts", title: "Accept crypto payments with Unigox Checkout on your website" },
-  { source: "checkout-embed.md", path: "tutorials/crypto-checkout-embed", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: create a payment and show it on your site" },
-  { source: "checkout-confirm.md", path: "tutorials/crypto-checkout-confirm", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: confirm payments on your server" },
-  { source: "checkout-links.md", path: "tutorials/crypto-checkout-links", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: make payment links and deposit pages on your server" },
-  { source: "checkout-testing.md", path: "tutorials/crypto-checkout-testing", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: test and go live" },
-  { source: "checkout-reference.md", path: "tutorials/crypto-checkout-reference", sibling: "tutorials/fiat-accounts", title: "Unigox Checkout: networks, troubleshooting and changes" },
+  { source: "checkout-quickstart.md", path: "tutorials/crypto-checkout", sibling: "tutorials/fiat-accounts", title: "Crypto processing: get started" },
+  { source: "checkout-embed.md", path: "tutorials/crypto-checkout-embed", sibling: "tutorials/fiat-accounts", title: "Crypto processing: add checkout to your website" },
+  { source: "checkout-confirm.md", path: "tutorials/crypto-checkout-confirm", sibling: "tutorials/fiat-accounts", title: "Crypto processing: confirm payments on your server" },
+  { source: "checkout-links.md", path: "tutorials/crypto-checkout-links", sibling: "tutorials/fiat-accounts", title: "Crypto processing: create payment links from your server" },
+  { source: "checkout-testing.md", path: "tutorials/crypto-checkout-testing", sibling: "tutorials/fiat-accounts", title: "Crypto processing: test and go live" },
+  { source: "checkout-reference.md", path: "tutorials/crypto-checkout-reference", sibling: "tutorials/fiat-accounts", title: "Crypto processing: reference" },
   // Published before as api-reference/bridge-payments ("Bridge payment addresses and credited webhooks"): that page is
   // renamed in place (same page, new path and title), so the developer site keeps one reference page, not two.
-  { source: "api-reference/payment-addresses.md", path: "api-reference/payment-addresses", formerPath: "api-reference/bridge-payments", sibling: "api-reference/user-management", title: "API reference: payment addresses" },
+  { source: "api-reference/payment-addresses.md", path: "api-reference/payment-addresses", formerPath: "api-reference/bridge-payments", sibling: "api-reference/user-management", title: "API reference: crypto processing" },
   { source: "non-custodial-customers.md", path: "tutorials/non-custodial-customers", sibling: "tutorials/fiat-accounts", title: "Non-custodial customers" },
   { source: "api-reference/third-party-payouts.md", path: "tutorials/third-party-payouts", sibling: "tutorials/fiat-accounts", title: "Third-party payouts" },
   { source: "api-reference/funding-your-wallet.md", path: "tutorials/funding-your-wallet", sibling: "tutorials/fiat-accounts", title: "Funding your wallet" },
@@ -61,7 +61,7 @@ export async function publishMemoGuides(api, space, dryRun, spec) {
     const existing = current ?? former;
     if (existing && existing.parent !== sibling.parent) throw new Error(`Unexpected parent for ${guide.path}`);
     const source = await readFile(new URL(`../${guide.source}`, import.meta.url), "utf8");
-    const markdown = renderGuide(source);
+    const markdown = renderGuide(source, process.env.GITHUB_SHA || "main");
     if (!markdown.trim()) throw new Error(`Empty source: ${guide.source}`);
     plan.push({ ...guide, parent: sibling.parent, id: existing?.page.id, rename: Boolean(former), markdown });
     console.log(`${former ? `Rename ${guide.formerPath} to` : existing ? "Update" : "Create"} ${guide.path} under existing parent ${sibling.parent}`);
@@ -157,8 +157,11 @@ export function locatePage(pages, path, parent = null) {
  * @param {string} markdown Repository guide Markdown, including fragments.
  * @returns {string} Markdown with absolute public links; no IO or content changes.
  */
-export function renderGuide(markdown) {
+export function renderGuide(markdown, commit = "main") {
+  // Pictures sit in this repository (assets/…): the developer site shows them from the commit being published.
+  const assets = `https://raw.githubusercontent.com/Unigox/api-guides/${commit}/assets/`;
   return markdown
+    .replace(/(src="|\]\()(?:\.\/)?(?:\.\.\/)?assets\//g, `$1${assets}`)
     .replace(/\]\(api-reference\/payment-addresses\.md(?=[#)])/g, "](https://developers.unigox.com/api-reference/payment-addresses")
     .replace(/\]\(\.\.\/crypto-payments\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/crypto-payments")
     .replace(/\]\((?:\.\.\/|\.\/)?non-custodial-customers\.md(?=[#)])/g, "](https://developers.unigox.com/tutorials/non-custodial-customers")

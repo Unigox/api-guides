@@ -11,9 +11,10 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 const guide = read("crypto-payments.md");
 const reference = read("api-reference/payment-addresses.md");
 
-test("the guide signs a callback URL only when GET /config has callbacks on", () => {
+test("the reference signs a callback URL only when GET /config has callbacks on", () => {
+  // Callbacks are off in production, so the guides leave them out; the reference keeps the rule for the day they are on.
   assert.doesNotMatch(guide, /contains the invoice reference and HTTPS callback URL\./);
-  for (const part of ["memoLimits.maxCallbackUrlBytes", "webhookKeys", '`""`', "validation_callback_url_invalid"]) assert.ok(guide.includes(part), part);
+  for (const part of ["memoLimits.maxCallbackUrlBytes", "webhookKeys", '`""`', "validation_callback_url_invalid"]) assert.ok(reference.includes(part), part);
 });
 
 test("SEC-DOCS-30: the reference's allocation example and reassignment sign a callback URL only when GET /config has callbacks on", () => {
@@ -28,11 +29,11 @@ test("SEC-DOCS-30: the reference's allocation example and reassignment sign a ca
 
 test("the guide states the reuse rule, the failed relock gap and the precision rule", () => {
   // The portal's rule (owner decision O-08), the same in the checkout guide and the help: 7 days, not 24 hours.
-  assert.match(guide, /paid in full and credited, and 7 days have passed since/);
+  assert.match(guide, /paid in full and credited, and its reservation ended at least 7 days ago/);
   assert.doesNotMatch(guide, /24 hours/);
   assert.match(guide, /If reserving the address again after ending its reservation fails/);
   assert.match(guide, /`BigInt`/);
-  assert.match(guide, /`memoHash` is public/);
+  assert.match(guide, /`memoHash`, is public/);
 });
 
 test("the reference lists the error keys the Bridge returns on these routes", () => {
@@ -53,7 +54,7 @@ test("the reference gives every status and subStatus of a transaction and the li
   assert.match(reference, /An omitted `chainType` includes all address types/);
   assert.doesNotMatch(reference.replace(/"Unigox Bridge Memo Locks"/g, ""), /lock ID|memo lock|\bfamil(y|ies)\b|`ACTIVE` lock\b|active lock\b|closed locks?\b/i);
   // The reference speaks of the Unigox payments API and payment addresses, never of internal service names.
-  assert.match(reference, /Unigox payments API to allocate receiving addresses/);
-  assert.match(reference, /your application decides when to fulfil an order or update a customer's balance/);
+  assert.match(reference, /reserving payment addresses for orders and customers/);
+  assert.match(reference, /your server decides when to fulfil an order or credit a customer/);
   assert.doesNotMatch(reference.replace(/"Unigox Bridge (Memo Locks|History)"|name: "Unigox Bridge (Memo Locks|History)"|`BRIDGE_\w+`/g, ""), /\bBridge\b|\bXAI\b|collection address|memo association/i);
 });

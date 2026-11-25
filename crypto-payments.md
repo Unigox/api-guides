@@ -1,100 +1,42 @@
-# Payments API: payment addresses for your own payment page
+# Crypto processing: build your own payment page
 
-> **Most businesses do not need this page.** To get paid, send payment links from the business portal: no code. To take payments on your website, show Unigox Checkout there. Both are described under [Unigox Checkout and the business portal](#unigox-checkout-and-the-business-portal) below.
+> **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
 
-Use this guide if you are building your own payment interface. The API lets you assign receiving addresses to orders or customers and verify incoming transfers. If you want a ready-made payment page, start with [Unigox Checkout](https://developers.unigox.com/tutorials/crypto-checkout).
+Most businesses do not need this page. The Unigox checkout shows the payment for you, on your site or on a Unigox page, and keeps up with every network, coin and payment state ([Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed)). Build your own page only when the checkout cannot fit your product, for example inside a mobile app.
 
-The API stores your order or customer reference as a `memo` attached to a receiving address. It returns that text only to the authorized wallet owner. Customers send a normal token transfer; they do not enter a memo or tag in their wallet.
+Your own page then has to do what the checkout does: offer the right coins and networks, check the address before showing it, follow the transfer, handle short, late and extra payments, and confirm the payment on your server. You need your wallet's private key ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links#before-you-start)).
 
-## Unigox Checkout and the business portal
+## How it works
 
-> **Not available yet.** Crypto processing is in early access. Unigox turns it on for your business; then payment links, deposit addresses and the checkout appear in your business portal. Until this notice is gone, the pages this section links to can answer 404.
+1. **Reserve an address for the order** with its reference text (`POST /memo-locks/allocate`, as in [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links#1-reserve-an-address-for-the-order)). The customer sends an ordinary transfer to it: no memo or tag on chain.
+2. **Wait until the network is ready** (`monitoring.chains[].confirmed`, or `watched` on TON and Solana).
+3. **Offer only coins and networks that can pay** (below).
+4. **Check the address before you show it**, with the [link check](https://developers.unigox.com/api-reference/payment-addresses#link-check): require an `ACTIVE` reservation whose wallet, address and reference fingerprint match your own order record.
+5. **Show the instructions:** the address, the exact amount, the coin and the network.
+6. **Follow the transfer** with `GET /transaction/{chainId}/{txHash}` once the customer gives you the hash, or with your signed history.
+7. **Confirm the payment on your server** exactly as [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) shows, and fulfil the order from your own record.
 
-You do not need code to take payments: the [crypto processing help](https://www.unigox.com/crypto-processing/help) explains payment links, deposit addresses for repeat customers and the checkout for your site in plain words, and [Payment links](https://www.unigox.com/crypto-processing/help/payment-links) shows every step.
+## Which coins and networks to offer
 
-You do not have to build the payment page yourself. Unigox Checkout shows it for you, as a hosted page, in a window over your site or inside your page, and the business portal makes payment links and customers' deposit addresses without code: see [Accept crypto payments with Unigox Checkout on your website](https://developers.unigox.com/tutorials/crypto-checkout). Building your own payment page on the API, as the rest of this page describes, is for special cases: your page then has to keep up with every network, coin and payment state the checkout already handles.
+`GET /config` lists every network and coin, including ones that are off and native coins. Offer a coin on a network only when:
 
-With Unigox Checkout or the business portal, write the memo as `<reference> · <amount> USD`, for example `NW-20418 · 250.00 USD` (a space, a middle dot U+00B7, a space). The checkout then checks the amount against the memo, and the portal shows the payment as paid, underpaid or overpaid instead of only credited. Links made in the portal add their terms after it; the checkout guide's [Link format](https://developers.unigox.com/tutorials/crypto-checkout-links#link-format-advanced) section describes that form.
+- the network is `active`, of an address type you reserved, and not `660279` (the chain id that marks a credit to your wallet);
+- the coin is `active`, not `native` and has an `address`;
+- exactly one coin on chain `660279` matches it: the same `groupId`, or for EVM, TRON and TON coins without a group, the same `symbol`;
+- your address is ready on that network.
 
-For a customer who pays again and again, give them permanent deposit addresses with the memo `Top-up · <customer reference> · <tag>`: the portal does it under **Deposit addresses**, and the checkout guide's [Customer deposit addresses](https://developers.unigox.com/tutorials/crypto-checkout-links#customer-deposit-addresses) shows how your server does it and credits each deposit.
+The [API reference](https://developers.unigox.com/api-reference/payment-addresses#supported-payment-assets) has the exact rules.
 
-For an itemized bill, choose **Payment links → Create invoice** in the portal. Customer details, line items and the PDF document are held in the browser and shared link, not stored as an invoice in the payment-address API. See the [invoice guide](https://www.unigox.com/crypto-processing/help/invoices). For website setup, start in **Checkout**; **Developers** contains the server integration and payment verification instructions.
+## Reference text
 
-Production callbacks are off today: `GET /config` answers `memoLimits.maxCallbackUrlBytes: 0`. Confirm payments by reading their status: the public `GET /transaction/{fromChain}/{fromTx}` needs no key, and wallet-signed history covers every payment.
+Write the reference as `<your order reference> · <amount> USD`, for example `NW-20418-k3f9q2 · 250.00 USD`. The portal reads the amount from it and shows the payment as paid, underpaid or overpaid. The text stays private: only your wallet reads it back. Its fingerprint, `memoHash`, is public in every transfer's status, so keep personal data out of it and add a random part.
 
-For several transfers in one Solana transaction, the checkout API can list the transfer selectors for the matching payment address. Use each returned `logIndex` when checking its status; the list alone does not confirm credit. See [Find every transfer in a Solana transaction](checkout-confirm.md#find-every-transfer-in-a-solana-transaction) for the request, limits and retry behavior. Confirm this endpoint is deployed in your integration environment before relying on it.
-
-## Words used on this page
-
-| Word | Meaning |
-| --- | --- |
-| Payment address | An address of your wallet that customers send to. One address serves all Ethereum-style networks (`chainType` `evm`); TRON (`tvm`), TON (`ton`) and Solana (`svm`) have one each. |
-| Reserve an address, end the reservation | Reserving puts your memo on a payment address, so every transfer to it counts for that invoice. Ending the reservation takes it off. "Get a new address" makes an address and reserves it in one request. The request paths you type for these are below. |
-| Address ID (`lockId`, `memoLockId`) | The number of one reserved address. Answers name the field `lockId`, history `memoLockId`. |
-| Memo fingerprint (`memoHash`) | keccak256 of the memo. Public transfer records carry it, never the memo text. |
-| Your Unigox wallet | Where every payment is credited. "Balance" is only ever an amount in it. |
-| `UNIGOX_BALANCE_CHAIN_ID` (`660279`) | A fixed number Unigox uses to mark a payment as credited to your wallet. Copy it as is; nothing needs to be done on that network. |
-
-## Payment flow
-
-The Unigox payments API gives you payment addresses, reserves them for your invoice references, credits each payment to your Unigox wallet and, where callbacks are on (not in production yet), sends a signed `deposit.credited` webhook. Copy its address from the business portal's **Crypto processing → Developers** page (**API address**) and keep it in your configuration, `UNIGOX_PAYMENTS_API` below.
-
-1. Read `GET /config`. Callbacks are available only when `memoLimits.maxCallbackUrlBytes` is above 0 and `webhookKeys` lists at least one key.
-2. Get a payment address with `POST /memo-locks/allocate`. The signed request contains the invoice reference (the memo; for Unigox Checkout, in the format given [above](#unigox-checkout-and-the-business-portal)) and a `callbackUrl`. The `callbackUrl` is your public HTTPS receiver when callbacks are available, otherwise `""`. A non-empty URL while callbacks are unavailable is refused with 400 `validation_callback_url_invalid`. Existing addresses can be reused as described below.
-3. Wait for the selected network to be ready, then display the payment address, network, coin and amount on your page.
-4. With a callback URL, receive the signed `deposit.credited` webhook. Its `memoLockId` identifies the invoice's reservation; its `intentId` identifies the payment. Without one (and in production today, where callbacks are off), read wallet-signed history for the reservation, or the public transaction status of each transfer you know of.
-5. Retrieve transaction status or wallet-signed history to confirm the credited amount, coin and recipient. A payment is confirmed only by a completed, non-refunded credit matching the invoice. Any webhook used must also pass signature verification.
-
-Signing schemas, request and response formats, and webhook authentication are defined in the [API reference: payment addresses](api-reference/payment-addresses.md).
+For a customer who pays again and again, use a deposit page instead ([Create a deposit page for a customer](https://developers.unigox.com/tutorials/crypto-checkout-links#create-a-deposit-page-for-a-customer)).
 
 ## Address reuse
 
-Payment addresses can serve successive invoices. Reuse an address only when its last payment was paid in full and credited, and 7 days have passed since you ended its reservation; never reuse the address of an open, partly paid or closed-unpaid invoice: get a new one instead. A second transfer from the same payer, such as a double send or an exchange retrying a withdrawal, can arrive after the invoice is paid; after reuse it counts toward the new invoice. The business portal works this way: it takes a new address while an address type holds less than 80 % of its limit of 1,000 addresses, and only past that reuses the address of a link that was paid in full and closed at least 7 days ago, longest idle first. It never takes the address of an open link, of a partly paid or unpaid link, or of a customer's deposit page.
-
-Reuse consists of two signed requests:
-
-1. End the previous reservation with `POST /memo-locks/unlock`.
-2. Reserve the address for the new invoice reference and callback URL (or `""`) with `POST /memo-locks/lock`.
-
-Reuse keeps the address and creates a new address ID (`lockId`). The new reservation is `ACTIVE`. [Network readiness](api-reference/payment-addresses.md#network-readiness) is reported separately in `monitoring`. Delayed webhooks keep the address ID of the original deposit.
-
-A deposit counts for the memo reserved at the deposit's on-chain time. Deposits during the new reservation carry the new invoice reference; deposits between two reservations have no memo. Ending a reservation, or its expiry, does not stop transfers to the address. If reserving the address again after ending its reservation fails, the address stays without a memo until a reservation succeeds, and a deposit in between is credited without an invoice reference: retry the reservation, or match such deposits through history by payment address.
-
-## Networks and coins
-
-| `chainType` | Payment address |
-| --- | --- |
-| `evm` | One address for every supported Ethereum-style network |
-| `ton` | TON |
-| `svm` | Solana |
-| `tvm` | TRON |
-
-Payments are taken in the configured ERC-20 tokens on Ethereum-style networks, TRC-20 tokens on TRON, jettons on TON and SPL tokens on Solana. Native coins such as ETH, TRX, TON and SOL are not taken. Your Unigox balance's network (chain ID `660279`) is where payments are credited, not a network customers pay on.
-
-`GET /config` includes inactive and native assets as well as the coins customers can pay with. Offer a coin only on an active network, when it is an active, non-native token with exactly one matching coin on your balance's network, and your payment address is ready on that network. The [supported payment assets](api-reference/payment-addresses.md#supported-payment-assets) section defines the fields and matching rules.
-
-Offering a supported coin and network does not guarantee that every transfer will be credited. Verify the receiving address and check the transfer's status: it may still be pending, under review, below the creditable minimum or unsuccessful. For an unsupported transfer, contact support@unigox.com with the network, transaction hash, coin, amount and receiving address. Automatic credit or return is not guaranteed, and recovery may not be possible.
-
-## Credit to your wallet
-
-Your Unigox wallet owns your payment addresses and signs every reservation, on all four address types.
-
-Payments are credited to your **Unigox wallet** (marked by chain ID 660279, `UNIGOX_BALANCE_CHAIN_ID`); nothing needs to be done on that network. Transaction status gives the credited coin, amount, recipient and transaction hash. The webhook's `fromAmount` is the deposit as sent. In status and history, `toAmount` is the expected credited amount; `actualToAmount`, when present, is the confirmed amount received. Use the confirmed amount for reconciliation, falling back to `toAmount` on older completed records that lack it.
-
-See [quoted amounts and confirmed receipts](api-reference/payment-addresses.md#quoted-amounts-and-confirmed-receipts) for the response fields.
+A new address for each order is the safe choice. Reuse an address only when its last payment was paid in full and credited, and its reservation ended at least 7 days ago: a second transfer from the same payer (a double send, an exchange retrying) can still arrive. Never reuse the address of an open, partly paid or unpaid order, or of a customer's deposit page. To reuse it, end the old reservation (`POST /memo-locks/unlock`), then reserve the new reference on it (`POST /memo-locks/lock`). The address gets a new address ID. If reserving the address again after ending its reservation fails, the address has no reference until a reservation succeeds: a payment in between reaches your wallet without one. Retry the reservation, and match such a payment by its address in your history.
 
 ## Payment records
 
-An address can receive several payments under one memo. Invoice totals, partial payments and overpayments are managed by your application. A reservation does not enforce a payment amount or start refunds.
-
-Webhook delivery can repeat when an acknowledgement is not received or recorded. Retries keep the same event ID. Deduplicate events by `(environment, type, id)` and payments by `(environment, intentId)`. A transaction can contain several payments, each with its own intent.
-
-The webhook body does not include `environment`. It comes from the receiver configuration: a separate callback URL for each environment, or distinct environment-specific verification keys for a shared URL. See [environment and event identity](api-reference/payment-addresses.md#environment-and-event-identity).
-
-`POST /transactions/history` returns your incoming and outgoing records with a wallet signature and no Unigox account. Memo fields are omitted by default; a signed `includeMemo: true` includes your invoice references. Filters support the original reservation and the payment address.
-
-History covers payments whose callbacks were missed or exhausted their retries. It keeps the original invoice reference after an address is reused. See [wallet transaction history](api-reference/payment-addresses.md#wallet-transaction-history) for signing, pagination and reconciliation.
-
-Amounts are integer strings in token base units. The source and destination token decimals determine their respective scales. Keep them as strings or use integer arithmetic such as `BigInt`: JavaScript `Number` can lose precision on 18-decimal tokens.
-
-The memo text is returned only to you, but its `memoHash` is public in transaction status. A predictable reference, such as a sequential order number with its amount, can be matched to its public transfer by anyone who guesses it. Keep personal data out of references, and add a random part to them.
+Every payment is credited to your Unigox wallet, one for one in the coin that was sent, and appears in the portal's **Payments**. Your server reads it with `GET /transaction/{chainId}/{txHash}` or `POST /transactions/history` ([API reference](https://developers.unigox.com/api-reference/payment-addresses)). Only `DONE` with `subStatus` `COMPLETED` and no `refund` is a credit. Amounts are whole numbers of the coin's smallest unit, sent as strings: keep them as strings or use `BigInt`, because a JavaScript `Number` loses precision on 18-decimal coins.

@@ -4,16 +4,16 @@ Notable changes to the Unigox partner API, newest first.
 
 ## Unreleased
 
-**Crypto processing: payment links, the checkout on your site and deposit addresses.**
+**Crypto processing: payment links, invoices, the checkout on your website and customer deposit addresses.**
 
-- Payment links in the business portal: create a link for an amount and a reference, with an optional pay-by date, tolerance, coins and networks; share it by link, email or QR code; follow it in Payment links and Payments, and export both as CSV. No code needed: see the [crypto processing help](https://www.unigox.com/crypto-processing/help/payment-links).
-- Customer deposit addresses: a permanent page per customer in the portal (Deposit addresses), the `topUpToken()` builder, the `onDeposit` callback and the `UNIGOX_CHECKOUT_DEPOSIT_CREDITED` message, and how a server credits each deposit (section "Customer deposit addresses" of [Links and deposit pages from your server](./checkout-links.md)).
-- Address reuse: wait 7 days (was 24 hours) after the reservation of a payment paid in full has ended, and never reuse the address of an open, partly paid or closed-unpaid invoice, as the crypto payments guide's Address reuse now says.
-- [Accept crypto payments with Unigox Checkout on your website](./checkout-integration.md): payment links from the business portal, the checkout as a hosted page, a window or part of your page (`checkout.js`), and confirming each payment on your server. On the developer site it is six pages: [Quickstart](./checkout-quickstart.md), [Embed](./checkout-embed.md), [Confirm payments](./checkout-confirm.md), [Links and deposit pages from your server](./checkout-links.md), [Test and go live](./checkout-testing.md) and [Reference](./checkout-reference.md).
-- [Link check](./checkout-links.md): an endpoint that confirms an address belongs to your link before your own payment page shows it, without a signature. The checkout reads it before it shows an address; a payment page of your own should too (see "Headless: your own payment page", which gives its address). The payments API does not change.
-- [Unigox Checkout and the business portal](./crypto-payments.md#unigox-checkout-and-the-business-portal): write the reference text (`memo`) as `<reference> · <amount> USD` so the checkout and the portal can tell paid from underpaid. Links made in the portal carry their options (pay-by date, coins, tolerance) in their reference text, so an edited link refuses to open (the checkout guide's "Link format" explains it).
-- The API reference for payment addresses moves to "API reference: payment addresses" (`api-reference/payment-addresses` on the developer site, formerly `api-reference/bridge-payments`). Its content is unchanged.
-- Crypto processing is in early access. Unigox turns it on for your business; then payment links, deposit addresses and the checkout appear in your business portal. Production callbacks stay off: the guide shows how a server confirms each payment without a key, from the public transaction status. Money: no change to how payments are credited.
+- [The crypto processing guide](./checkout-integration.md), on one page. On the developer site it is six pages: [Get started](./checkout-quickstart.md), [Add checkout to your website](./checkout-embed.md), [Confirm payments on your server](./checkout-confirm.md), [Create payment links from your server](./checkout-links.md), [Test and go live](./checkout-testing.md) and [Reference](./checkout-reference.md).
+- Payment links and invoices in the business portal, with no code: share a link by URL, email or QR code, follow it in **Payment links** and **Payments**, and export both as CSV.
+- Customer deposit addresses: a permanent payment page for each customer, made in the portal (**Deposit addresses**) or from your server (section "Create a deposit page for a customer" of [Create payment links from your server](./checkout-links.md)).
+- [Link check](./checkout-links.md): an endpoint that confirms an address belongs to your link before your own payment page shows it. It needs no signature.
+- [Build your own payment page](./crypto-payments.md), for a product the checkout cannot fit, such as a mobile app. Write the reference text as `<your order reference> · <amount> USD`, so the portal can tell paid from underpaid.
+- Address reuse: wait 7 days (was 24 hours) after the reservation of a payment paid in full has ended, and never reuse the address of an open, partly paid or unpaid order.
+- The API reference is now "API reference: crypto processing" (`api-reference/payment-addresses` on the developer site, formerly `api-reference/bridge-payments`). It adds the payment views of history and the link check.
+- Crypto processing is in early access: Unigox turns it on for your business. Until your business is verified, it can receive up to 1,000 USD in total. Payment callbacks stay off: your server confirms each payment from its public status, with no key. How payments are credited does not change.
 
 ## 2026-10-29
 

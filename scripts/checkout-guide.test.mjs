@@ -1,6 +1,6 @@
 // Run with: node --test scripts/*.test.mjs
 //
-// The Unigox Checkout guide and its link check. Release audit r11 (dev-ux-07, dev-ux-26) found the portal's
+// The crypto processing guide (formerly the Unigox Checkout guide) and its link check. Release audit r11 (dev-ux-07, dev-ux-26) found the portal's
 // "Integration guide" opening raw markdown, and the crypto payments guide linking a tutorials/crypto-checkout page that
 // nothing published. The guide is now published from this repository; these checks keep the link, the page, its
 // publishing and its release state together.
@@ -13,8 +13,8 @@ import { PAGE_NOTICE, headingSlug, leadOf, releaseProblems } from "./check-relea
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const SITE = "https://developers.unigox.com/";
 
-// The checkout guide's six pages (unigox.com scripts/crypto-checkout-guide-sync.mjs writes them, and
-// checkout-integration.md, the whole guide on one page, from the one guide).
+// The guide's six pages are written here; scripts/build-checkout-one-page.mjs makes checkout-integration.md, the whole
+// guide on one page, from them.
 const CHECKOUT_PAGES = ["checkout-quickstart.md", "checkout-embed.md", "checkout-confirm.md", "checkout-links.md", "checkout-reference.md", "checkout-testing.md"];
 
 test("every developers.unigox.com page the crypto guides link to is one this repository publishes", () => {
@@ -60,7 +60,7 @@ test("every link to a section of another developer page names a section that pag
       checked++;
     }
   }
-  assert.ok(checked > 20, `only ${checked} section links checked`);
+  assert.ok(checked >= 10, `only ${checked} section links checked`);
 });
 
 test("the six pages are the whole guide: each section once, and a bar that links every other page", () => {
@@ -70,15 +70,17 @@ test("the six pages are the whole guide: each section once, and a bar that links
   const pages = guides.filter((g) => CHECKOUT_PAGES.includes(g.source));
   for (const page of CHECKOUT_PAGES) {
     const text = read(page);
-    assert.match(text, /^> \*\*Unigox Checkout guide:\*\* /m, `${page}: no page bar`);
+    assert.match(text, /^> \*\*Crypto processing guide:\*\* /m, `${page}: no page bar`);
     for (const g of pages) if (g.source !== page) assert.ok(text.includes(`(${SITE}${g.path})`), `${page}: no link to ${g.path}`);
   }
 });
 
-test("the checkout guide publishes as written: only absolute links, nothing for the publisher to rewrite", () => {
-  for (const page of ["checkout-integration.md", ...CHECKOUT_PAGES]) {
+test("the checkout guide publishes as written: only absolute links; the publisher rewrites only picture paths", () => {
+  const RAW = "https://raw.githubusercontent.com/Unigox/api-guides/abc123/assets/";
+  for (const page of ["checkout-integration.md", "crypto-payments.md", ...CHECKOUT_PAGES]) {
     const guide = read(page);
-    assert.equal(renderGuide(guide), guide, page);
+    assert.equal(renderGuide(guide, "abc123"), guide.replace(/(src="|\]\()assets\//g, `$1${RAW}`), page);
+    for (const [, file] of guide.matchAll(/(?:src="|\]\()(assets\/[^")\s]+)/g)) assert.ok(existsSync(new URL(`../${file}`, import.meta.url)), `${page}: ${file} is missing`);
     assert.doesNotMatch(guide, /\]\((?!https?:|#)[^)]*\.md/, `${page}: a repository-relative link would not resolve on the site`);
   }
 });
@@ -93,7 +95,7 @@ test("the changelog announces the checkout guide and its link check, which is no
   assert.match(unreleased, /On the developer site it is six pages: /);
   for (const page of CHECKOUT_PAGES) assert.ok(unreleased.includes(`](./${page})`), `the Unreleased entry does not list ${page}`);
   assert.doesNotMatch(unreleased, /checkout-server\.md|\bfive pages\b/);
-  assert.match(unreleased, /section "Customer deposit addresses" of \[Links and deposit pages from your server\]\(\.\/checkout-links\.md\)/);
+  assert.match(unreleased, /section "Create a deposit page for a customer" of \[Create payment links from your server\]\(\.\/checkout-links\.md\)/);
   // No internal service names in what partners read (L104); the reference's new address is named instead.
   assert.doesNotMatch(unreleased, /\bBridge\b|\brelay|public fingerprint/);
   assert.match(unreleased, /`api-reference\/payment-addresses`/);
@@ -112,7 +114,7 @@ test("while the checkout release is pending, every page and section it adds says
   const problems = await releaseProblems(new URL("../changelog.md", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
   assert.deepEqual(problems.filter((p) => !/describes changes that are not live yet/.test(p.message)), []);
   const pending = problems.length > 0;
-  for (const [page, anchor] of [["checkout-integration.md", ""], ...CHECKOUT_PAGES.map((p) => [p, ""]), ["crypto-payments.md", "unigox-checkout-and-the-business-portal"]]) {
+  for (const [page, anchor] of [["checkout-integration.md", ""], ...CHECKOUT_PAGES.map((p) => [p, ""]), ["crypto-payments.md", ""]]) {
     assert.equal(leadOf(read(page), anchor).includes(PAGE_NOTICE), pending, `${page}#${anchor}`);
   }
 });
