@@ -8,9 +8,9 @@ There is no test mode: a real link takes real money. Build your page against the
 
 ## Test your page without money
 
-The samples are real checkout pages of a made-up merchant, each in one state, with no address anyone can pay. Open `https://www.unigox.com/pay/<id>`, or pass the id as the token: `UnigoxCheckout.create({ token: "demo-awaiting" })`. Every event a sample sends has `livemode: false`. In production, ignore any event whose `livemode` is not `true`.
+Each sample is a real checkout page of a made-up merchant, fixed in one state. No sample has an address that can be paid. Open `https://www.unigox.com/pay/<id>`, or pass the id as the token: `UnigoxCheckout.create({ token: "demo-awaiting" })`. Every event a sample sends has `livemode: false`. In production, ignore every event whose `livemode` is not `true`.
 
-On the samples that wait for a payment, **Send the payment (sample)** plays the payment to the end; on the underpaid ones, **Send the rest (sample)** does. So you see every event of a paid checkout.
+On a sample that waits for a payment, **Send the payment (sample)** plays the payment through to the end. On an underpaid sample, **Send the rest (sample)** does the same. This way your page receives every event of a paid checkout.
 
 | Id | Shows | Events your page receives |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ On the samples that wait for a payment, **Send the payment (sample)** plays the 
 | `demo-unreferenced` | Money that reached the address after the link closed | `READY`, `RECEIVED_WITHOUT_REFERENCE` |
 | `demo-closed` | A link that was closed: a newer payment uses the address | `READY`, `CANCELLED` with `status: "closed"` |
 | `demo-cancelled` | The payer cancelled on the page | `READY`, `CANCELLED` with `status: "cancelled"` |
-| `demo-unavailable` | The checkout cannot reach Unigox right now: the address stays, the status waits | `READY`, `AWAITING_PAYMENT`, `UNAVAILABLE` (`onError` `CHECKOUT_UNAVAILABLE`); after **Send the payment (sample)**: `PAYMENT_DETECTED`, then `PAID` (`onComplete`) |
+| `demo-unavailable` | The checkout cannot reach Unigox right now: the address stays on screen and the status does not change | `READY`, `AWAITING_PAYMENT`, `UNAVAILABLE` (`onError` `CHECKOUT_UNAVAILABLE`); after **Send the payment (sample)**: `PAYMENT_DETECTED`, then `PAID` (`onComplete`) |
 | `demo-preset` | A link that offers one coin on one network: the address straight away | `READY`, `AWAITING_PAYMENT`; after **Send the payment (sample)**: `PAYMENT_DETECTED`, then `PAID` (`onComplete`) |
 | `demo-preset-coin` | A link that offers one coin: the payer picks only the network | `READY`, `CHOOSING` |
 | `demo-detected-expired` | A transfer seen before the pay-by time, which has passed since | `READY`, `PAYMENT_DETECTED` |
@@ -50,7 +50,7 @@ Any other id is treated as a link that cannot be read (`INVALID_LINK`, `onError`
 
 ### A complete test run on the sample shop
 
-**Developers → Test before you go live → Open the sample host page** opens `https://www.unigox.com/pay/embed-demo`: a shop's order page with a **Pay with crypto** button, the code behind it and the events it receives. Use it to see the whole integration before you write any code:
+**Developers → Test before you go live → Open the sample host page** opens `https://www.unigox.com/pay/embed-demo`. It is a shop's order page with a **Pay with crypto** button, the code behind the button and the events the page receives. Use it to see a whole integration before you write any code:
 
 1. Press **Pay with crypto**. The checkout opens over the page.
 2. Choose a coin and a network. The address and the amount appear.
@@ -63,9 +63,9 @@ Then do the same on your own page with a sample id as the token, and check that 
 
 ## Test your server on a test account
 
-**Developers → Test before you go live → Ask for a test account.** A test account has its own portal, API address and checkout site, which Unigox gives you with the account. Use that site in place of `https://www.unigox.com` in every example, sign `environment: "staging"`, and ask Unigox which networks and coins it accepts before you send anything.
+Ask for a test account under **Developers → Test before you go live → Ask for a test account.** A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`, and sign `environment: "staging"`. Before you send anything, ask Unigox which networks and coins the test account accepts.
 
-Then pay small amounts and check each result on the page, in **Payments** and in your order records:
+Then make small payments and check each result in three places: on the checkout page, in **Payments** and in your own order records:
 
 1. **Exactly the amount:** the page shows **Payment completed**; your check finds the payment and marks the order paid once.
 2. **Less, then the rest from another network:** the page shows what came and what remains, then **Payment completed**.
@@ -87,9 +87,9 @@ With deposit pages:
 ## Go live
 
 - **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
-- Your business is verified, or you know how much is left of the 1,000 USD you can receive before verification (**Overview**).
+- Your business is verified, or you know how much is left of the 1,000 USD you can receive before verification (the band at the top of every **Crypto processing** page).
 - Every network you offer is ready for your addresses.
-- Your periodic check covers open orders, and new credits on paid and closed orders. It passed tests 9 and 10.
+- Your job checks open orders, and also new payments on orders that are already paid or closed. It passed tests 9 and 10.
 - With deposit pages: your deposit job, or the person who credits deposits from **Payments**, runs as often as customers expect.
 - If you hold your wallet's key, it is only in your secrets store.
 - Your page ignores events whose `livemode` is not `true`.

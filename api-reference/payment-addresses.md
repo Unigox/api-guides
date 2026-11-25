@@ -24,17 +24,17 @@ Every answer is `{status, code, details?, data?}`: `code` is the HTTP status, `d
 
 ## Authentication
 
-Signed requests are EIP-712 typed data, signed with your Unigox wallet's private key. `wallet` is your wallet: the one that owns the addresses and receives the payments, never the payer's. History returns your own wallet's payments in and out. These requests need no API key and no Unigox login.
+A signed request is EIP-712 typed data, signed with the private key of your Unigox wallet. `wallet` is always your wallet: the one that owns the addresses and receives the payments, never the payer's. History returns the payments into and out of your own wallet. These requests need no API key and no Unigox login.
 
-Memo-address domain:
+The signing domain for address requests:
 
 ```json
 {"name":"Unigox Bridge Memo Locks","version":"1","chainId":42161}
 ```
 
-The domain's name is a fixed label of the signature format: type it exactly; it is not a product you use. In the endpoint paths, `memo-locks` means reservations of your payment addresses: a reservation (`lock`) attaches your memo to an address, releasing it (`unlock`) ends that reservation, and its number is the address ID (`lockId`).
+The domain's name is a fixed label of the signature format: type it exactly. It is not a product that you use. In the paths, `memo-locks` are the reservations of your payment addresses: `lock` reserves an address for your reference (`memo`), `unlock` ends that reservation, and `lockId` is the address ID.
 
-There is no `verifyingContract`. `chainId` in the body must equal the `chainId` you signed with. It names the chain your signature is made for, not the network your customer pays on. `chainType` selects the address type.
+There is no `verifyingContract`. The `chainId` in the request body must be the `chainId` you signed with. It says which chain the signature is made for, not which network your customer pays on. `chainType` selects the address type.
 
 An ordinary wallet with a private key signs directly. A deployed smart-contract wallet signs with ERC-1271, on a chain where Unigox has turned contract-wallet signatures on. Contract wallets that are not deployed yet, and Solana wallets, cannot sign these requests, even for Solana addresses (`chainType: "svm"`).
 
@@ -64,11 +64,11 @@ ListLocks(string action,address wallet,string environment,uint64 issuedAt,uint64
 
 Integer fields inside `message` or `authorization` accept decimal strings or safe JSON integers. Top-level `chainId` requires a JSON number. Additional message fields are rejected.
 
-A write's deadline is checked when the request arrives: it must be after the server's time and at most `maxWriteDeadlineSeconds` later. It limits only when the request may be sent, not how long the address or the link lives. A read signature can be reused until it expires and cannot be withdrawn earlier.
+Unigox checks a write's deadline when the request arrives: the deadline must be later than the server's time, and at most `maxWriteDeadlineSeconds` later. The deadline limits only when the request can be sent. It does not limit how long the address or the link lives. A read signature can be used again until it expires; you cannot cancel it earlier.
 
-Fetch fresh `GET /config` from the same API address before signing. Its top-level `memoLimits` object contains `serverTimeSeconds` and `maxWriteDeadlineSeconds`; it is a sibling of `data`, not a field inside the chain list. Calculate the deadline from these values rather than the wallet or browser clock. The allocation example below uses the full advertised window.
+Before you sign, read `GET /config` from the same API address. Its `memoLimits` object has `serverTimeSeconds` and `maxWriteDeadlineSeconds`. `memoLimits` is at the top level of the answer, next to `data`, not inside the list of networks. Work out the deadline from these two values, not from your own clock. The example below uses the longest deadline allowed.
 
-Signing and submission must finish before that deadline. Changing a deadline requires a new signature. For a new-address request already submitted, follow [Allocation recovery](#recover-a-lost-answer-to-a-new-address-request) instead of changing the original signed request.
+Sign and send the request before its deadline. To change a deadline you sign again. If you already sent a new-address request, do not change it: follow [Allocation recovery](#recover-a-lost-answer-to-a-new-address-request).
 
 
 ## GET /config
@@ -186,11 +186,11 @@ Response example:
 }
 ```
 
-Each successful request makes one new address, up to your address limit. While its reservation is active, the address takes every supported coin on every network of its type, any number of times.
+Each successful request makes one new address, until you reach your address limit. While the reservation is active, the address takes every supported coin, on every network of its address type, any number of times.
 
 ### Payment address formats
 
-New payment addresses use the following formats. New-address and reserve responses use `address`; transaction status and history use `depositAddress`.
+A payment address has one of these formats. The answers to new-address and reserve requests call it `address`; transaction status and history call it `depositAddress`.
 
 | `chainType` | Payment address format |
 | --- | --- |
@@ -199,9 +199,9 @@ New payment addresses use the following formats. New-address and reserve respons
 | `tvm` | Base58Check Tron address, matching the address you got; case-sensitive |
 | `ton` | Non-bounceable, URL-safe TON address; preserve the returned string |
 
-Reuse the returned `address` for signed reserve and release requests and for the `address` filter of the reservation list. EVM, Solana and TON address text is preserved in other responses; an existing TON address can also be in raw `workchain:hex` form. When present, Tron `depositAddress` is presented in Base58Check.
+Use the `address` exactly as it was returned: in signed reserve and unlock requests, and in the `address` filter of the reservation list. Other answers return EVM, Solana and TON addresses in the same text. An older TON address can also come in the raw `workchain:hex` form. A TRON `depositAddress` is always in Base58Check.
 
-Tron formatting applies to the payment address only. `fromTx` and `fromToken` are returned without address-format conversion, including any hexadecimal prefix and letter case. Use these values unchanged; do not convert them to Base58 when matching a payment or requesting transaction status.
+That TRON format applies to the payment address only. `fromTx` and `fromToken` come back exactly as the network gave them, with their hexadecimal prefix and letter case. Use them unchanged: do not convert them to Base58 to match a payment or to ask for a transaction's status.
 
 ### Network readiness
 
@@ -249,8 +249,9 @@ A coin or network that is not supported, or not ready, is neither credited nor r
 
 ### Recover a lost answer to a new-address request
 
-Retries of a new-address request use the original signed request body: the same `chainId`, `message` and `signature`.
-The wallet and nonce identify one new-address request; all signed fields must match. A new nonce makes another new address.
+If you get no answer to a new-address request, send the same signed body again: the same `chainId`, `message` and
+`signature`. Unigox recognises the request by its wallet and nonce, and every signed field must be the same. A request
+with a new nonce makes another address.
 
 | State of the request | Response or recovery operation |
 | --- | --- |
@@ -262,15 +263,15 @@ The wallet and nonce identify one new-address request; all signed fields must ma
 | Original reservation released or expired | The retry returns that closed reservation; it does not create or reactivate a reservation |
 | The nonce was used by an older request whose answer Unigox did not keep | 409 `memo_lock_nonce_used`; read your reservations (`POST /memo-locks/list`) to see what that request did |
 
-Payment readiness requires an `ACTIVE` reservation and confirmation for the selected network. A completed request remains
-retrievable with its exact original signature after the write deadline; that signature cannot authorize further writes.
-A Solana address is set up before the answer. HTTP 503 with `status: "addresses_not_watched"` and
-`details: "deposit_address_not_watched"` means it is not finished. On `/memo-locks/allocate` this answer includes the
+An address can take a payment on a network when its reservation is `ACTIVE` and that network is confirmed. After the
+deadline, the original signed request still returns what it made, but it cannot make anything new.
+A Solana address is set up before the answer is sent. HTTP 503 with `status: "addresses_not_watched"` and
+`details: "deposit_address_not_watched"` means the setup is not finished. On `/memo-locks/allocate` this answer has the
 saved address in `data.allocated`; the [readiness error examples](#readiness-errors) show it next to `/memo-locks/lock`.
 
-A used nonce with any other signed field (another reference, address type or callback) returns 409
-`memo_lock_nonce_used`. A request that expired does not prove it made no address: read your reservations before you
-sign another.
+A nonce that was already used, sent with any other signed field (another reference, address type or callback), gets 409
+`memo_lock_nonce_used`. An expired request may still have made an address: read your reservations before you sign
+another one.
 
 
 ## List an address's reservations
@@ -299,7 +300,17 @@ Content-Type: application/json
 {"status":"memo_locks_retrieved","code":200,"data":{"locks":[],"nextBefore":null}}
 ```
 
-A nonempty response contains the same reservation objects as a new-address request, with `monitoring` added to each `ACTIVE` reservation. Closed reservations do not carry readiness. Optional query fields are strings: `chainType`, `address`, `status` (`ACTIVE`, `UNLOCKED`, `EXPIRED`), `limit` (default 50, maximum 100) and `before` (an address ID, the `lockId` field). An omitted `chainType` includes all address types; an omitted `status` includes reservations in every status. Reservations are ordered by descending address ID. `nextBefore` is the address ID of the last reservation on a full page and supplies the next page's `before` value; it is null on a page shorter than `limit`. A final page that is exactly full still returns a cursor, and the request that follows returns an empty `locks` list and a null `nextBefore`. The endpoint returns reservations, not payment history.
+The answer lists reservations, not payments. Each reservation has the same fields as in the answer to a new-address request. An `ACTIVE` reservation also has `monitoring`; a closed one has no readiness.
+
+The `query` fields are optional, and all are strings:
+
+- `chainType`: one address type. An omitted `chainType` includes all address types.
+- `address`: one payment address.
+- `status`: `ACTIVE`, `UNLOCKED` or `EXPIRED`; an omitted `status` includes reservations in every status.
+- `limit`: the page size, default 50, maximum 100.
+- `before` (an address ID, the `lockId` field): the next page.
+
+Reservations come newest first, by descending address ID. On a full page, `nextBefore` is the address ID of the last reservation: pass it as `before` to get the next page. On a page shorter than `limit` it is null. A final page that is exactly full still returns a cursor, and the request that follows returns an empty `locks` list and a null `nextBefore`.
 
 
 ## Reserve an address again, or end its reservation
@@ -309,13 +320,13 @@ A nonempty response contains the same reservation objects as a new-address reque
 | `POST /memo-locks/lock` | `Lock` | `{ "lock": { ... }, "monitoring": { ... } }`, status `memo_locked` or `addresses_preparing` |
 | `POST /memo-locks/unlock` | `Unlock` | `{ "lock": { ... } }`, status `memo_unlocked` |
 
-Both endpoints accept `{chainId, message, signature}` with the corresponding signing schema. **Lock** contains the new-address fields plus `depositAddress`, with `action: "lock"`. **Unlock** contains `action`, `wallet`, `environment`, `chainType`, `depositAddress`, `lockId`, `nonce` and `deadline`, with `action: "unlock"`.
+Both requests take `{chainId, message, signature}`, signed with their own type. A **Lock** message has the fields of a new-address message plus `depositAddress`, with `action: "lock"`. An **Unlock** message has `action: "unlock"`, `wallet`, `environment`, `chainType`, `depositAddress`, `lockId`, `nonce` and `deadline`.
 
-Only your wallet can change its reservations. An address has at most one active reservation. Ending it (`unlock`) does not stop transfers to the address, send anything back or undo earlier credits.
+Only your wallet can change its reservations. An address has at most one active reservation. Ending a reservation (`unlock`) does not stop transfers to the address, does not send anything back and does not undo earlier credits.
 
-To put a new reference on an address, end its reservation (answer `memo_unlocked`), then reserve it (`lock`) with the new reference and a `callbackUrl`: your receiver when callbacks are available, otherwise `""`. Each request needs a fresh nonce. The new reservation is `ACTIVE` with a new address ID (`lockId`) and takes payments on a network once that network is ready. A reservation that expired can be replaced with `lock` directly.
+To put a new reference on an address, end its reservation (the answer is `memo_unlocked`), then reserve the address (`lock`) with the new reference and a `callbackUrl`: your receiver when callbacks are available, otherwise `""`. Each request needs a fresh nonce. The new reservation is `ACTIVE`, has a new address ID (`lockId`), and takes payments on a network once that network is ready. A reservation that has expired can be replaced with `lock` directly, without `unlock`.
 
-A payment belongs to the reservation that was active at the time of its transaction on the network. A payment made while no reservation was active carries no reference. A payment reported late keeps the address ID (`memoLockId`) of the reservation it was paid under.
+A payment belongs to the reservation that was active when its transaction happened on the network. A payment made while no reservation was active has no reference. A payment that Unigox learns about late keeps the address ID (`memoLockId`) of the reservation it was paid under.
 
 
 ## Wallet transaction history
@@ -337,9 +348,9 @@ History uses a separate EIP-712 domain and primary type:
 History(string action,address wallet,string environment,uint64 issuedAt,uint64 expiresAt,bool includeMemo)
 ```
 
-`action` is `"history"`. `includeMemo` is part of the signature: `false` authorizes ordinary history; `true` also requests memo fields. An omitted request field is interpreted as `false` and must have been signed as `false`. A signature for `/memo-locks/list` does not work here.
+`action` is `"history"`. `includeMemo` is part of what you sign: `false` gives the history without references, `true` also returns the reference fields. If you leave `includeMemo` out of the request, it counts as `false`, and you must have signed it as `false`. A signature made for `/memo-locks/list` does not work here.
 
-The read window uses the same limits as listing reservations: at most 86,400 seconds, with up to 300 seconds of clock skew for `issuedAt`. The authorization can be reused for pages and refreshed results until expiry. Changing the wallet, environment, signing chain, expiry or memo permission requires a new signature.
+A history signature is valid for the same time as a list signature: at most 86,400 seconds, and `issuedAt` can be at most 300 seconds ahead of the server's time. Use one signature for every page and every repeat of the read until it expires. To change the wallet, the environment, the signing chain, the expiry or `includeMemo`, sign again.
 
 ```js
 const now = Math.floor(Date.now() / 1000);
@@ -389,7 +400,7 @@ Optional `query` fields:
 | `chainType` | String | Source address type: `evm`, `svm`, `tvm` or `ton` |
 | `depositAddress` | String | Payment address; requires `chainType` |
 
-Filters narrow the signing wallet's history. They cannot select another wallet. EVM address comparison is case-insensitive; Tron accepts Base58 or hex and returns Base58. Solana and TON address filters use the exact returned address.
+The filters narrow the history of the wallet that signed. They cannot read another wallet. An EVM address matches in any letter case. A TRON address can be sent in Base58 or hex and comes back in Base58. A Solana or TON address must be exactly as Unigox returned it.
 
 Response envelope:
 
@@ -404,16 +415,16 @@ Response envelope:
 }
 ```
 
-Each transaction has the [transaction status fields](#transaction-status), plus `intentId` (the payment's ID in your history) and `logIndex` (or `null`), both decimal strings. `fromChain` and `toChain` are decimal strings; amounts are integer strings in token base units. `toAmount` retains the expected output, while `actualToAmount` reports the confirmed recipient amount when available. A payment appears once, also when your wallet both sent and received it. Two payments in one transaction have two `intentId`s.
+Each transaction has the [transaction status fields](#transaction-status), plus `intentId` (the payment's ID in your history) and `logIndex` (or `null`), both decimal strings. `fromChain` and `toChain` are decimal strings. Amounts are integer strings in the coin's smallest units. `toAmount` is the amount that was expected; `actualToAmount` is the amount actually credited, once it is known. A payment appears once, also when your wallet both sent and received it. Two payments in one transaction have two `intentId`s.
 
-With `includeMemo: false`, `memo`, `memoHash`, `memoSource` and `memoLockId` are omitted; execution details also omit their memo fields. With `includeMemo: true`, a reference is returned only to the wallet that reserved it: the payer cannot read it. The text is the reference the payment was made under, even when the address has a new reference since.
+With `includeMemo: false`, the answer has no `memo`, `memoHash`, `memoSource` or `memoLockId`, and the execution details have no memo fields either. With `includeMemo: true`, a reference is returned only to the wallet that reserved it: the payer cannot read it. It is the reference the payment was made under, also when the address has a newer reference now.
 
-Results include pending and failed records as well as completed ones. A record is not proof of payment: check it as [Transaction status](#transaction-status) says. Responses use `Cache-Control: no-store`.
+The list has pending and failed records too, not only completed ones. A record in the list is not proof of payment: check it as [Transaction status](#transaction-status) says. The answers are sent with `Cache-Control: no-store`.
 
 
 ### Payment views
 
-Payment filters read the payments credited to your wallet only, as the portal's **Payments** does. Any of these fields makes the read a payment read: incoming only, and `direction: "outgoing"` is refused.
+The payment filters read only the payments into your wallet, as the portal's **Payments** does. A request with any of these fields returns incoming payments only, and `direction: "outgoing"` gets an error.
 
 | Field | Type | Values |
 | --- | --- | --- |
@@ -431,11 +442,11 @@ Payment filters read the payments credited to your wallet only, as the portal's 
 
 ### Read a reservation's or an address's payments
 
-History stays available after a reservation expires or is ended. No transaction hash is needed.
+You can read the history of a reservation after it has expired or ended. You need no transaction hash.
 
-Use `memoLockId` for an invoice or `chainType` and `depositAddress` for a payment address. Pages are ordered by descending `intentId`; pass `nextBefore` as `before` until it is null. Count each record once by `(environment, intentId)`; the environment is that of the API address you asked.
+Filter by `memoLockId` to read one order's payments, or by `chainType` and `depositAddress` to read one payment address. The pages come newest first, by descending `intentId`: pass `nextBefore` as `before` until it is null. Count each record once, by `(environment, intentId)`; the environment is the one of the API address you called.
 
-The pages list records, not changes of status: an older pending record can be credited later and keeps its ID. So a periodic check starts again without `before` for the order or address and looks at pending records again. An empty result means nothing is recorded yet.
+The pages list records, not status changes: a record that is pending today can be credited later, under the same ID. So a job that checks an order starts each time without `before` and looks at its pending records again. An empty result means nothing is recorded yet.
 
 
 ## Transaction status
@@ -463,19 +474,26 @@ The response uses `{status: "found", code: 200, data: {...}}`. `data` includes:
 
 Only `DONE` with `COMPLETED` and no `refund` confirms a payment. Treat any value not listed here as not yet a credit.
 
-`depositAddress` follows the [payment address format rules](#payment-address-formats). Status and history return `null` when no payment address is recorded. Source transaction and token identifiers are returned unchanged.
+`depositAddress` follows the [payment address formats](#payment-address-formats). It is `null` when no payment address is recorded. `fromTx` and `fromToken` come back exactly as the network gave them.
 
-Count a payment only when it is under this order's address ID and reference, `DONE` with `COMPLETED` and no `refund`, credited to your wallet on `660279` in a supported coin, and its amount covers the order. Count `actualToAmount`: the exact amount credited, in the destination token's smallest units, set only for a `DONE` / `COMPLETED` payment that was not refunded. Keep amounts as strings or `BigInt`: a JavaScript `Number` can lose precision.
+Count a payment only when all of this is true:
 
-`quoteId` (from the checkout's events or your history) picks one payment of the transaction; `?logIndex=` picks it by its position in the transaction. Without either, you get only the transaction's first payment.
+- it is under this order's address ID and reference;
+- it is `DONE` with `COMPLETED`, and has no `refund`;
+- it was credited to your wallet on `660279`, in a supported coin;
+- its amount covers the order.
 
-`logIndex` uses the exact decimal string from the checkout or your wallet history, including for TON. Its range is `"0"` through `"9223372036854775807"`. Leading zeroes (except `"0"`), signs, fractions, exponents and larger values return HTTP 400. Preserve it as a string; converting large values to a JavaScript number can change the identifier.
+Count `actualToAmount`: the exact amount credited, in the credited coin's smallest units. It is set only on a `DONE` / `COMPLETED` payment that was not refunded. Keep amounts as strings or `BigInt`: a JavaScript `Number` can lose precision.
+
+`quoteId` (from the checkout's events or from your history) picks one payment of the transaction. `?logIndex=` picks one by its position in the transaction. With neither, you get only the first payment of the transaction.
+
+Send `logIndex` as the exact decimal string that the checkout or your history gave you, also for TON. It can be from `"0"` to `"9223372036854775807"`. A value with a leading zero (other than `"0"`), a sign, a fraction or an exponent, or a larger value, gets HTTP 400. Keep it as a string: a large value turned into a JavaScript number can become a different number.
 
 ```http
 GET /transaction/{fromChain}/{fromTx}?logIndex=100000000000001
 ```
 
-A 404 means nothing is recorded for it yet: ask again a little later. A source transaction hash is required for this lookup. When the source hash is unavailable, [wallet transaction history](#wallet-transaction-history) can retrieve the saved record by reservation or payment address.
+A 404 means that nothing is recorded for the transaction yet: ask again a little later. This request needs the transaction hash. When you do not have it, read the payment from your [wallet transaction history](#wallet-transaction-history), by its reservation or its payment address.
 
 
 ## Link check
@@ -650,8 +668,8 @@ The `memoHash` that transaction status returns for `NW-20418 · 250.00 USD` is k
 
 ## Errors
 
-`code` matches the HTTP status. `status` identifies the response outcome; `details` contains the error key.
-They are separate fields. In the first table, routes are under `/memo-locks/`.
+`code` is the HTTP status. `status` says how the request ended, and `details` has the error key: they are two
+separate fields. In the first table, the routes are under `/memo-locks/`.
 
 | Route | HTTP | `status` | `details` | Meaning |
 | --- | --- | --- | --- | --- |

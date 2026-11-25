@@ -4,28 +4,30 @@
 
 > **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · **Confirm payments** · [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
 
-Fulfil an order only after your server has checked with Unigox that its payment reached your wallet. A message from the checkout, a return to your site or a screenshot from the customer is never proof.
+Fulfil an order only after your server has checked with Unigox that the payment reached your wallet. A message from the checkout, the customer's return to your site and a screenshot from the customer are not proof: each can be faked.
+
+This page says "reference" for the text that names your order, "address ID" for the number of the payment address reserved for it, and "fingerprint" for the hash of the reference. In the API and in the code they are `memo`, `memoLockId` (or `lockId`) and `memoHash` ([Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses)).
 
 ## Choose how to check
 
 | Way | You need | It finds |
 | --- | --- | --- |
-| [Check the transfers your page reports](#check-the-transfers-your-page-reports) | The link's reference, its address IDs and your wallet address. No key. | The transfers your page heard about from the checkout |
-| [Read your payment history](#read-your-payment-history) | Your wallet's private key | Every payment to the order's addresses, including ones no page saw |
-| The portal | Nothing | Every payment, in **Payments** |
+| [Check the transfers your page reports](#check-the-transfers-your-page-reports) | Three values kept with the order: its reference, its address IDs and your wallet address. Nothing secret. | The transfers the checkout told your page about |
+| [Read your payment history](#read-your-payment-history) | Your wallet's private key | Every payment to the order's addresses, also the ones made while no page was open |
+| Look in the portal | Nothing | Every payment, in **Payments**: for checking by hand |
 
-Unigox does not send payment notifications to your server yet. Run your check from your return page and from a periodic job, every few minutes, for every open order.
+Unigox does not send payment notifications (webhooks) to your server yet. Run your check in two places: when the customer returns to your site, and in a job that goes over every open order every few minutes.
 
 ## Check the transfers your page reports
 
-Every transfer has a public status at `GET /transaction/{chainId}/{txHash}`. It says which reserved address the transfer paid (its address ID and the fingerprint of its reference) and whether it was credited to your wallet. So your server can check each transfer your page reports, without a key, and count only what it proved.
+Anyone can read the status of a transfer with `GET /transaction/{chainId}/{txHash}`: it needs no key and no signature. The status says which payment address the transfer went to (the address ID), which reference it was recorded under (the fingerprint), and whether it was credited to your wallet. Your server reads the status of each transfer your page reports, and counts a transfer only when all three match the order.
 
-1. **Keep three things with the order:** the link's reference text, its address IDs and your wallet address. For a link made in the portal, open **Checkout**, pick a way, and paste the link under **2. Choose an order**: **Payment link details** shows all three.
-2. **Post the transfers from your page.** Send `payload.payments` from `onStatusChange` and `onComplete` (or from your own frame's messages) to your server. Each has `chainId`, `txHash`, `logIndex` and `quoteId`.
-3. **Check them on your server** with `verifyTransfers()` below. It reads each transfer from Unigox and keeps only the ones credited to your wallet under this link's reference and addresses.
-4. **Mark the order paid once.** In one database transaction, count each transfer's `quoteId` once, add it to the order and mark the order paid when `isPaid()` holds.
+1. **Keep three values with the order:** its reference, its address IDs and your wallet address. A link your server made has them already. For a link made in the portal, open **Checkout**, pick a way, and paste the link under **2. Choose an order**: **Payment link details** shows all three.
+2. **Post the transfers from your page.** Send `payload.payments` from `onStatusChange` and `onComplete` (or from your own frame's messages) to your server. Each entry has `chainId`, `txHash`, `logIndex` and `quoteId`.
+3. **Check them on your server** with `verifyTransfers()` below. It reads each reported transfer from Unigox and keeps only the transfers that were credited to your wallet under this order's reference and addresses.
+4. **Mark the order paid once.** In one database transaction: record each transfer's `quoteId` so that it counts once, add its amount to the order, and mark the order paid when `isPaid()` returns true.
 
-The answer `verifyTransfers()` reads looks like this (shortened):
+The status of one transfer looks like this (shortened). `verifyTransfers()` reads `memoLockId` (the address ID), `memoHash` (the fingerprint), `recipientAddress` (your wallet), `toChain` (`660279` marks a credit to a Unigox wallet), `status`, `subStatus` and `refund`, and `actualToAmount` (the amount credited, in the coin's smallest units):
 
 ```json
 {
@@ -119,25 +121,25 @@ export function isPaid(order, creditedMicros) {
 }
 ```
 
-**Pass `quoteId` or `logIndex` with each hash.** They name one transfer exactly. A hash alone reads only the first transfer of its transaction: an exchange paying many withdrawals in one transaction, or a customer who sends two parts at once, can then be missed. A hash alone never counts a transfer twice or for the wrong order.
+**Send `quoteId` or `logIndex` with each hash.** Either one picks a single transfer. With the hash alone, Unigox returns only the first transfer of the transaction, so your server can miss the others: an exchange often pays many withdrawals in one transaction. The hash alone cannot make your server count a transfer twice or for the wrong order.
 
-**A transfer that is not credited yet is not counted.** `PENDING`, `PROCESSING` and on hold are skipped: check again on the next event and from your periodic job.
+**A transfer that is not credited yet is not counted.** `verifyTransfers()` skips a transfer that is `PENDING`, `PROCESSING` or on hold. Check it again at the next event from the page, and in your job.
 
-**What this cannot see:** a payment your page never heard about, for example from another device, after the customer closed the page, or through a link you sent by email. Find it in **Payments**, ask the customer for the transaction hash and pass `{ chainId, txHash }`, or read your payment history (below).
+**What this way misses:** a payment your page was never told about. That is a payment made from another device, after the customer closed the page, or through a link you sent by email. Find such a payment in **Payments**, or ask the customer for the transaction hash and pass `{ chainId, txHash }` to `verifyTransfers()`, or read your payment history (below).
 
 ### Several transfers in one Solana transaction
 
-A Solana transaction can hold several deposits, and the status read above returns one. To list them, ask the link check service with the address ID, the transaction signature, your wallet and the reference fingerprint:
+A Solana transaction can hold several transfers to one address, and `GET /transaction` returns one of them. To list them all, send this request with the address ID, the transaction signature, your wallet and the fingerprint:
 
 `GET {link check address}/crypto-checkout/memo-locks/{addressId}/solana-transfers/{signature}?wallet={wallet}&memoHash={memoHash}`
 
-The link check address is **Developers → Environment → Technical details → Link check**, without the `/crypto-checkout/memo-locks/{addressId}` at its end. The answer lists up to 200 transfers, each with `logIndex`, `token` and `amount`, and `limited: true` when there are more. Check each with `GET /transaction/{chainId}/{signature}?logIndex=…` before you count it: the list alone proves nothing.
+The link check address is on **Developers → Environment → Technical details → Link check**. Use it without the `/crypto-checkout/memo-locks/{addressId}` at its end. The answer lists up to 200 transfers, each with `logIndex`, `token` and `amount`, and has `limited: true` when there are more. The list is not proof of payment: read each transfer with `GET /transaction/{chainId}/{signature}?logIndex=…` and check it before you count it.
 
 ## Read your payment history
 
-`POST /transactions/history`, signed with your wallet's key, lists every payment to your wallet. Filter by an order's address ID (`memoLockId`) to see everything that order received. Use it in a periodic job: it finds payments no page reported, and payments after an order was already paid.
+`POST /transactions/history`, signed with your wallet's key, lists every payment to your wallet. Filter it by an order's address ID (`memoLockId`) to see everything that order received. Run it in a job: it finds the payments that no page reported, and the payments that arrive after an order is already paid.
 
-`fulfilInvoice()` reads the history of one order's address IDs and marks the order paid once the payments cover the amount:
+`fulfilInvoice()` reads the history of one order's address IDs and marks the order paid once the credited payments cover the amount:
 
 ```js
 // Node 20+. Your server holds your wallet's key: signHistory() returns { chainId, authorization, signature }, the History
@@ -215,10 +217,10 @@ export async function fulfilInvoice(memoLockId) {
 }
 ```
 
-- **Count each payment once.** One transaction can hold several payments, each with its own `intentId`. Count each `(environment, intentId)` once, in the same database transaction as the order update. If you also use `verifyTransfers()`, key both by `quoteId` so one payment is never counted twice.
-- **Mark the order paid with one conditional update** and ship only when that update changed the row. Two passes that start together otherwise both see the order open.
-- **Keep reading paid and closed orders too.** A second transfer can arrive after fulfilment: record it, never ship twice.
-- **Compare with your own order's amount**, never with the link or anything the browser said.
+- **Count each payment once.** One transaction can hold several payments, each with its own `intentId`. Record each `(environment, intentId)` once, in the same database transaction that updates the order. If you also use `verifyTransfers()`, record both by `quoteId`, so that the two ways never count one payment twice.
+- **Mark the order paid with one conditional update**, and ship only when that update changed the row. Otherwise two runs that start at the same moment both see the order as open, and both ship it.
+- **Keep reading orders that are paid or closed.** A second transfer can arrive after you fulfilled the order: record it, and do not ship again.
+- **Compare the total with the amount in your own order record**, not with the amount in the link or anything the browser sent.
 
 ## When is a payment paid
 
@@ -228,23 +230,23 @@ export async function fulfilInvoice(memoLockId) {
 | `PENDING`, `PROCESSING`, `DEFERRED`, `COMPLIANCE_HOLD`, `COMPLIANCE_FROZEN` | Not credited yet; can still become a credit |
 | `DONE` with `PARTIAL` or `REFUNDED`, or `FAILED` | Not a credit |
 
-An older record can be `DONE` without a `subStatus`: it is a credit when it has a `toTx`, as the examples read it.
+An older record can be `DONE` with no `subStatus`. It is a credit when it has a `toTx`: the examples read it that way.
 
-An order is paid when its credits reach the amount, or fall short by at most 0.5 % of the amount and never more than 1.00 USD. An invoice, and a link your server makes with `tol: "none"`, allow no shortfall. Keep the link's allowance with your order: `isPaid()` takes it.
+An order is paid when its credited payments add up to the amount, or fall short of it by at most 0.5 % and by no more than 1.00 USD. An invoice, and a link your server makes with `tol: "none"`, must be paid in full. Keep the link's allowance with your order: `isPaid()` reads it.
 
-**Late payments.** The link's pay-by date is shown to the payer; Unigox credits a payment after it like any other. Decide by your own order deadline, using the transfer's `fromTxMinedAt` (the time on its network), whether to fulfil, cancel or refund.
+**Late payments.** The pay-by date only tells the payer when to pay: Unigox credits a later payment like any other. Whether you still fulfil the order is your decision. Compare the transfer's `fromTxMinedAt` (the time of the transfer on its network) with your own deadline, then fulfil, cancel or refund.
 
-**More or less than the amount.** Extra money stays in your wallet as received. A larger shortfall leaves the order open: the customer can send the rest to the same address.
+**Too much or too little.** Extra money stays in your wallet. A payment that is short by more than the allowance leaves the order open: the customer can send the rest to the same address.
 
 ## Payments in the portal and exports
 
-**Payments** lists every payment with its status, its transactions and the link or customer it belongs to. **Needs attention** gathers the ones that want a decision: short, late or held. Open a payment to see its details, the payer's and the receiving addresses, the transactions to check on chain, and a timeline of what happened.
+**Payments** lists every payment with its status, its transactions and the link or the customer it belongs to. **Needs attention** collects the payments you have to decide about: short, late or held. Open a payment to see its details, the payer's address and the receiving address, the transactions (to look up on the network), and a timeline of what happened.
 
 <figure><img src="assets/crypto-processing/payments.gif" alt="Payments in the portal: the list with statuses, Needs attention, and one payment with its details, addresses and timeline"><figcaption><p>Checking payments in the portal (sample data).</p></figcaption></figure>
 
 **Export CSV** writes the list for a period:
 
-- **Readable** columns for people, or **For developers**, with stable column names and codes. The developer file of payments has `reference`, `status`, `amount_due_usd`, `received`, `coin`, `source_network`, `source_tx`, `credit_tx`, `seen_at`, `credited_at`, `address_id`, `payment_key`, `source` and more.
+- Choose **Readable** for a file people read, or **For developers** for a file a program reads: its column names and codes do not change. The developer file of payments has `reference`, `status`, `amount_due_usd`, `received`, `coin`, `source_network`, `source_tx`, `credit_tx`, `seen_at`, `credited_at`, `address_id`, `payment_key`, `source` and more.
 - **Payment links → Export CSV** writes one row per link, with its status, amounts and address IDs.
 - **Deposit addresses → Export CSV** writes one row per customer and network, with every address ID the customer had.
 

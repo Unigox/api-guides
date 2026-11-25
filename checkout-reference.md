@@ -4,9 +4,31 @@
 
 > **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · **Reference**
 
+## Words this guide uses
+
+Each word has one meaning on every page. The last column is its name in the API, where the two differ.
+
+| Word | What it means | In the API |
+| --- | --- | --- |
+| Payment link | A link for one order: `https://www.unigox.com/pay/{token}`. Its token holds the amount, the reference and the payment addresses. | The token: [The link format](https://developers.unigox.com/tutorials/crypto-checkout-links#the-link-format) |
+| Checkout | What the payer sees when a payment link opens: on a Unigox page (the payment page), in a window over your page, or inside your page. | `checkout.js` |
+| Reference | The text that names your order on a payment, for example `NW-20418 · 250.00 USD`. Only your wallet can read it back. | `memo` |
+| Payment address | An address the payer sends coins to. An order has one for each address type you accept. | `address`, `depositAddress` |
+| Address type | Networks that share one address format: `evm` (Ethereum and the networks built like it), `tvm` (TRON), `ton` and `svm` (Solana). | `chainType` |
+| Reservation | A payment address held for one reference. While the reservation is active, every transfer to the address is recorded under that reference. Ending it closes the link. | `memo-locks`, `lock` |
+| Address ID | The number of a reservation. An address gets a new one each time it is reserved again. | `lockId`; on a payment, `memoLockId` |
+| Fingerprint | The keccak-256 hash of the reference. It is public; the reference is not. | `memoHash` |
+| Transfer | One movement of coins on a network. One transaction can hold several transfers. | `quoteId` names one transfer |
+| Credited | The money is in your Unigox wallet. Only a credited payment counts as paid. | `status: "DONE"` with `subStatus: "COMPLETED"` and no `refund` |
+| Unigox wallet | Your balance at Unigox, and its `0x` address. It receives every payment and owns your payment addresses. | `wallet`, `recipientAddress` |
+| Allowance | How far short a payment may be and still count as paid: 0.5 % of the amount, and never more than 1.00 USD. | `tol` |
+| Pay-by date | The time the payer is asked to pay by. The page shows it; a payment after it is still credited. | `x` in the token |
+| Deposit page | A page with one customer's permanent payment addresses. It has no amount due. | `p: "topup"` in the token |
+| Link check | The request the payment page makes before it shows an address: is this address still reserved for this link? | [Link check](https://developers.unigox.com/api-reference/payment-addresses#link-check) |
+
 ## Networks and coins
 
-`GET /config` always has the current list; a network or coin Unigox turns off disappears from the checkout at once. "Credited in about" is an estimate from each network's confirmations, block time and Unigox's processing time.
+`GET /config` always has the current list. When Unigox turns a network or a coin off, the checkout stops offering it at once. "Credited in about" is an estimate: the network's confirmations and block time, plus Unigox's processing time.
 
 <!-- networks:start -->
 | Network | Chain id | Coins | Credited in about |
@@ -26,17 +48,17 @@
 | Solana | `1151111081099710` | USDT, USDC, USDG | 1 min |
 <!-- networks:end -->
 
-- **Each coin is credited one for one** to your Unigox wallet in the same coin: a USDG payment arrives as USDG.
-- **Native coins** (ETH, TRX, TON, SOL and others) are not taken.
-- **A coin or network the page does not offer** is not credited to the payment and not returned by itself. The payer contacts you, and you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
-- **Minimums.** A payment link asks for at least 1.00 USD. A transfer below the minimum of its coin and network, shown on the page, is neither credited nor returned.
-- **Count a payment only once it is credited** (`DONE` and `COMPLETED`), never when the checkout shows it as seen or confirming.
+- **You receive the coin that was sent.** A USDG payment arrives in your Unigox wallet as USDG, in the same amount. Unigox does not convert it.
+- **Native coins are not accepted:** ETH, TRX, TON, SOL and the like.
+- **A coin or a network the page did not offer.** Such a transfer is not credited to the payment, and Unigox does not return it automatically. The payer contacts you; you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
+- **Minimums.** A payment link is for at least 1.00 USD. Each coin and network also has a minimum transfer, which the page shows. A transfer below it is neither credited nor returned.
+- **Count a payment only once it is credited** (`DONE` with `COMPLETED`). A transfer that the checkout shows as seen or confirming is not a payment yet.
 
 ## Limits
 
 | What | Limit |
 | --- | --- |
-| Received before your business is verified | 1,000 USD in all. Then new links, invoices and deposit addresses wait for verification; payments to existing ones still arrive. |
+| Received before your business is verified | 1,000 USD in total. After that you cannot create links, invoices or deposit addresses until your business is verified. Payments to existing ones still arrive. |
 | Payment link amount | At least 1.00 USD, up to two decimals |
 | Allowed shortfall | 0.5 % of the amount, never more than 1.00 USD. Invoices, and links made with `tol: "none"`, allow none. |
 | Addresses per address type | 1,000; write to support@unigox.com to raise it |
@@ -64,17 +86,17 @@
 
 **Do I need a developer?** Not for payment links, invoices, deposit pages or a payment button for a link you made in the portal. You need one to create links for every order from your server, or to confirm payments on your server.
 
-**Is there an API key?** No. The checkout and checking a payment need nothing secret. Creating links and reading your history are signed with your wallet's private key.
+**Is there an API key?** No. Showing the checkout and checking a payment need nothing secret. To create links or read your payment history, your server signs its requests with your wallet's private key.
 
-**Why does my server need my whole wallet's key?** A payment address is reserved by the wallet that owns it, and Unigox has no key that can only reserve addresses or only read payments yet. Keep the wallet's balance low and the key in a secrets store.
+**Why does my server need the key of my whole wallet?** A payment address is reserved by the wallet that owns it. Unigox has no narrower key yet, one that could only reserve addresses or only read payments. Keep the wallet's balance low and the key in a secrets store.
 
-**Can my customer pay from an exchange?** Yes, when it can withdraw the chosen coin on the chosen network. The customer must cover the withdrawal fee; a small shortfall within the allowance still counts as paid.
+**Can my customer pay from an exchange?** Yes, if the exchange can withdraw the chosen coin on the chosen network. The customer covers the withdrawal fee. If the exchange takes the fee out of the amount, a shortfall within the allowance still counts as paid.
 
-**What if they pay too little, too much or late?** Too little shows as `underpaid`, and the customer can send the rest to the same address. More is credited as `overpaid`. A payment that needed a transfer after the pay-by date is `paid_late`. In each case your server decides about the order.
+**What if the customer pays too little, too much or late?** Too little shows as `underpaid`: the customer can send the rest to the same address. Too much is credited in full and shows as `overpaid`. A payment that was completed only after the pay-by date shows as `paid_late`. In each case your server decides what happens to the order.
 
-**Can I refund a payment?** Yes: confirm an address and network with the payer, then send the money from your Unigox wallet. This is separate from Unigox returning a transfer it could not credit.
+**Can I refund a payment?** Yes. Agree an address and a network with the payer, then send the money from your Unigox wallet. Unigox does not do this for you. It is a different thing from Unigox sending back a transfer it could not credit.
 
-**Which languages does the checkout speak?** English, Spanish, French and Portuguese. It follows the payer's browser, or the `locale` you pass.
+**Which languages does the checkout have?** English, Spanish, French and Portuguese. It follows the payer's browser, or the `locale` you pass.
 
 **What does it cost?** Write to support@unigox.com.
 
@@ -84,14 +106,15 @@
 
 ## Versions
 
-`https://www.unigox.com/checkout.js` is version 1. It updates in place, and every update keeps the options, methods, callbacks and events above working. A change that is not compatible ships as a new file (`checkout.v2.js`), and version 1 keeps working for at least 90 days after it.
+`https://www.unigox.com/checkout.js` is version 1. Unigox updates the file in place, and every update keeps the options, methods, callbacks and events of [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) working. A change that would break your page ships as a new file (`checkout.v2.js`), and version 1 keeps working for at least 90 days after that.
 
-Within version 1, Unigox may add events, statuses, payload fields, options and error codes: let your page ignore what it does not know. Unigox never removes or renames one, never changes a field's type, and never changes what `livemode`, `paid` or `onComplete` mean without a new version.
+Within version 1, Unigox can add events, statuses, payload fields, options and error codes: write your page so that it ignores the ones it does not know. Within version 1, Unigox does not remove or rename any of them, does not change a field's type, and does not change what `livemode`, `paid` or `onComplete` mean.
 
-The API address and the link check address are hosting addresses and can change: keep them in your configuration.
+The API address and the link check address can change: keep both in your configuration, not in your code.
 
 ## Changes
 
+- **2026-11-26:** the guide is rewritten in plainer words, with [Words this guide uses](#words-this-guide-uses). The onboarding no longer asks whether you can link payments to customers. The limit before verification shows on every page. Money: no change.
 - **2026-11-25:** the guide is rewritten around tasks. Crypto processing opens before verification, up to 1,000 USD received. Money: no change to how payments are credited.
 - **2026-11-15:** portal setup starts in **Checkout**; invoice links keep their document in the checkout; several transfers in one Solana transaction can be listed. Money: listing a transfer never counts it as a credit.
 - **2026-11-02:** `checkout.d.ts` lists the `onClose` reason `return`. Money: no change.
@@ -103,4 +126,4 @@ None of these is in production yet: the first public release is early access.
 
 ## Payment notifications
 
-Unigox does not send payment notifications to your server yet, and links made in the portal never will: build nothing for them. Your server confirms payments as [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) shows. This page will describe notifications when Unigox turns them on.
+Unigox does not send payment notifications (webhooks) to your server yet, so there is nothing to build for them. Your server asks for each payment's status itself, as [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) shows. When Unigox turns notifications on, this page will describe them. Links made in the portal will not send them even then.

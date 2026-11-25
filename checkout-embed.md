@@ -4,7 +4,7 @@
 
 > **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · **Website checkout** · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
 
-Show the payment of an order on your website: in a window over your page, inside your page, or on a Unigox payment page. The checkout shows the amount, lets the payer choose a coin and a network, shows the address and follows the transfer. Your page gets a message at each step.
+Show an order's payment on your website: in a window over your page, inside your page, or on a Unigox payment page. The checkout shows the amount, lets the payer choose a coin and a network, shows the address and follows the transfer. It tells your page about each step through callbacks.
 
 ## Choose how customers pay
 
@@ -15,11 +15,13 @@ Show the payment of an order on your website: in a window over your page, inside
 | **Payment page** | A Unigox page with the payment, in the same tab | A link |
 | **Your own frame** | The checkout in an iframe you control | An iframe and a message listener |
 
-Use the payment button or embedded checkout unless you have a reason not to: they handle sizing, phones, loading problems and messages for you. Use the payment page for email, chat and any page where you cannot add a script. Use your own frame only when you cannot load a script from Unigox.
+Use the payment button or the embedded checkout if you can: `checkout.js` takes care of sizing, phones, loading problems and messages. Use the payment page in email, in chat and on any page where you cannot add a script. Use your own frame only when your site cannot load a script from Unigox.
 
 ## 1. Create the payment
 
-Each checkout shows one payment link. Create it in the portal (**Payment links → Create payment link**) or on your server ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links)). One link is one order: for a cart whose total changes, or for many customers, your server creates a link for each order.
+A checkout shows one payment link, and one link is one order. Create the link in the portal (**Payment links → Create payment link**) or on your server ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links)). A shop where every customer has a different total needs a link for each order: its server creates them.
+
+The examples below write `{token}` for the link's token: the part of the link after `/pay/`.
 
 ## 2. Show the checkout
 
@@ -29,11 +31,11 @@ Each checkout shows one payment link. Create it in the portal (**Payment links �
 2. Under **1. Choose how customers pay**, check the way. **Your own frame** is here too.
 3. Under **2. Choose an order**, choose a payment link, press **Create payment link**, or **Paste a payment link** you made elsewhere.
 4. Under **3. Add checkout to your site**, check the preview of what your customer sees, then press **Copy code** and paste the code into your page.
-5. **4. Check the payment** reminds you to confirm each payment before you fulfil the order.
+5. Read **4. Check the payment**: confirm each payment before you fulfil its order ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
 <figure><img src="assets/crypto-processing/website-checkout.gif" alt="Website checkout setup in the portal: choose the way, choose an order, copy the code"><figcaption><p>Setting up the payment button in the portal (sample data).</p></figcaption></figure>
 
-The copied code has your order's link in it. Under the code, **Add to your Content-Security-Policy** gives the one line a strict policy needs, and **Callbacks** and **Error codes** list what your page can react to.
+The code you copy already has your order's link in it. Under the code, **Add to your Content-Security-Policy** gives the one line a strict policy needs, and **Callbacks** and **Error codes** list what your page can react to.
 
 ### Payment page
 
@@ -80,7 +82,7 @@ token: () => fetch("/orders/1042/crypto-token", { method: "POST" })
   .then((d) => d.token),                      // your route answers {"token": "…"}
 ```
 
-Closing the window keeps the payment: `open()` again shows the same checkout. On a phone the window is a full-screen sheet. The window closes when the browser goes Back or leaves the page; in a single-page app, call `checkout.close()` when your route changes.
+Closing the window does not cancel the payment: `open()` shows the same checkout again. On a phone the window fills the screen. The window closes when the browser goes Back or leaves the page. In a single-page app, call `checkout.close()` when your route changes.
 
 ### Embedded checkout
 
@@ -122,7 +124,7 @@ document.querySelector("#pay").addEventListener("click", () => {
 });
 ```
 
-The document is stored only in the link and in the browser that made it. Anyone who has the full link can read it: keep it out of analytics and logs.
+The invoice document is stored only in the link and in the browser that made it. Anyone who has the full link can read the invoice: keep the link out of analytics and logs.
 
 ### Your own frame
 
@@ -210,7 +212,7 @@ Use this only if you cannot load `checkout.js`. Serve your page over HTTPS (or `
 </script>
 ```
 
-The ordinary payment page refuses to be framed; only the URL with `embed=1` can be.
+The ordinary payment page cannot be shown in a frame. Only the URL with `embed=1` can.
 
 ### React, Next.js, Vue and WordPress
 
@@ -357,7 +359,7 @@ The types are at `https://www.unigox.com/checkout.d.ts`.
 
 ### Callbacks
 
-Callbacks update your page. They are not proof of payment: only your server's check is ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
+Use callbacks to update your page. A callback is not proof of payment, because anyone can call it in their own browser. Proof is your server's check ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
 | Callback | When |
 | --- | --- |
@@ -371,7 +373,7 @@ Callbacks update your page. They are not proof of payment: only your server's ch
 | `onError({code})` | See below |
 | `onResize({height})` | The checkout changed height (already applied) |
 
-Post `payload.payments` to your server from `onStatusChange` and `onComplete`: your server checks those transfers with Unigox.
+From `onStatusChange` and `onComplete`, post `payload.payments` to your server. Your server then checks those transfers with Unigox.
 
 | Error code | What it means and what to do |
 | --- | --- |
@@ -384,7 +386,7 @@ Post `payload.payments` to your server from `onStatusChange` and `onComplete`: y
 | `CONTAINER_NOT_FOUND` | Embedded: no element was found to mount into. |
 | `CONTAINER_OCCUPIED` | Embedded: another checkout already uses this element. |
 
-No error code means a payment failed or that the payer must pay again.
+None of these codes means that a payment failed or that the payer must pay again.
 
 ### Payment statuses
 
@@ -402,8 +404,9 @@ No error code means a payment failed or that the payer must pay again.
 | `failed` | Not credited, or being sent back | Do not fulfil |
 | `expired` | The pay-by date passed and nothing came | Make a new link if the order stands |
 | `cancelled`, `closed` | The payer cancelled, or the link was closed | Nothing; money sent later still reaches your wallet |
-| `unreferenced` | Money reached the address without this payment's reference | Check it in **Payments** |
+| `unreferenced` | Money reached the address after the link was closed, so it is not recorded under this order | Find it in **Payments** and match it to the order yourself |
 | `unavailable` | The checkout cannot reach Unigox right now | Nothing; it keeps trying |
+| `credited` | Deposit page only: a deposit was credited | Ask your server to add it to the customer's balance |
 
 ### The payload
 
@@ -429,7 +432,7 @@ Each callback gets the same fields, each only when it applies. Money is a decima
 | `payments` | Every transfer the checkout follows: `chainId`, `txHash`, `logIndex`, `quoteId`, `amount`, `coin`, `tokenAddress` and `stage` (`checking`, `seen`, `detected`, `confirming`, `on_hold`, `credited`, `failed` or `refunded`) |
 | `incomplete` | `true` when the checkout could not follow every transfer (over 200): amounts are a floor |
 
-The same status can arrive more than once. A transfer still being checked can be in `payments` with amount 0.
+The same status can arrive more than once. A transfer that is still being checked can appear in `payments` with the amount 0.
 
 ### Messages to your own frame
 
@@ -455,14 +458,14 @@ script-src https://www.unigox.com; frame-src https://www.unigox.com
 
 `checkout.js` needs no `style-src` change. Your own frame needs only `frame-src https://www.unigox.com`.
 
-The checkout only reads: it cannot move money. It runs in a sandboxed frame that cannot navigate your page, and it posts payment details only to the page that framed it.
+The checkout only reads payment data: it cannot move money. It runs in a sandboxed frame that cannot navigate your page, and it posts payment details only to the page that framed it.
 
 ## 4. Return to your site
 
 - **Payment button and embedded checkout:** `onReturn` is called; the checkout never navigates your page.
 - **Payment page:** with **Return to your site** set in **Settings** (or `returnUrl` in a token your server makes), the page shows **Back to {your site}**. It never redirects by itself.
 
-The page you return to asks your server for the order's status.
+On the page the payer returns to, ask your server for the order's status and show that. Do not treat the return itself as payment.
 
 ## What your customer sees
 
