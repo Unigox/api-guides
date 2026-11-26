@@ -136,7 +136,8 @@ tags:
       order is paid: read the order.
 
       Every answer is `{status, code, data}`. An error is `{status, code, details}`, with `field` on a
-      `400`. The step-by-step guide is [Crypto processing](https://developers.unigox.com/tutorials/crypto-checkout).
+      `400`. A missing or unknown API key answers `401`, and a suspended partner `403`, both as
+      `{"success": false, "error": "…"}`. The step-by-step guide is [Crypto processing](https://developers.unigox.com/tutorials/crypto-checkout).
     x-page-icon: coins
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
@@ -7641,7 +7642,8 @@ paths:
         '400':
           description: |
             A field cannot be accepted (`validation_order_request_invalid`). `field` names it: `body`
-            (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `currency`,
+            (not a JSON object, a field of the wrong type, such as a number for `reference` or `5.5` for
+            `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`,
             `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`,
             `expiresInMinutes` or `returnUrl`.
           content:
@@ -7710,7 +7712,7 @@ paths:
 
         A transfer counts for the order when it was sent between one minute before the order was
         created and 15 minutes after the order ended (its `expiresAt`, or the time it was closed or
-        paid, if sooner). After that time the status changes only when a transfer sent inside it is
+        found paid, if sooner: `closedAt`). After that time the status changes only when a transfer sent inside it is
         credited. Unigox sends no notification when an order is paid: read the order when the payer
         returns to your site, and from a job that reads your open orders every few minutes.
       security:
@@ -12386,8 +12388,8 @@ components:
             - `overpaid`: more than the amount credited.
             - `expired`: the time ran out before the order was paid. In the 15 minutes after
               `expiresAt`, an order with nothing credited and nothing on its way reads `expired`. 15
-              minutes after `expiresAt` every order that is not paid ends as `expired`, whatever came;
-              `received` says what came.
+              minutes after `expiresAt` every order still `open` or `partly_paid` ends as `expired`,
+              whatever came; `received` says what came.
             - `closed`: you closed it before it was paid; `received` says what came.
 
             `expired` and `closed` turn `paid` or `overpaid` when a transfer sent inside the order's
@@ -12396,8 +12398,8 @@ components:
         received:
           type: string
           description: |
-            USD credited so far to the order's addresses, the sum of its `credited` payments, with two
-            to six decimals. `"0.00"` on a new order.
+            USD credited to the order so far: the sum of its `credited` payments (transfers to its
+            addresses inside its window), with two to six decimals. `"0.00"` on a new order.
           example: "25.00"
         createdAt:
           type: string
@@ -12411,7 +12413,8 @@ components:
           format: date-time
           nullable: true
           description: |
-            When the order ended: the time it was paid or closed, or `expiresAt` when its time ran out.
+            When the order ended: when Unigox found it paid, when you closed it, or `expiresAt` when its
+            time ran out.
             `null` while it has not ended. An order whose time ran out can keep `null` until 15 minutes
             after `expiresAt`.
         returnUrl:
@@ -12623,18 +12626,11 @@ components:
           type: boolean
           example: false
         error:
+          type: string
           description: |
-            Without a key: `{"code": "UNAUTHORIZED", "message": "missing X-API-Key header"}`. With a key
-            Unigox does not know: the text `"invalid API key"`.
-          oneOf:
-            - type: string
-            - type: object
-              required: [code, message]
-              properties:
-                code:
-                  type: string
-                message:
-                  type: string
+            The reason, as text. Without a key: `"missing API key. Provide X-API-Key header or
+            Authorization: Bearer token"`. With a key Unigox does not know: `"invalid API key"`. A
+            suspended partner gets `403` with `"partner access is suspended"`.
 
   parameters:
     UserUUIDPath:
@@ -12693,7 +12689,9 @@ components:
       name: external_id
       in: path
       required: true
-      description: Your own id for the customer, as in `customer.id` of an order, URL-encoded.
+      description: |
+        Your own id for the customer, as in `customer.id` of an order, URL-encoded. An id with `/` in it
+        cannot be used here, even encoded (`404` with a plain-text body).
       schema:
         type: string
         minLength: 1
