@@ -21,7 +21,7 @@ Each word has one meaning on every page. The last column is its name in the API,
 | Transfer | One movement of coins on a network. One transaction can hold several transfers. | `quoteId` names one transfer |
 | Credited | The money is in your Unigox wallet. Only a credited payment counts as paid. | `status: "DONE"` with `subStatus: "COMPLETED"` and no `refund` |
 | Unigox wallet | Your balance at Unigox, and its `0x` address. It receives every payment and owns your payment addresses. | `wallet`, `recipientAddress` |
-| Allowance | How far short a payment may be and still count as paid: 0.5 % of the amount, and never more than 1.00 USD. | `tol` |
+| Allowance | How far short a payment may be and still count as paid: 0.5 % of the amount, and never more than 1.00 USD. | `tol` in the token; `tolerance` in the examples |
 | Pay-by date | The time the payer is asked to pay by. The page shows it; a payment after it is still credited. | `x` in the token |
 | Deposit page | A page with one customer's permanent payment addresses. It has no amount due. | `p: "topup"` in the token |
 | Link check | The request the payment page makes before it shows an address: is this address still reserved for this link? | [Link check](https://developers.unigox.com/api-reference/payment-addresses#link-check) |
@@ -59,7 +59,7 @@ Each word has one meaning on every page. The last column is its name in the API,
 | What | Limit |
 | --- | --- |
 | Received before your business is verified | 1,000 USD in total. After that you cannot create links, invoices or deposit addresses until your business is verified. Payments to existing ones still arrive. |
-| Payment link amount | At least 1.00 USD, up to two decimals |
+| Payment link amount | At least 1.00 USD in the portal, up to two decimals. Use the same minimum for links from your server. |
 | Allowed shortfall | 0.5 % of the amount, never more than 1.00 USD. Invoices, and links made with `tol: "none"`, allow none. |
 | Addresses per address type | 1,000; write to support@unigox.com to raise it |
 | Reference text | 256 bytes |
@@ -114,7 +114,7 @@ The API address and the link check address can change: keep both in your configu
 
 ## Changes
 
-- **2026-11-26:** the guide is rewritten in plainer words, with [Words this guide uses](#words-this-guide-uses). The onboarding no longer asks whether you can link payments to customers. The limit before verification shows on every page. Money: no change.
+- **2026-11-26:** the guide is rewritten in plainer words, with [Words this guide uses](#words-this-guide-uses). The sample server of [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links#the-whole-flow-in-one-server) serves its own page. The onboarding no longer asks whether you can link payments to customers. The limit before verification shows on every page. Money: no change.
 - **2026-11-25:** the guide is rewritten around tasks. Crypto processing opens before verification, up to 1,000 USD received. Money: no change to how payments are credited.
 - **2026-11-15:** portal setup starts in **Checkout**; invoice links keep their document in the checkout; several transfers in one Solana transaction can be listed. Money: listing a transfer never counts it as a credit.
 - **2026-11-02:** `checkout.d.ts` lists the `onClose` reason `return`. Money: no change.

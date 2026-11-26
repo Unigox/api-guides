@@ -27,7 +27,14 @@ Anyone can read the status of a transfer with `GET /transaction/{chainId}/{txHas
 3. **Check them on your server** with `verifyTransfers()` below. It reads each reported transfer from Unigox and keeps only the transfers that were credited to your wallet under this order's reference and addresses.
 4. **Mark the order paid once.** In one database transaction: record each transfer's `quoteId` so that it counts once, add its amount to the order, and mark the order paid when `isPaid()` returns true.
 
-The status of one transfer looks like this (shortened). `verifyTransfers()` reads `memoLockId` (the address ID), `memoHash` (the fingerprint), `recipientAddress` (your wallet), `toChain` (`660279` marks a credit to a Unigox wallet), `status`, `subStatus` and `refund`, and `actualToAmount` (the amount credited, in the coin's smallest units):
+The status of one transfer looks like this (shortened). `verifyTransfers()` reads these fields:
+
+- `memoLockId`: the address ID;
+- `memoHash`: the fingerprint;
+- `recipientAddress`: your wallet;
+- `toChain`: `660279` marks a credit to a Unigox wallet;
+- `status`, `subStatus` and `refund`: whether the transfer was credited;
+- `actualToAmount`: the amount credited, in the coin's smallest units.
 
 ```json
 {
@@ -133,7 +140,7 @@ A Solana transaction can hold several transfers to one address, and `GET /transa
 
 `GET {link check address}/crypto-checkout/memo-locks/{addressId}/solana-transfers/{signature}?wallet={wallet}&memoHash={memoHash}`
 
-The link check address is on **Developers → Environment → Technical details → Link check**. Use it without the `/crypto-checkout/memo-locks/{addressId}` at its end. The answer lists up to 200 transfers, each with `logIndex`, `token` and `amount`, and has `limited: true` when there are more. The list is not proof of payment: read each transfer with `GET /transaction/{chainId}/{signature}?logIndex=…` and check it before you count it.
+**Developers → Environment → Technical details → Link check** shows an address that ends in `/crypto-checkout/memo-locks/{addressId}`. The link check address is the part before that ending. The answer lists up to 200 transfers, each with `logIndex`, `token` and `amount`, and has `limited: true` when there are more. The list is not proof of payment: read each transfer with `GET /transaction/{chainId}/{signature}?logIndex=…` and check it before you count it.
 
 ## Read your payment history
 
@@ -217,7 +224,7 @@ export async function fulfilInvoice(memoLockId) {
 }
 ```
 
-- **Count each payment once.** One transaction can hold several payments, each with its own `intentId`. Record each `(environment, intentId)` once, in the same database transaction that updates the order. If you also use `verifyTransfers()`, record both by `quoteId`, so that the two ways never count one payment twice.
+- **Count each payment once.** One transaction can hold several payments, each with its own `intentId`. Record each `(environment, intentId)` once, in the same database transaction that updates the order. If you also use `verifyTransfers()`, record the payments of both ways by `quoteId` (a history record has it too), so that the two ways never count one payment twice.
 - **Mark the order paid with one conditional update**, and ship only when that update changed the row. Otherwise two runs that start at the same moment both see the order as open, and both ship it.
 - **Keep reading orders that are paid or closed.** A second transfer can arrive after you fulfilled the order: record it, and do not ship again.
 - **Compare the total with the amount in your own order record**, not with the amount in the link or anything the browser sent.
@@ -240,7 +247,7 @@ An order is paid when its credited payments add up to the amount, or fall short 
 
 ## Payments in the portal and exports
 
-**Payments** lists every payment with its status, its transactions and the link or the customer it belongs to. **Needs attention** collects the payments you have to decide about: short, late or held. Open a payment to see its details, the payer's address and the receiving address, the transactions (to look up on the network), and a timeline of what happened.
+**Payments** lists every payment with its status, its transactions and the link or the customer it belongs to. **Needs attention** collects the payments to open links that came short of the amount or over it: you decide what to do with each. Open a payment to see its details, the payer's address and the receiving address, the transactions (to look up on the network), and a timeline of what happened.
 
 <figure><img src="assets/crypto-processing/payments.gif" alt="Payments in the portal: the list with statuses, Needs attention, and one payment with its details, addresses and timeline"><figcaption><p>Checking payments in the portal (sample data).</p></figcaption></figure>
 

@@ -40,7 +40,7 @@ An ordinary wallet with a private key signs directly. A deployed smart-contract 
 
 ## Signing types
 
-Each action has a distinct primary type. Field order is part of the signing schema:
+Each action has its own primary type. The order of the fields is part of what you sign:
 
 ```text
 AllocateAndLock(string action,address wallet,string environment,string chainType,string memo,uint64 expiresAt,string callbackUrl,bytes32 nonce,uint64 deadline)
@@ -55,20 +55,20 @@ ListLocks(string action,address wallet,string environment,uint64 issuedAt,uint64
 | `wallet` | Your wallet address (EVM): it owns the addresses |
 | `environment` | `production` or `staging`, as **Developers → Environment** shows. A signature for one does not work on the other |
 | `chainType` | `evm`, `svm`, `tvm` or `ton` |
-| `memo` | Exact reference, 1–256 UTF-8 bytes; no NUL or malformed Unicode |
+| `memo` | The reference, exactly: 1–256 UTF-8 bytes, no NUL and no malformed Unicode |
 | `expiresAt` for writes | Unix seconds when the reservation ends; `"0"` means no expiry |
 | `callbackUrl` | `""` while payment notifications are off (they are, for now); later, your public HTTPS address for them |
-| `nonce` | Fresh random 32 bytes, encoded as `0x` plus 64 hex digits; single use per wallet |
+| `nonce` | 32 new random bytes, written as `0x` and 64 hex digits. A wallet can use a nonce once |
 | `deadline` | Unix seconds by which the request must reach Unigox: later than the server's time, at most `memoLimits.maxWriteDeadlineSeconds` ahead |
 | `issuedAt`, `expiresAt` for lists | How long the read signature is valid, at most 86,400 seconds; `issuedAt` may be at most 300 seconds ahead of the server's time |
 
-Integer fields inside `message` or `authorization` accept decimal strings or safe JSON integers. Top-level `chainId` requires a JSON number. Additional message fields are rejected.
+Send the integer fields inside `message` and `authorization` as decimal strings, or as JSON integers small enough to stay exact. Send the top-level `chainId` as a JSON number. A message with any other field is rejected.
 
 Unigox checks a write's deadline when the request arrives: the deadline must be later than the server's time, and at most `maxWriteDeadlineSeconds` later. The deadline limits only when the request can be sent. It does not limit how long the address or the link lives. A read signature can be used again until it expires; you cannot cancel it earlier.
 
 Before you sign, read `GET /config` from the same API address. Its `memoLimits` object has `serverTimeSeconds` and `maxWriteDeadlineSeconds`. `memoLimits` is at the top level of the answer, next to `data`, not inside the list of networks. Work out the deadline from these two values, not from your own clock. The example below uses the longest deadline allowed.
 
-Sign and send the request before its deadline. To change a deadline you sign again. If you already sent a new-address request, do not change it: follow [Allocation recovery](#recover-a-lost-answer-to-a-new-address-request).
+Sign and send the request before its deadline. To change a deadline you sign again. If you already sent a new-address request, do not change it: follow [Recover a lost answer to a new-address request](#recover-a-lost-answer-to-a-new-address-request).
 
 
 ## GET /config
@@ -95,7 +95,7 @@ POST /memo-locks/allocate
 Content-Type: application/json
 ```
 
-The example assumes a viem `walletClient` and `account` for your wallet, and `invoiceReference`, the order's reference text. Payment notifications are off for now, so it signs `callbackUrl: ""` and you confirm payments from your history. It would sign your own address only once `GET /config` reports notifications on (`memoLimits.maxCallbackUrlBytes` above 0 and at least one `webhookKeys` entry); the address in it is a placeholder.
+The example assumes a viem `walletClient` and `account` for your wallet, and `invoiceReference`, the order's reference text. Payment notifications are off for now, so the example signs `callbackUrl: ""`, and you confirm payments from your history. It signs a notification address only when `GET /config` reports notifications on: `memoLimits.maxCallbackUrlBytes` above 0 and at least one `webhookKeys` entry. The address in the example is a placeholder.
 
 ```js
 const configResponse = await fetch(`${UNIGOX_PAYMENTS_API}/config`, {cache: "no-store"});
@@ -253,15 +253,15 @@ If you get no answer to a new-address request, send the same signed body again: 
 `signature`. Unigox recognises the request by its wallet and nonce, and every signed field must be the same. A request
 with a new nonce makes another address.
 
-| State of the request | Response or recovery operation |
+| What happened to the request | What you get, and what to do |
 | --- | --- |
-| Response unavailable | Repeat `POST /memo-locks/allocate` with the original signed body |
-| Address and reference saved; EVM or TRON networks still getting ready | 202 `addresses_preparing`; use signed `/memo-locks/list` for readiness |
-| Address made; reference not attached yet | The same request finishes it on the same address while its signature is valid; errors include `data.allocated` |
-| Request completed | The same request returns the original address and address ID (`lockId`), with the reservation's current status |
-| Signature expired; address made but not reserved | The retry returns the original address with `memo_lock_signature_expired`; a fresh signed `POST /memo-locks/lock` activates that address |
-| Original reservation released or expired | The retry returns that closed reservation; it does not create or reactivate a reservation |
-| The nonce was used by an older request whose answer Unigox did not keep | 409 `memo_lock_nonce_used`; read your reservations (`POST /memo-locks/list`) to see what that request did |
+| You got no answer | Send `POST /memo-locks/allocate` again with the same signed body |
+| The address and its reference are saved; EVM or TRON networks are still getting ready | 202 `addresses_preparing`. Read the readiness with a signed `/memo-locks/list` |
+| The address was made; its reference is not reserved yet | The same request finishes the reservation on the same address while its signature is valid. An error answer has the address in `data.allocated` |
+| The request was completed | The same request returns the same address and address ID (`lockId`), with the reservation's status as it is now |
+| The signature expired; the address was made but not reserved | The same request returns that address with `memo_lock_signature_expired`. Reserve the address with a newly signed `POST /memo-locks/lock` |
+| The reservation it made has ended or expired | The same request returns that closed reservation. It makes no new reservation and does not reopen the old one |
+| The nonce was used by an older request whose answer Unigox did not keep | 409 `memo_lock_nonce_used`. Read your reservations (`POST /memo-locks/list`) to see what that request did |
 
 An address can take a payment on a network when its reservation is `ACTIVE` and that network is confirmed. After the
 deadline, the original signed request still returns what it made, but it cannot make anything new.
@@ -455,18 +455,18 @@ The pages list records, not status changes: a record that is pending today can b
 GET /transaction/{fromChain}/{fromTx}?quoteId={quoteId}
 ```
 
-The response uses `{status: "found", code: 200, data: {...}}`. `data` includes:
+The answer is `{status: "found", code: 200, data: {...}}`. `data` has:
 
 - source: `quoteId`, `fromChain`, `fromToken`, `fromAmount`, `fromTx`, `fromTxMinedAt`, `userAddress`;
 - destination: `toChain`, `toToken`, `toAmount`, `actualToAmount`, `recipientAddress`, `toTx`, `toTxSetAt`, `toTxMinedAt`, and `receiving` (`txHash`, `chainId`, `tokenAddress`, `tokenAmount`);
 - state: `status`, `subStatus`, `expectedCompletionSecondsLeft`, `refund`, `refundTx`, `refundTxSetAt`, `refundTxMinedAt`;
 - reference: `memo` (always `null` for a payment to a reserved address: read your history with `includeMemo: true`), `memoSource`, `memoLockId`, `memoHash`, `depositAddress`;
-- `execution`, only for quotes with destination execution.
+- `execution`, only on a transfer that also runs a contract call at its destination.
 
 | `status` | `subStatus` values | Meaning |
 | --- | --- | --- |
 | `CREATED`, `PENDING`, `PROCESSING`, `DEFERRED` | `WAIT_SOURCE_CONFIRMATIONS`, `WAIT_DESTINATION_TRANSACTION`, `BRIDGE_NOT_AVAILABLE`, `CHAIN_NOT_AVAILABLE`, `REFUND_IN_PROGRESS`, `UNKNOWN_ERROR`, or empty | In progress; can still become a credit |
-| `COMPLIANCE_HOLD`, `COMPLIANCE_FROZEN` | not used for the decision | Held for review; can still become a credit after a decision |
+| `COMPLIANCE_HOLD`, `COMPLIANCE_FROZEN` | any: ignore it | Held for review; can still become a credit after a decision |
 | `DONE` | `COMPLETED` | Settled. A credit only when `refund` is not set |
 | `DONE` | `PARTIAL` | Settled in part, possibly in another token; not a full credit |
 | `DONE` | `REFUNDED` | Sent back by Unigox support to an address the payer confirmed; not a credit |
@@ -502,7 +502,7 @@ A 404 means that nothing is recorded for the transaction yet: ask again a little
 
 `GET {link check}/crypto-checkout/memo-locks/{lockId}?wallet={wallet}&memoHash={memoHash}`
 
-The payment page reads it before it shows an address; a payment page of your own should too. No signature. The link check address is **Developers → Environment → Technical details → Link check**, without `/crypto-checkout/memo-locks/{addressId}` at its end.
+The payment page reads it before it shows an address; a payment page of your own should too. No signature. **Developers → Environment → Technical details → Link check** shows an address that ends in `/crypto-checkout/memo-locks/{addressId}`: `{link check}` is the part before that ending.
 
 | Parameter | Value |
 | --- | --- |
@@ -533,7 +533,7 @@ The answer, `checkout_transfers_retrieved`, has `data.transfers`, each with `log
 
 ## Signing test vectors
 
-Check your signing code against these before you send anything. They are signed with the public development key `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` (wallet `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`), which anyone can use: never send money to that wallet or sign real requests with it. Sign each `message` with its `domain` and `primaryType` (the types under [Signing types](#signing-types) and [Wallet transaction history](#wallet-transaction-history)); your EIP-712 digest must equal `hash`, and an ordinary ECDSA signature over it must equal `signature` (both are deterministic). Integers are the decimal strings shown; sign them as `uint64`/`uint256` values.
+Check your signing code against these before you send anything. They are signed with the public development key `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` (wallet `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`), which anyone can use: never send money to that wallet or sign real requests with it. Sign each `message` with its `domain` and `primaryType`. The types are under [Signing types](#signing-types) and [Wallet transaction history](#wallet-transaction-history). Your EIP-712 digest must equal `hash`, and an ordinary ECDSA signature over it must equal `signature`: both are deterministic. Integers are the decimal strings shown; sign them as `uint64` or `uint256` values.
 
 `AllocateAndLock`
 
@@ -673,41 +673,41 @@ separate fields. In the first table, the routes are under `/memo-locks/`.
 
 | Route | HTTP | `status` | `details` | Meaning |
 | --- | --- | --- | --- | --- |
-| All `/memo-locks/` routes | 400 | `bad_request` | `validation_memo_lock_request_invalid` / `validation_environment_mismatch` | Malformed signed request or wrong environment |
-| `allocate`, `lock`, `unlock` | 400 | `bad_request` | `validation_deadline_invalid` | Submission deadline exceeds the allowed window |
-| `allocate`, `lock` | 400 | `bad_request` | `validation_memo_required` / `validation_expires_at_invalid` | Missing memo or invalid memo expiry |
-| `allocate`, `lock` | 400 | `bad_request` | `validation_callback_url_invalid` | Callbacks are unavailable in this environment (`memoLimits.maxCallbackUrlBytes` is 0), or the URL is not HTTPS on port 443, carries credentials or a fragment, or is too long. Sign `callbackUrl: ""` when callbacks are unavailable |
-| `allocate`, `lock` | 400 | `bad_request` | `validation_callback_url_not_public` | Callback URL does not resolve exclusively to permitted public addresses |
-| `allocate`, `lock` | 400 | `bad_request` | `validation_memo_too_long` / `validation_memo_not_string` / `validation_text_not_well_formed` | Memo longer than `memoLimits.maxMemoBytes` UTF-8 bytes, not a string, or containing NUL or malformed Unicode |
-| `allocate`, `lock`, `unlock` | 400 | `bad_request` | `memo_not_supported_for_chain` | Address type is unsupported or unavailable for the requested memo operation |
-| `list` | 400 | `bad_request` | `validation_read_authorization_invalid` / `validation_invalid_list_query` | Invalid authorization window or list filter |
-| All `/memo-locks/` routes | 401 | `memo_lock_failed` | `memo_lock_signature_invalid` | Signature does not authorize the request |
-| `allocate`, `lock`, `unlock` | 401 | `memo_lock_failed` | `memo_lock_signature_expired` | Write deadline passed; retries follow [Allocation recovery](#recover-a-lost-answer-to-a-new-address-request) |
-| `list` | 401 | `memo_lock_failed` | `memo_lock_read_authorization_expired` | Read authorization expired |
-| `allocate`, `lock`, `unlock` | 404 | `memo_lock_failed` | `deposit_address_not_found` / `memo_lock_not_found` | Address or reservation was not found for the owner |
+| All `/memo-locks/` routes | 400 | `bad_request` | `validation_memo_lock_request_invalid` / `validation_environment_mismatch` | The signed request is malformed, or it was signed for the other environment |
+| `allocate`, `lock`, `unlock` | 400 | `bad_request` | `validation_deadline_invalid` | The deadline is further ahead than `maxWriteDeadlineSeconds` allows |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_memo_required` / `validation_expires_at_invalid` | The reference is missing, or `expiresAt` is not valid |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_callback_url_invalid` | Payment notifications are off in this environment (`memoLimits.maxCallbackUrlBytes` is 0): sign `callbackUrl: ""`. Or the URL is not HTTPS on port 443, has a user name, a password or a fragment, or is too long |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_callback_url_not_public` | The notification URL's host has an address that is not public |
+| `allocate`, `lock` | 400 | `bad_request` | `validation_memo_too_long` / `validation_memo_not_string` / `validation_text_not_well_formed` | The reference is longer than `memoLimits.maxMemoBytes` UTF-8 bytes, is not a string, or has NUL or malformed Unicode |
+| `allocate`, `lock`, `unlock` | 400 | `bad_request` | `memo_not_supported_for_chain` | This address type cannot be reserved: it is not supported, or it is off for now |
+| `list` | 400 | `bad_request` | `validation_read_authorization_invalid` / `validation_invalid_list_query` | `issuedAt` or `expiresAt` is outside what is allowed, or a filter is not valid |
+| All `/memo-locks/` routes | 401 | `memo_lock_failed` | `memo_lock_signature_invalid` | The signature does not match the request: another wallet, type, domain or field |
+| `allocate`, `lock`, `unlock` | 401 | `memo_lock_failed` | `memo_lock_signature_expired` | The deadline has passed. For `allocate`, see [Recover a lost answer to a new-address request](#recover-a-lost-answer-to-a-new-address-request) |
+| `list` | 401 | `memo_lock_failed` | `memo_lock_read_authorization_expired` | The read signature has expired: sign a new one |
+| `allocate`, `lock`, `unlock` | 404 | `memo_lock_failed` | `deposit_address_not_found` / `memo_lock_not_found` | Your wallet has no such address, or no such reservation |
 | `allocate`, `lock`, `unlock` | 409 | `memo_lock_failed` | `memo_lock_nonce_used` | The nonce was used: by this request with other fields, or by an older request |
-| `allocate`, `lock`, `unlock` | 409 | `memo_lock_failed` | `deposit_address_already_locked` / `memo_lock_not_active` | Current reservation state prevents the operation |
-| All `/memo-locks/` routes | 422 | `memo_lock_failed` | `invalid_chain_type` | Invalid address-type value in the message or list filter |
-| All `/memo-locks/` routes | 429 | `memo_lock_failed` | `rate_limited` | Request rate limit exceeded |
-| `allocate` | 429 | `cap_exceeded` | `deposit_addresses_cap_exceeded` | Address limit reached; `data.remaining` reports remaining capacity |
+| `allocate`, `lock`, `unlock` | 409 | `memo_lock_failed` | `deposit_address_already_locked` / `memo_lock_not_active` | The address already has an active reservation, or the reservation you want to end is not active |
+| All `/memo-locks/` routes | 422 | `memo_lock_failed` | `invalid_chain_type` | `chainType`, in the message or in the list filter, is not one of the four address types |
+| All `/memo-locks/` routes | 429 | `memo_lock_failed` | `rate_limited` | Too many requests: wait and send again |
+| `allocate` | 429 | `cap_exceeded` | `deposit_addresses_cap_exceeded` | You reached the address limit; `data.remaining` says how many addresses are left |
 | `allocate` | 503 | `addresses_not_watched` | `deposit_address_not_watched` | The address's networks are not ready yet; the saved address is in `data.allocated` |
 | `lock` | 503 | `addresses_not_watched` | `deposit_address_not_watched` | The address's networks are not ready yet; no `data` field |
-| All `/memo-locks/` routes | 503 | `memo_lock_failed` | `signature_verification_unavailable` | Signature verification temporarily unavailable |
-| All `/memo-locks/` routes | 413 | `bad_request` | none | Request body larger than 32 KiB |
-| All `/memo-locks/` routes | 500 | `memo_lock_failed` | `internal_error` | Unexpected server error; on `allocate`, follow [Allocation recovery](#recover-a-lost-answer-to-a-new-address-request) |
+| All `/memo-locks/` routes | 503 | `memo_lock_failed` | `signature_verification_unavailable` | Unigox cannot check signatures right now: send the same request again later |
+| All `/memo-locks/` routes | 413 | `bad_request` | none | The request body is larger than 32 KiB |
+| All `/memo-locks/` routes | 500 | `memo_lock_failed` | `internal_error` | An error on Unigox's side. On `allocate`, see [Recover a lost answer to a new-address request](#recover-a-lost-answer-to-a-new-address-request) |
 
 For `POST /transactions/history`:
 
 | HTTP | `status` | `details` | Meaning |
 | --- | --- | --- | --- |
-| 400 | `history_failed` | `validation_history_request_invalid` / `validation_environment_mismatch` / `validation_read_authorization_invalid` | Invalid request, filter, environment or authorization window |
-| 401 | `history_failed` | `history_signature_invalid` / `history_authorization_expired` | Signature verification failed or the read authorization expired |
-| 429 | `history_failed` | `rate_limited` | Request or signature-verification limit exceeded |
-| 503 | `history_failed` | `signature_verification_unavailable` | Signature verification temporarily unavailable |
-| 413 | `bad_request` | none | Request body larger than 32 KiB |
-| 500 | `history_failed` | `internal_error` | Unexpected server error; repeat the request later |
+| 400 | `history_failed` | `validation_history_request_invalid` / `validation_environment_mismatch` / `validation_read_authorization_invalid` | The request or a filter is not valid, it was signed for the other environment, or `issuedAt` or `expiresAt` is outside what is allowed |
+| 401 | `history_failed` | `history_signature_invalid` / `history_authorization_expired` | The signature does not match the request, or it has expired |
+| 429 | `history_failed` | `rate_limited` | Too many requests: wait and send again |
+| 503 | `history_failed` | `signature_verification_unavailable` | Unigox cannot check signatures right now: send the same request again later |
+| 413 | `bad_request` | none | The request body is larger than 32 KiB |
+| 500 | `history_failed` | `internal_error` | An error on Unigox's side: send the request again later |
 
-The shared IP limiter can reject history requests before the history handler with HTTP 429,
+A history request from an IP address that sends too many requests can also get HTTP 429 with
 `status: "memo_lock_failed"` and `details: "rate_limited"`.
 
 For `GET /transaction/{fromChain}/{fromTx}`:
@@ -720,7 +720,8 @@ For `GET /transaction/{fromChain}/{fromTx}`:
 | 500 | `not_fetched` | `internal_error` | The record could not be read and `data` is an empty array. This says nothing about the payment: ask again later |
 
 For `GET /config`, HTTP 500 with `status: "not_fetched"` and no `data`, `webhookKeys` or `memoLimits` means the configuration could not be read. Keep the keys and limits you already have and read again later.
-These tables list common errors. Validation errors can identify other invalid fields; changing signed fields requires a new signature.
+
+These tables list the common errors. A validation error can name another field that is not valid. To change a signed field, sign the request again.
 
 ### Readiness errors
 
@@ -738,7 +739,7 @@ These tables list common errors. Validation errors can identify other invalid fi
 }
 ```
 
-The address is saved, but its reference is not attached yet. [Allocation recovery](#recover-a-lost-answer-to-a-new-address-request) reuses this address and the original signed request.
+The address is saved, but its reference is not reserved yet. Send the same signed request again: it finishes the reservation on this address ([Recover a lost answer to a new-address request](#recover-a-lost-answer-to-a-new-address-request)).
 
 `POST /memo-locks/lock`, HTTP 503:
 

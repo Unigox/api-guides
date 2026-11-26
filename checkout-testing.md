@@ -42,7 +42,7 @@ On a sample that waits for a payment, **Send the payment (sample)** plays the pa
 | `demo-detected-expired` | A transfer seen before the pay-by time, which has passed since | `READY`, `PAYMENT_DETECTED` |
 | `demo-underpaid-60` | 60.00 of a 100.00 USD payment received | `READY`, `UNDERPAID`; after **Send the rest (sample)**: `PAYMENT_DETECTED`, then `PAID` (`onComplete`) |
 | `demo-repeat` | Paid, then sent again: both transfers and the extra | `READY`, `OVERPAID` (`onComplete`) |
-| `demo-topup` | A customer's top-up page | `READY`, `CHOOSING`, both with `mode: "topup"`; once a network is chosen, after **Send a deposit (sample)**: `PAYMENT_DETECTED`, then `DEPOSIT_CREDITED` (`onDeposit`), with `mode: "topup"` and `livemode: false` |
+| `demo-topup` | A customer's deposit page | `READY`, `CHOOSING`, both with `mode: "topup"`; once a network is chosen, after **Send a deposit (sample)**: `PAYMENT_DETECTED`, then `DEPOSIT_CREDITED` (`onDeposit`), with `mode: "topup"` and `livemode: false` |
 | `embed-demo` | A shop's order page with a **Pay with crypto** button, its code and the events it receives | |
 <!-- samples:end -->
 
@@ -63,7 +63,7 @@ Then do the same on your own page with a sample id as the token, and check that 
 
 ## Test your server on a test account
 
-Ask for a test account under **Developers → Test before you go live → Ask for a test account.** A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`, and sign `environment: "staging"`. Before you send anything, ask Unigox which networks and coins the test account accepts.
+Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`, and sign `environment: "staging"`. Before you send anything, ask Unigox which networks and coins the test account accepts.
 
 Then make small payments and check each result in three places: on the checkout page, in **Payments** and in your own order records:
 
@@ -75,7 +75,7 @@ Then make small payments and check each result in three places: on the checkout 
 6. **Close the window mid-payment**, pay, open it again: the same state.
 7. **Close your page before the payment is credited**: your periodic job still finds the payment.
 8. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
-9. **Unigox unreachable** (point `UNIGOX_PAYMENTS_API` at an address that fails): your job logs the error, keeps running, and pays the order once Unigox answers.
+9. **Unigox unreachable** (point `UNIGOX_PAYMENTS_API` at an address that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
 10. **The same order checked twice at once:** it is marked paid and shipped once.
 
 With deposit pages:

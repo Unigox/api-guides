@@ -28,8 +28,8 @@ The examples below write `{token}` for the link's token: the part of the link af
 ### Get the code from the portal
 
 1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**. The fourth tile, **Connect your store**, is for a shop whose server creates a link for each order: it opens **Developers** ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links)).
-2. Under **1. Choose how customers pay**, check the way. **Your own frame** is here too.
-3. Under **2. Choose an order**, choose a payment link, press **Create payment link**, or **Paste a payment link** you made elsewhere.
+2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only.
+3. Under **2. Choose an order**, choose one of your payment links. You can also press **Create payment link** to make one, or **Paste a payment link** to use a link made elsewhere.
 4. Under **3. Add checkout to your site**, check the preview of what your customer sees, then press **Copy code** and paste the code into your page.
 5. Read **4. Check the payment**: confirm each payment before you fulfil its order ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
@@ -99,7 +99,7 @@ The checkout takes the element's full width and the height it needs, so your pag
 
 ### Links you already have
 
-Mark existing links with `data-unigox-checkout` and the checkout opens over your page instead of on a new one:
+Mark existing links with `data-unigox-checkout`, and the checkout opens in a window over your page instead of on a new page. With `data-unigox-checkout="inline"` and `data-target`, it shows inside the element you name:
 
 ```html
 <a data-unigox-checkout href="https://www.unigox.com/pay/{token}">Pay with crypto</a>
@@ -128,7 +128,7 @@ The invoice document is stored only in the link and in the browser that made it.
 
 ### Your own frame
 
-Use this only if you cannot load `checkout.js`. Serve your page over HTTPS (or `http://localhost` while you build), keep the referrer policy shown, and give each frame its own 16-character hexadecimal `instance`:
+Use this only if you cannot load `checkout.js`. Serve your page over HTTPS (or `http://localhost` while you build), keep the referrer policy that the example sets, and give each frame its own 16-character hexadecimal `instance`:
 
 ```html
 <div id="checkout"></div>
@@ -331,7 +331,7 @@ add_shortcode('unigox_checkout', function ($atts) {
 | --- | --- | --- |
 | `token` | none | The payment token, or a function that returns it or a promise of it. Called on the first `open()` or `mount()`, and again after an error or a timeout. |
 | `url` | none | The full link instead of `token`. Keeps an invoice attached after `#invoice=`. |
-| `mode` | `"modal"` | `"modal"`, `"inline"` or `"hosted"`. A browser without `<dialog>` gets `"hosted"`. |
+| `mode` | `"modal"` | `"modal"`: a window over your page. `"inline"`: inside your page. `"hosted"`: `open()` sends the payer to the payment page, in the same tab. A browser without `<dialog>` gets `"hosted"`. |
 | `container` | none | Embedded: the element or a selector, used when `mount()` gets none. |
 | `theme` | light | `"light"` or `"dark"`. |
 | `locale` | `"auto"` | `"en"`, `"es"`, `"fr"` or `"pt"`. `"auto"` follows the payer's browser. |
@@ -365,10 +365,10 @@ Use callbacks to update your page. A callback is not proof of payment, because a
 | --- | --- |
 | `onReady(payload)` | The checkout has loaded. `payload` has `livemode`, `mode` and `environment`. |
 | `onStatusChange(status, payload)` | At every status below |
-| `onPaymentDetected(payload)` | A transfer is on its network |
+| `onPaymentDetected(payload)` | A transfer was seen on its network |
 | `onComplete(payload)` | Once, on `paid`, `overpaid` or `paid_late` |
 | `onDeposit(payload)` | Deposit page: a deposit was credited. Sent again for each credited deposit every time the page opens: count each `quoteId` once. |
-| `onReturn(payload)` | The payer pressed **Back to {merchant}**. Without it, the window closes. |
+| `onReturn(payload)` | The payer pressed **Back to {merchant}**. If you pass no `onReturn`, the window closes. |
 | `onClose({reason})` | The window closed: `button`, `escape`, `backdrop`, `api`, `return`, `replaced` or `navigation` |
 | `onError({code})` | See below |
 | `onResize({height})` | The checkout changed height (already applied) |
@@ -424,13 +424,13 @@ Each callback gets the same fields, each only when it applies. Money is a decima
 | `coin`, `chainId` | The coin and network the payer chose |
 | `address` | The address shown (`awaiting_payment` only) |
 | `txHash`, `logIndex`, `quoteId` | The latest transfer: its transaction hash, which transfer of that transaction, and its Unigox ID |
-| `token`, `tokenAddress` | The coin of the whole amount and its contract address |
+| `token`, `tokenAddress` | The coin the payment came in, and its contract address. `null` while the coin is not known, or when the amount came in two coins. |
 | `amount` | What was sent, credited or on its way |
 | `amountReceived` | What is credited so far |
 | `amountRemaining` | `underpaid` only: what is still due |
 | `amountExtra` | `overpaid` only: what came on top |
 | `payments` | Every transfer the checkout follows: `chainId`, `txHash`, `logIndex`, `quoteId`, `amount`, `coin`, `tokenAddress` and `stage` (`checking`, `seen`, `detected`, `confirming`, `on_hold`, `credited`, `failed` or `refunded`) |
-| `incomplete` | `true` when the checkout could not follow every transfer (over 200): amounts are a floor |
+| `incomplete` | `true` when the checkout could not follow every transfer (over 200): the amounts are then a minimum |
 
 The same status can arrive more than once. A transfer that is still being checked can appear in `payments` with the amount 0.
 
@@ -444,7 +444,7 @@ Accept a message only when `event.origin` is `https://www.unigox.com`, `event.so
 
 ### When the checkout cannot load
 
-If the checkout does not load within `readyTimeoutMs`, or your Content Security Policy blocks it, the window or element shows **Continue to secure checkout**. It opens the payment page of the same payment in a new tab, with the transfers already seen, and `onError` gets `FRAME_TIMEOUT`. If the checkout loads late, it replaces the card and `onReady` follows.
+If the checkout does not load within `readyTimeoutMs`, or your Content Security Policy blocks it, the window or element shows **Continue to secure checkout**, and `checkout.state` is `fallback`. The button opens the payment page of the same payment in a new tab, with the transfers already seen, and `onError` gets `FRAME_TIMEOUT`. If the checkout loads late, it replaces the card and `onReady` follows.
 
 If `checkout.js` itself does not load (an ad blocker, the network, your policy), `window.UnigoxCheckout` does not exist. Check for it and send the payer to the payment page, as the button example does. `data-unigox-checkout` links open the payment page by themselves.
 
@@ -463,7 +463,7 @@ The checkout only reads payment data: it cannot move money. It runs in a sandbox
 ## 4. Return to your site
 
 - **Payment button and embedded checkout:** `onReturn` is called; the checkout never navigates your page.
-- **Payment page:** with **Return to your site** set in **Settings** (or `returnUrl` in a token your server makes), the page shows **Back to {your site}**. It never redirects by itself.
+- **Payment page:** with **Return to your site** set in **Settings** (or `returnUrl` in a token your server makes), the page shows **Back to {merchant}**, with your business name. It never redirects by itself.
 
 On the page the payer returns to, ask your server for the order's status and show that. Do not treat the return itself as payment.
 
@@ -471,9 +471,9 @@ On the page the payer returns to, ask your server for the order's status and sho
 
 <figure><img src="assets/crypto-processing/payer-checkout.gif" alt="The payer chooses a coin and network, sees the address and amount, then the payment is confirmed"><figcaption><p>The checkout as your customer sees it (sample page, no real payment).</p></figcaption></figure>
 
-1. **Choose a coin and network.** Coins and networks you did not accept are not offered.
-2. **Pay.** The amount and the address with copy buttons, a QR code (on a phone, behind **Show QR**), and the pay-by date when the link has one.
-3. **Confirming.** The transfer is seen and confirming on its network.
+1. **Choose a coin**, then **Choose the network**. Coins and networks you did not accept are not offered. Each network shows how long a payment takes.
+2. **Awaiting payment.** The exact amount and the address, each with a copy button, a QR code (on a phone, behind **Show QR**), and the pay-by date when the link has one.
+3. **Payment detected.** The transfer was seen and is confirming on its network. The payer does nothing more.
 4. **Payment completed.** The payment is in your Unigox wallet. On the payment page the payer can **Print receipt**.
 
 A payer who already sent the money can press **Already sent? Find my payment** and enter the transaction hash.

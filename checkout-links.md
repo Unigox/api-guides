@@ -286,7 +286,7 @@ The portal does the same. It takes new addresses until an address type holds 80 
 
 ### The whole flow in one server
 
-The example has two files. `unigox.mjs` holds the blocks above. `server.mjs` is a small shop: it creates an order, builds the order's link once its address is ready, shows the checkout, checks the transfers the page reports and marks the order paid once. To stay short it keeps orders in memory: use your own database.
+The example has three files. `unigox.mjs` holds the blocks above. `server.mjs` is a small shop's server: it creates an order, builds the order's link once its address is ready, checks the transfers the page reports and marks the order paid once. `public/index.html` is the shop's page with the **Pay with crypto** button. To stay short, the server keeps orders in memory: use your own database.
 
 **`unigox.mjs`**: paste the blocks of steps 1 to 3 (without the example calls), the builders of [The link format](#the-link-format) and the whole block of [Check the transfers your page reports](https://developers.unigox.com/tutorials/crypto-checkout-confirm#check-the-transfers-your-page-reports). Keep one `UNIGOX_PAYMENTS_API` line, move the `import` lines to the top and add:
 
@@ -309,6 +309,7 @@ export { paymentToken, unigoxGet, WALLET };
 ```js
 // Node 20+. UNIGOX_PAYMENTS_API and UNIGOX_WALLET_KEY in the environment; run: node server.mjs
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import { allocationRequest, isPaid, newestReservation, paymentToken, reserveAddress, reserveMemo, unigoxGet, verifyTransfers, waitUntilReady, WALLET } from "./unigox.mjs";
 
@@ -439,6 +440,8 @@ createServer(async (req, res) => {
   try {
     let body = "";
     for await (const chunk of req) if ((body += chunk).length > 65_536) return json(res, 413, { error: "too large" });
+    // The shop's page, public/index.html below.
+    if (req.method === "GET" && req.url === "/") return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(await readFile(new URL("./public/index.html", import.meta.url)));
     const [, id, action] = /^\/orders\/([\w-]+)\/(crypto-token|payments|status)$/.exec(req.url) ?? [];
     if (action === "crypto-token" && req.method === "POST") return json(res, 200, { token: await linkFor(id) });
     const order = orders.get(id);
@@ -526,7 +529,7 @@ setInterval(() => {
 </script>
 ```
 
-Run `UNIGOX_PAYMENTS_API=… UNIGOX_WALLET_KEY=… node server.mjs` and follow the log:
+Run `UNIGOX_PAYMENTS_API=… UNIGOX_WALLET_KEY=… node server.mjs`, open `http://localhost:3000` and follow the log:
 
 ```text
 shop on http://localhost:3000
@@ -555,8 +558,9 @@ import { randomInt } from "node:crypto";
 const TAG_LETTERS = "abcdefghijklmnopqrstuvwxyz234567";
 const newTag = () => Array.from({ length: 10 }, () => TAG_LETTERS[randomInt(TAG_LETTERS.length)]).join("");
 
-// withCustomerLock must serialize this customer across ALL your workers, including first creation.
-// Every saveCustomer must commit before it resolves, even if a later API call fails. See the storage contract below.
+// db.withCustomerLock must let only one of your workers at a time work on this customer, the first creation included.
+// Every saveCustomer must be committed before it returns, even if a later API call fails. withCustomerLock() below
+// shows one way to do both.
 export async function createDepositPage(customerId, types = ["evm", "tvm", "ton", "svm"]) {
   if (typeof customerId !== "string" || !customerId.trim() || customerId !== customerId.trim() || Array.from(customerId).length > 64 || /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(customerId)) throw new Error("customerId: 1 to 64 plain characters");
   if (!Array.isArray(types) || !types.length || types.some((f) => !["evm", "tvm", "ton", "svm"].includes(f))) throw new Error("Choose supported address types");
@@ -567,7 +571,7 @@ export async function createDepositPage(customerId, types = ["evm", "tvm", "ton"
     if (Buffer.byteLength(memo, "utf8") > 256) throw new Error("customer reference is too long in UTF-8");
     const openedAt = saved?.openedAt ?? Date.now();
     const addresses = { ...saved?.addresses };
-    const allocations = { ...saved?.allocations }; // kept signed request, or an allocated address still needing its memo
+    const allocations = { ...saved?.allocations }; // per address type: the signed request you kept, or an address that still needs its memo
     const lockIds = new Set((saved?.lockIds ?? []).map(String));
     const save = () => {
       for (const a of Object.values(addresses)) lockIds.add(String(a.lockId));
@@ -583,34 +587,34 @@ export async function createDepositPage(customerId, types = ["evm", "tvm", "ton"
         if (!attempt.address) {
           if (!attempt.request) {
             attempt.request = await allocationRequest(type, memo);
-            await save(); // durable BEFORE any write; a timeout reuses these exact signed bytes
+            await save(); // saved before it is sent: after a timeout the same signed request is sent again
           }
           try { made = await reserveAddress(type, memo, attempt.request); }
           catch (error) {
             if (error.code !== "memo_lock_signature_expired") {
               if (error.unusedRequest) { delete allocations[type]; await save(); }
-              // An unavailable address type must not hide the other usable addresses. All other failures are retried.
+              // An address type that cannot be had is skipped, so the page still gets the others. Any other failure is tried again.
               if (error.unusedRequest && ["memo_not_supported_for_chain", "deposit_addresses_cap_exceeded"].includes(error.code)) continue;
               throw error;
             }
             attempt.address = error.allocated?.address ?? null;
             attempt.request = null;
-            await save(); // preserve an allocated address even if its memo was not reserved
-            if (!attempt.address) throw error; // definitively unused request: next call may sign a new one
+            await save(); // keep an address that was made, even when its memo is not reserved yet
+            if (!attempt.address) throw error; // the request took no effect: the next call signs a new one
           }
         }
         if (!made) made = await ensureMemo(type, attempt.address, memo);
         addresses[type] = { address: made.address, lockId: made.addressId, monitoring: made.monitoring };
         delete allocations[type];
-        await save(); // retain the address and its ID before any readiness read
+        await save(); // keep the address and its ID before readiness is read
       }
-      // Existing addresses still need fresh readiness: never skip this on a retry or a regenerated link.
+      // An address you already have needs its readiness read again: on a retry, and for a link you build again.
       const monitoring = await waitUntilReady(type, addresses[type].address, Math.max(0, readyUntil - Date.now()));
       if (monitoring) {
         addresses[type].monitoring = monitoring;
         readyAddresses[type] = addresses[type];
         await save();
-      } // Keep saved addresses on timeout; never publish an address type that has no ready network.
+      } // On a timeout the address stays saved. An address type with no ready network is left out of the link.
     }
     if (!Object.keys(readyAddresses).length) throw new Error("No payment network is ready yet; retry with the same customer");
     const token = topUpToken({
@@ -638,7 +642,7 @@ export async function withCustomerLock(pool, customerId, storageFor, run) {
       await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [key]);
       locked = true;
     } catch (error) {
-      broken = true; // the server may have acquired the lock before its answer was lost
+      broken = true; // the database may have taken the lock before its answer was lost
       throw error;
     }
     const store = storageFor(client); // your existing customer reader/writer, each save committed
@@ -655,13 +659,13 @@ export async function withCustomerLock(pool, customerId, storageFor, run) {
       catch { broken = true; }
     }
     client.removeListener("error", failed);
-    client.release(broken); // discard a broken session, never leak its advisory lock into the pool
+    client.release(broken); // a broken connection is closed, so its lock never goes back into the pool
   }
 }
 // db.withCustomerLock = (id, run) => withCustomerLock(pool, id, storageFor, run);
 ```
 
-Do not use a customer's addresses for anything else, also after the customer has left: the customer may still send money to them.
+Do not use a customer's addresses for anything else, even after the customer has left: the customer may still send money to them.
 
 ### Credit deposits
 
@@ -703,7 +707,7 @@ export async function creditDeposits(customer, reported) {
 **With the key**, read your signed history for each of the customer's addresses, with `includeMemo: true`. Keep the rows that have the customer's reference and one of the customer's address IDs, and pass them through the same ledger:
 
 ```js
-// Server only. customer.lockIds includes the customer's current AND historical reservations.
+// Server only. customer.lockIds has every address ID the customer has or had.
 // transactions is one page from your signed history with includeMemo: true.
 export async function creditCustomerHistory(customer, transactions) {
   const hints = transactions.filter((tx) =>
@@ -712,7 +716,7 @@ export async function creditCustomerHistory(customer, transactions) {
     typeof tx.quoteId === "string" && tx.quoteId.length > 0
   ).map((tx) => ({ chainId: Number(tx.fromChain), txHash: tx.fromTx, quoteId: tx.quoteId }));
   let added = 0;
-  // verifyTransfers rechecks each identified transfer, including settled status and settlement-token decimals.
+  // verifyTransfers() reads each transfer again from Unigox: its status, and the decimals of the credited coin.
   for (let i = 0; i < hints.length; i += 200) added += await creditDeposits(customer, hints.slice(i, i + 200));
   return added;
 }
@@ -734,8 +738,8 @@ The token is base64url JSON with these keys:
 | `v` | version | `1` |
 | `m` | merchant | The name the payer sees, up to 64 characters |
 | `r` | reference text | Exactly as reserved on the addresses, up to 256 bytes |
-| `a` | amount | Amount due in USD, up to 12 digits and two decimals. At least 1.00 is recommended. |
-| `c` | currency | `USD`. USDT, USDC, USDG and USDT0 count one for one. |
+| `a` | amount | Amount due in USD, up to 12 digits and two decimals. Use at least 1.00, as the portal does: below that, a network fee can be more than the payment. |
+| `c` | currency | `USD`. One USDT, USDC, USDG or USDT0 counts as 1 USD. |
 | `w` | wallet | Your wallet, lowercase `0x` address |
 | `x` | pay-by date | `null`, or ISO time with its zone. Only the page shows it; keep the reservation open past it. |
 | `t` | opened at | Unix seconds; transfers are watched from then |
@@ -747,7 +751,7 @@ The token is base64url JSON with these keys:
 
 A deposit page's token has `p: "topup"` and no `a`, `c`, `x` or `tol`.
 
-Links made in the portal are shorter. They write their terms into the reference, so a link that someone edits to other terms does not open:
+Links made in the portal have a shorter token of their own. It is not JSON, and it names each address by its address ID: the payment page reads the addresses from Unigox. You do not build this form. A portal link also writes its terms into the reference, so a link that someone edits to other terms does not open:
 
 ```
 <reference> · <amount> USD · v2 [· <tag>] [· by <UTC deadline>] [· no tolerance] [· coins <coins>] [· networks <network ids>] [· note <description>]
@@ -783,7 +787,7 @@ function paymentToken(link) {
   const deadline = link.expiresAt == null ? null : new Date(typeof link.expiresAt === "string" && !zoned.test(link.expiresAt) ? NaN : link.expiresAt);
   if (deadline !== null && (Number.isNaN(deadline.getTime()) || !/^\d{4}-/.test(deadline.toISOString()))) throw new Error("expiresAt: null, or ISO time with its zone, e.g. 2026-11-02T12:00:00Z");
   // A v2 memo ("<reference> · <amount> USD · v2 …", what the portal writes) states the link's terms itself: the link must
-  // state exactly the same ones, or the checkout refuses it ("This payment link can't be used").
+  // state exactly the same ones, or the checkout does not open it ("This payment link can't be used").
   const terms = linkTerms(link.memo);
   const centsOf = (s) => { const [whole, fraction = ""] = s.split("."); return BigInt(whole + fraction.padEnd(2, "0")); };
   const legacyAmount = / · (\d{1,12}(?:\.\d{1,2})?) USD$/.exec(link.memo)?.[1];
@@ -824,7 +828,7 @@ function paymentToken(link) {
 }
 
 // The terms of a v2 memo: <reference> · <amount> USD · v2 [· <tag>] [· by <UTC>] [· no tolerance] [· coins …]
-// [· networks …] [· note <description>]; null for any other memo. Coins and networks are the payer page's to read.
+// [· networks …] [· note <description>]; null for any other memo. The payment page reads the coins and networks itself.
 function linkTerms(memo) {
   const at = memo.indexOf(" USD · v2");
   if (at < 0) return null;
@@ -905,7 +909,7 @@ function topUpToken(link) {
   }
   const wire = {
     v: 1,
-    p: "topup",                                  // a customer top-up page: no amount, currency or window
+    p: "topup",                                  // a customer's deposit page: no amount, currency or pay-by date
     m: link.merchant,
     r: link.memo,
     w: link.wallet.toLowerCase(),

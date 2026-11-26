@@ -6,7 +6,7 @@
 
 Crypto processing lets your customers pay you in USDT, USDC, USDG and USDT0 on 13 networks. Unigox shows the payer the amount, the address and the progress of the transfer, so you do not build a payment page. Each payment arrives in your Unigox wallet (your balance at Unigox) in the coin the customer sent: Unigox does not convert it.
 
-This page needs no code. It opens crypto processing for your business and takes you through a payment link, an invoice and a customer's deposit addresses in the portal. The other pages are for the developer who adds the checkout to your website or connects your server. The guide uses each of its terms in one meaning: [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
+This page needs no code. It shows how to open crypto processing for your business, and how to create a payment link, an invoice and a customer's deposit addresses in the portal. The other pages are for the developer who adds the checkout to your website or connects your server. The guide uses each of its terms in one meaning: [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
 
 ## Pick your task
 
@@ -91,7 +91,7 @@ These settings are stored in your browser, not in your account. They go into eve
 
 <figure><img src="assets/crypto-processing/create-payment-link.gif" alt="Creating a payment link in the portal: amount, order ID, accepted payments, Create link"><figcaption><p>Creating a payment link (sample data).</p></figcaption></figure>
 
-The link is ready when its networks are ready, usually within a minute. Until then **Copy link** waits and says which networks are still getting ready.
+Creating the link takes up to a minute, while its networks get ready. If a network is still getting ready after that, the link says which one, and payers can already use the others.
 
 When the customer pays, the link shows **Payment detected**, then **Paid**, and the payment appears in **Payments**. A payment that is short by at most 0.5 % of the amount, and by no more than 1.00 USD, still counts as paid. This covers an exchange that takes its withdrawal fee out of the amount it sends. An invoice must be paid in full.
 
