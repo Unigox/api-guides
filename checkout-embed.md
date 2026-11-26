@@ -2,70 +2,135 @@
 
 > **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, `https://www.unigox.com/checkout.js`, the help pages and the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
 
-> **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · **Website checkout** · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
+> **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · **Website checkout** · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
 
-Show an order's payment on your website: in a window over your page, inside your page, or on a Unigox payment page. The checkout shows the amount, lets the payer choose a coin and a network, shows the address and follows the transfer. It tells your page about each step through callbacks.
+Take payments on your website. You add the code once. For every payment, your server creates a new order with your API key, and the checkout shows that order: in a window over your page, inside your page, or on a Unigox payment page. The checkout shows the amount, lets the payer choose a coin and a network, shows the address and follows the transfer. It tells your page about each step through callbacks.
 
 ## Choose how customers pay
 
 | Way | What the payer sees | What you add |
 | --- | --- | --- |
-| **Payment button** | The checkout opens in a window over your page | `checkout.js` and a button |
-| **Embedded checkout** | The checkout inside your page | `checkout.js` and an empty element |
-| **Payment page** | A Unigox page with the payment, in the same tab | A link |
-| **Your own frame** | The checkout in an iframe you control | An iframe and a message listener |
+| **Payment button** | The checkout opens in a window over your page | `checkout.js`, a button and one request on your server |
+| **Embedded checkout** | The checkout inside your page | `checkout.js`, an empty element and one request on your server |
+| **Payment page** | A Unigox page with the payment, in the same tab | A form that posts to your server, which sends the payer to the order's page |
+| **Your own frame** | The checkout in an iframe you control | An iframe, a message listener and one request on your server |
 
-Use the payment button or the embedded checkout if you can: `checkout.js` takes care of sizing, phones, loading problems and messages. Use the payment page in email, in chat and on any page where you cannot add a script. Use your own frame only when your site cannot load a script from Unigox.
+Use the payment button or the embedded checkout if you can: `checkout.js` takes care of sizing, phones, loading problems and messages. Use the payment page on any page where you cannot add a script. Use your own frame only when your site cannot load a script from Unigox.
 
-## 1. Create the payment
+All four open an order. A payment link you make in the portal is for one payment you send to one customer, by email or in a chat ([Get started](https://developers.unigox.com/tutorials/crypto-checkout#your-first-payment-link)).
 
-A checkout shows one payment link, and one link is one order. Create the link in the portal (**Payment links → Create payment link**) or on your server ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links)). A shop where every customer has a different total needs a link for each order: its server creates them.
+## 1. Create the order on your server
 
-The examples below write `{token}` for the link's token: the part of the link after `/pay/`.
+When the payer chooses to pay with crypto, your page asks your own server for an order. Your server creates it at Unigox with one request and answers the page with the order's `token` and `payUrl`.
+
+**Before you start:**
+
+- **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Get your API key**. It opens your partner page, where **Generate** creates the key under **API key** and shows it once; **Reissue** replaces it and stops the old one. Keep the key on your server, never in a web page or a repository.
+- **Addresses for your orders.** Each order takes one payment address of each address type from the addresses the portal keeps ready for orders. The portal adds them while you are signed in with **Crypto processing** open. Open it once before your first order, and open it again regularly: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
+
+The request, with your order number and total:
+
+```bash
+curl -X POST https://api.unigox.com/api/v1/partner/crypto/orders \
+  -H "X-API-Key: $UNIGOX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"merchantName": "Northwind", "reference": "A-1001", "amount": "25.00", "customer": {"id": "cus-77"}}'
+```
+
+The answer, `201` (shortened):
+
+```json
+{
+  "status": "order_created",
+  "code": 201,
+  "data": {
+    "id": "ord_4f9c2a7e1b3d5c8a0e6f2b4d",
+    "token": "o_4f9c2a7e1b3d5c8a0e6f2b4d",
+    "payUrl": "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d",
+    "reference": "A-1001",
+    "amount": "25.00",
+    "currency": "USD",
+    "status": "open",
+    "received": "0.00",
+    "expiresAt": "2026-11-26T11:00:00.000000Z"
+  }
+}
+```
+
+The same request as the route your page calls, in Node.js:
+
+```js
+// Node 18+ with express (npm install express). UNIGOX_API_KEY stays on your server, never in the page.
+import express from "express";
+
+const app = express();
+const UNIGOX_API = "https://api.unigox.com"; // https://api-staging.unigox.com on a test account
+
+app.post("/your-server/crypto-order", async (req, res) => {
+  const cart = await yourCart(req); // your own order, e.g. { id: "A-1001", total: "25.00", customerId: "cus-77" }
+  const response = await fetch(`${UNIGOX_API}/api/v1/partner/crypto/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
+    body: JSON.stringify({
+      merchantName: "Northwind",         // the name the payer sees
+      reference: cart.id,                // your order number, at most 64 characters
+      amount: cart.total,                // USD as a string, such as "25.00"
+      customer: { id: cart.customerId }, // optional
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    console.error("Unigox order not created:", response.status, body?.details, body?.field);
+    return res.status(502).end();
+  }
+  await saveUnigoxOrderId(cart.id, body.data.id); // you read the order by this id to confirm the payment
+  res.json({ token: body.data.token, payUrl: body.data.payUrl });
+});
+
+app.listen(3000);
+```
+
+`yourCart()` and `saveUnigoxOrderId()` stand for your own code.
+
+- **Create the order when the payer chooses to pay, not when the page loads.** An order holds one address of each type until it ends, and each address then rests 24 hours before another order can take it. Orders that nobody pays use up addresses.
+- **Send the same `reference` for the same cart.** While that order is open or paid, a request with the same `reference` and `amount` returns the same order (`200`), so a double click or a retry never makes a second order. If the cart's total changed, use a new `reference`, or close the old order first: the same `reference` with another amount answers `409 order_reference_conflict`.
+- **Keep `data.id` with your order.** Your server reads the order with it to know when it is paid ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)). Never read an order by an id that the browser sends you.
+- **Send `merchantName`.** It is the name the payer sees. Without it the payer sees your partner account's name. The name under **Settings → Shown to the payer as** is kept in your browser and does not reach orders.
+- **The order takes payments for 60 minutes.** Send `expiresInMinutes` for another time, from 5 to 10,080 (7 days).
+- **When Unigox refuses the order**, show the payer another way to pay. `409 no_free_addresses`: no address is free; open **Crypto processing** in the portal. `403 merchant_unverified_limit`: your business is not verified and has received 1,000 USD. Every field and error is in the [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference#orders-api).
 
 ## 2. Show the checkout
 
 ### Get the code from the portal
 
-1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**. The fourth tile, **Connect your store**, is for a shop whose server creates a link for each order: it opens **Developers** ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links)).
-2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only.
-3. Under **2. Choose an order**, choose one of your payment links. You can also press **Create payment link** to make one, or **Paste a payment link** to use a link made elsewhere.
-4. Under **3. Add checkout to your site**, check the preview of what your customer sees, then press **Copy code** and paste the code into your page.
-5. Read **4. Check the payment**: confirm each payment before you fulfil its order ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
+1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**.
+2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only. The preview beside the steps shows what your customer sees.
+3. Under **2. Add checkout to your site**, press **Copy code** and paste the code into your page.
+4. Under **3. Create the order on your server**, choose **cURL** or **Node.js** and add the request to your server. **Get your API key** leads to your key.
+5. Read **4. Check the payment**: ship once your server reads the order as `paid` ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
 <figure><img src="assets/crypto-processing/website-checkout.gif" alt="Website checkout setup in the portal: choose the way, choose an order, copy the code"><figcaption><p>Setting up the payment button in the portal (sample data).</p></figcaption></figure>
 
-The code you copy already has your order's link in it. Under the code, **Add to your Content-Security-Policy** gives the one line a strict policy needs, and **Callbacks** and **Error codes** list what your page can react to.
-
-### Payment page
-
-Link to the payment, redirect to it, or send it by email:
-
-```html
-<a href="https://www.unigox.com/pay/{token}">Pay with crypto</a>
-```
-
-For a language, put `/es`, `/fr` or `/pt` before `/pay` (`https://www.unigox.com/es/pay/{token}`). Without one, the page follows the payer's browser.
+The code you copy calls `/your-server/crypto-order` on your site: the route of step 1. Under the steps, **Add to your Content-Security-Policy** gives the one line a strict policy needs, and **Callbacks** and **Error codes** list what your page can react to.
 
 ### Payment button
 
-Load `checkout.js` once on the page, from `https://www.unigox.com`:
+Load `checkout.js` once on the page, from `https://www.unigox.com`, and open the checkout from your button:
 
 ```html
 <script src="https://www.unigox.com/checkout.js"></script>
-```
-
-Then open the checkout from your button:
-
-```html
 <button type="button" id="pay-with-crypto">Pay with crypto</button>
 <script>
+  // Your server's route from step 1: it creates the order and answers { token, payUrl }.
+  const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
   let checkout;
   document.getElementById("pay-with-crypto").addEventListener("click", () => {
-    // checkout.js did not load (an ad blocker, the network, your CSP): the hosted page takes the payment.
-    if (!window.UnigoxCheckout) return location.assign("https://www.unigox.com/pay/{token}");
+    // checkout.js did not load (an ad blocker, the network, your CSP): the order's payment page takes the payment.
+    if (!window.UnigoxCheckout) return newOrder().then((o) => location.assign(o.payUrl));
     checkout ??= UnigoxCheckout.create({
-      token: "{token}", // or async () => token, called on the first open
+      token: () => newOrder().then((o) => o.token), // called on the first open: your server creates the order
       mode: "modal",
       onComplete(payload) { /* update your page; only your server confirms the payment */ },
     });
@@ -74,32 +139,55 @@ Then open the checkout from your button:
 </script>
 ```
 
-When your server makes the link at the moment the payer clicks, pass a function that returns the token. Check the answer before you read it, so a failed request reaches `onError` as `TOKEN_MISSING`:
+`checkout.js` calls the `token` function once, on the first `open()`. A failed request reaches `onError` as `TOKEN_MISSING`, and the next `open()` calls the function again. Once it has a token, every `open()` shows the same order. Closing the window does not cancel the payment. If the payer comes back after the order's time ran out, the checkout shows the order as ended: call `checkout.destroy()` and create a new checkout, which creates a new order.
 
-```js
-token: () => fetch("/orders/1042/crypto-token", { method: "POST" })
-  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-  .then((d) => d.token),                      // your route answers {"token": "…"}
-```
-
-Closing the window does not cancel the payment: `open()` shows the same checkout again. On a phone the window fills the screen. The window closes when the browser goes Back or leaves the page. In a single-page app, call `checkout.close()` when your route changes.
+On a phone the window fills the screen. The window closes when the browser goes Back or leaves the page. In a single-page app, call `checkout.close()` when your route changes.
 
 ### Embedded checkout
 
 ```html
+<script src="https://www.unigox.com/checkout.js"></script>
+<button type="button" id="pay-with-crypto">Pay with crypto</button>
 <div id="checkout"></div>
 <script>
-  if (window.UnigoxCheckout) UnigoxCheckout.create({ token: "{token}", mode: "inline" }).mount("#checkout");
-  // checkout.js did not load (an ad blocker, the network, your CSP): a link to the hosted page instead.
-  else document.getElementById("checkout").innerHTML = '<a href="https://www.unigox.com/pay/{token}">Pay with crypto</a>';
+  const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+  const button = document.getElementById("pay-with-crypto");
+  let checkout;
+  // The order is created when the payer chooses crypto: the press mounts the checkout, which asks for the token.
+  button.addEventListener("click", () => {
+    // checkout.js did not load (an ad blocker, the network, your CSP): the order's payment page takes the payment.
+    if (!window.UnigoxCheckout) return newOrder().then((o) => location.assign(o.payUrl));
+    button.hidden = true;
+    checkout ??= UnigoxCheckout.create({
+      token: () => newOrder().then((o) => o.token), // called on the first mount: your server creates the order
+      mode: "inline",
+      onError: ({ code }) => { if (code === "TOKEN_MISSING" || code === "TOKEN_TIMEOUT") button.hidden = false; },
+    });
+    checkout.mount("#checkout");
+  });
 </script>
 ```
 
 The checkout takes the element's full width and the height it needs, so your page never shows a second scrollbar. Keep the element visible: a hidden or zero-height element hides the checkout.
 
+### Payment page
+
+Your button posts a form to your server. Your server creates the order and sends the payer to the order's payment page:
+
+```html
+<form method="post" action="/your-server/crypto-order">
+  <button type="submit">Pay with crypto</button>
+</form>
+```
+
+In the route of step 1, answer the form with `res.redirect(303, body.data.payUrl)` instead of `res.json(…)`. `payUrl` is `https://www.unigox.com/pay/o_…`. For a language, put `/es`, `/fr` or `/pt` before `/pay` (`https://www.unigox.com/es/pay/o_…`). Without one, the page follows the payer's browser.
+
+You can also send `payUrl` by email or in a chat. It takes payments until the order's `expiresAt`.
+
 ### Links you already have
 
-Mark existing links with `data-unigox-checkout`, and the checkout opens in a window over your page instead of on a new page. With `data-unigox-checkout="inline"` and `data-target`, it shows inside the element you name:
+Mark links to a payment page with `data-unigox-checkout`, and the checkout opens in a window over your page instead of on a new page. A link can be an order's `payUrl` that your server put in the page, or a payment link from the portal. With `data-unigox-checkout="inline"` and `data-target`, it shows inside the element you name:
 
 ```html
 <a data-unigox-checkout href="https://www.unigox.com/pay/{token}">Pay with crypto</a>
@@ -108,7 +196,7 @@ Mark existing links with `data-unigox-checkout`, and the checkout opens in a win
 <script>window.UnigoxCheckout && UnigoxCheckout.bind();</script>
 ```
 
-These links give your page no callbacks. Confirm their payments in **Payments**, or from your server with your payment history. On a page where users can post links (reviews, comments), bind only the container that holds your own links: `UnigoxCheckout.bind(document.querySelector("#checkout-links"))`.
+`{token}` is the part of the link after `/pay/`. These links give your page no callbacks. Confirm an order's payment by reading the order on your server, and a payment link's in **Payments** or from your payment history. On a page where users can post links (reviews, comments), bind only the container that holds your own links: `UnigoxCheckout.bind(document.querySelector("#checkout-links"))`.
 
 ### Invoices
 
@@ -206,44 +294,55 @@ Use this only if you cannot load `checkout.js`. Serve your page over HTTPS (or `
       },
     };
   }
-  const frameCheckout = mountCheckoutFrame(document.getElementById("checkout"), "{token}", document.getElementById("checkout-fallback"));
+  let frameCheckout;
+  // Your server creates the order (step 1); its token opens the frame.
+  fetch("/your-server/crypto-order", { method: "POST" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((o) => {
+      frameCheckout = mountCheckoutFrame(document.getElementById("checkout"), o.token, document.getElementById("checkout-fallback"));
+    });
   // In Spanish, for example: mountCheckoutFrame(container, token, fallback, "es").
-  // Call frameCheckout.destroy() when this view unmounts; remount when its token changes.
+  // Call frameCheckout.destroy() when this view unmounts.
 </script>
 ```
 
 The ordinary payment page cannot be shown in a frame. Only the URL with `embed=1` can.
 
-### React, Next.js, Vue and WordPress
+### React, Next.js, Vue and PHP
+
+Each example calls the route of step 1, `/your-server/crypto-order`, which answers `{ token, payUrl }`.
 
 React:
 
 ```jsx
 import { useEffect, useRef, useState } from "react";
 
-export function PayWithCrypto({ orderId, payUrl }) {
+const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+
+// A button that creates the order on its first press and opens the checkout over the page.
+export function PayWithCrypto({ cartId }) {
   const checkout = useRef(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
     return () => { checkout.current?.destroy(); checkout.current = null; };
-  }, [orderId, payUrl]);
-  const pay = (event) => {
-    if (!window.UnigoxCheckout || failed) return; // follow the real href
-    event.preventDefault();
+  }, [cartId]);
+  const pay = () => {
+    // checkout.js did not load, or the checkout failed: the order's payment page takes the payment.
+    if (!window.UnigoxCheckout || failed) return newOrder().then((o) => window.location.assign(o.payUrl));
     checkout.current ??= window.UnigoxCheckout.create({
-      token: () => fetch(`/api/orders/${orderId}/crypto-token`, { method: "POST" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then((d) => d.token),
-      onError: () => setFailed(true), // next click uses the hosted page, never a dead button
-      onComplete: () => window.location.assign(`/orders/${orderId}`),
+      token: () => newOrder().then((o) => o.token),
+      onError: () => setFailed(true), // the next press uses the payment page, never a dead button
+      onComplete: () => window.location.assign(`/orders/${cartId}`),
     });
     checkout.current.open();
   };
-  return <a href={payUrl} onClick={pay}>Pay with crypto</a>;
+  return <button type="button" onClick={pay}>Pay with crypto</button>;
 }
 
-export function InlineCheckout({ token }) {
+// The checkout inside the page, for an order your server has created: pass its token and payUrl.
+export function InlineCheckout({ token, payUrl }) {
   const box = useRef(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -253,45 +352,60 @@ export function InlineCheckout({ token }) {
     checkout.mount(box.current);
     return () => checkout.destroy();
   }, [token]);
-  return <><div ref={box} />{!ready && <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`}>Open checkout</a>}</>;
+  return <><div ref={box} />{!ready && <a href={payUrl}>Open checkout</a>}</>;
 }
 ```
 
-Next.js (App Router):
+Next.js (App Router), the route and the button:
+
+```js
+// app/your-server/crypto-order/route.js: runs on your server, so UNIGOX_API_KEY never reaches the browser.
+export async function POST(request) {
+  const cart = await yourCart(request); // your own order, e.g. { id: "A-1001", total: "25.00" }
+  const response = await fetch("https://api.unigox.com/api/v1/partner/crypto/orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
+    body: JSON.stringify({ merchantName: "Northwind", reference: cart.id, amount: cart.total }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) return new Response(null, { status: 502 });
+  await saveUnigoxOrderId(cart.id, body.data.id);
+  return Response.json({ token: body.data.token, payUrl: body.data.payUrl });
+}
+```
 
 ```jsx
-// app/orders/[id]/pay-button.jsx
+// app/checkout/pay-button.jsx
 "use client";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-export default function PayButton({ token }) {
+const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+
+export default function PayButton() {
   const [loaded, setLoaded] = useState(false);
   const checkout = useRef(null);
-  useEffect(() => () => {
-    checkout.current?.destroy();
-    checkout.current = null;
-  }, [token]);
+  useEffect(() => () => { checkout.current?.destroy(); checkout.current = null; }, []);
   return (
     <>
       <Script src="https://www.unigox.com/checkout.js" strategy="afterInteractive" onReady={() => setLoaded(true)} onError={() => setLoaded(false)} />
-      <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`} onClick={(event) => {
-        if (!loaded || !window.UnigoxCheckout) return;
-        event.preventDefault();
-        (checkout.current ??= window.UnigoxCheckout.create({ token, onError: () => setLoaded(false) })).open();
-      }}>Pay with crypto</a>
+      <button type="button" onClick={() => {
+        if (!loaded || !window.UnigoxCheckout) return newOrder().then((o) => window.location.assign(o.payUrl));
+        (checkout.current ??= window.UnigoxCheckout.create({ token: () => newOrder().then((o) => o.token), onError: () => setLoaded(false) })).open();
+      }}>Pay with crypto</button>
     </>
   );
 }
 ```
 
-Vue:
+Vue, the checkout inside the page for an order your server has created:
 
 ```vue
-<template><div ref="box" /><a v-if="!ready" :href="`https://www.unigox.com/pay/${encodeURIComponent(props.token)}`">Open checkout</a></template>
+<template><div ref="box" /><a v-if="!ready" :href="props.payUrl">Open checkout</a></template>
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-const props = defineProps({ token: String });
+const props = defineProps({ token: String, payUrl: String });
 const box = ref(null);
 const ready = ref(false);
 let checkout;
@@ -309,18 +423,29 @@ onBeforeUnmount(() => checkout?.destroy());
 </script>
 ```
 
-WordPress (a shortcode in your theme's `functions.php`):
+PHP, the payment page way (WordPress included). Point the `action` of the form in [Payment page](#payment-page) at this file.
 
 ```php
-// [unigox_checkout token="…"] prints a Pay with crypto link. A click shows the checkout inline, in the box above
-// the link; without JavaScript, or before checkout.js has loaded, the link opens the hosted page.
-add_shortcode('unigox_checkout', function ($atts) {
-  $token = preg_replace('/[^A-Za-z0-9_-]/', '', $atts['token'] ?? '');
-  wp_enqueue_script('unigox-checkout', 'https://www.unigox.com/checkout.js', [], null, true);
-  wp_add_inline_script('unigox-checkout', 'window.UnigoxCheckout && UnigoxCheckout.bind();');
-  return '<div id="unigox-checkout-' . esc_attr($token) . '"></div>'
-    . '<a data-unigox-checkout="inline" data-target="#unigox-checkout-' . esc_attr($token) . '" href="https://www.unigox.com/pay/' . esc_attr($token) . '">Pay with crypto</a>';
-});
+<?php
+// your-server/crypto-order.php: creates the order and sends the payer to its payment page.
+// UNIGOX_API_KEY comes from your server's environment, never from the page.
+$cart = your_cart(); // your own order, e.g. ['id' => 'A-1001', 'total' => '25.00']
+$ch = curl_init('https://api.unigox.com/api/v1/partner/crypto/orders');
+curl_setopt_array($ch, [
+  CURLOPT_POST => true,
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_TIMEOUT => 10,
+  CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-API-Key: ' . getenv('UNIGOX_API_KEY')],
+  CURLOPT_POSTFIELDS => json_encode(['merchantName' => 'Northwind', 'reference' => $cart['id'], 'amount' => $cart['total']]),
+]);
+$body = json_decode((string) curl_exec($ch), true);
+$status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+if ($status !== 200 && $status !== 201) {
+  http_response_code(502);
+  exit('Crypto payment is not available right now.');
+}
+save_unigox_order_id($cart['id'], $body['data']['id']); // you read the order by this id to confirm the payment
+header('Location: ' . $body['data']['payUrl'], true, 303);
 ```
 
 ## 3. React to the checkout
@@ -329,8 +454,8 @@ add_shortcode('unigox_checkout', function ($atts) {
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `token` | none | The payment token, or a function that returns it or a promise of it. Called on the first `open()` or `mount()`, and again after an error or a timeout. |
-| `url` | none | The full link instead of `token`. Keeps an invoice attached after `#invoice=`. |
+| `token` | none | The order's token, or a payment link's, or a function that returns it or a promise of it. The function is called on the first `open()` or `mount()`, and again after it failed or timed out. |
+| `url` | none | A whole payment page address instead of `token`: an order's `payUrl` or a payment link. Keeps an invoice attached after `#invoice=`. |
 | `mode` | `"modal"` | `"modal"`: a window over your page. `"inline"`: inside your page. `"hosted"`: `open()` sends the payer to the payment page, in the same tab. A browser without `<dialog>` gets `"hosted"`. |
 | `container` | none | Embedded: the element or a selector, used when `mount()` gets none. |
 | `theme` | light | `"light"` or `"dark"`. |
@@ -373,14 +498,14 @@ Use callbacks to update your page. A callback is not proof of payment, because a
 | `onError({code})` | See below |
 | `onResize({height})` | The checkout changed height (already applied) |
 
-From `onStatusChange` and `onComplete`, post `payload.payments` to your server. Your server then checks those transfers with Unigox.
+For an order, your server reads the order to confirm the payment; the callbacks only tell it when to read. For a payment link, post `payload.payments` from `onStatusChange` and `onComplete` to your server, which checks those transfers with Unigox.
 
 | Error code | What it means and what to do |
 | --- | --- |
 | `TOKEN_MISSING` | No token: none given, or your token function failed. Call `open()` again once you have one. |
-| `TOKEN_TIMEOUT` | Your token function took longer than `readyTimeoutMs`. Let the payer retry; keep the same order on your server so a retry makes no second payment. |
-| `TOKEN_INVALID` | The link is cut off, edited or no longer reserved for this payment. The payer is told not to pay. Copy the link again or make a new one. |
-| `CHECKOUT_UNAVAILABLE` | Unigox cannot be reached right now. Temporary, not a failed payment: keep the order open. |
+| `TOKEN_TIMEOUT` | Your token function took longer than `readyTimeoutMs`. Let the payer retry. Create the order with the same `reference`, so a retry returns the same order instead of a second one. |
+| `TOKEN_INVALID` | The token is not one Unigox can open: a link cut off, edited or no longer reserved for this payment, or an order token that names no order. The payer is told not to pay. Create a new order, or copy the link again. |
+| `CHECKOUT_UNAVAILABLE` | Unigox cannot be reached right now. Temporary, not a failed payment: do not close the order. |
 | `FRAME_TIMEOUT` | The checkout did not load in time, or your Content Security Policy blocked it. The payer sees **Continue to secure checkout**. Temporary: if `onReady` follows, the checkout loaded late. |
 | `FRAME_ERROR` | Anything else went wrong while setting up the checkout; the browser console says what after `[UnigoxCheckout]`. Try again, or send the payer to `checkout.hostedUrl`. |
 | `CONTAINER_NOT_FOUND` | Embedded: no element was found to mount into. |
@@ -402,9 +527,9 @@ None of these codes means that a payment failed or that the payer must pay again
 | `underpaid_closed` | Short, and the pay-by date passed or the link closed | Your server decides |
 | `on_hold` | Received, being reviewed by Unigox; not in your wallet yet | Wait |
 | `failed` | Not credited, or being sent back | Do not fulfil |
-| `expired` | The pay-by date passed and nothing came | Make a new link if the order stands |
-| `cancelled`, `closed` | The payer cancelled, or the link was closed | Nothing; money sent later still reaches your wallet |
-| `unreferenced` | Money reached the address after the link was closed, so it is not recorded under this order | Find it in **Payments** and match it to the order yourself |
+| `expired` | The pay-by date passed and nothing came | Create a new order (or link) if the sale stands |
+| `cancelled`, `closed` | The payer cancelled, or the order or link was closed | Nothing; money sent later still reaches your wallet |
+| `unreferenced` | Money reached the address after the payment was closed, so it is not recorded under it | Find it in **Payments** and match it to the order yourself |
 | `unavailable` | The checkout cannot reach Unigox right now | Nothing; it keeps trying |
 | `credited` | Deposit page only: a deposit was credited | Ask your server to add it to the customer's balance |
 
@@ -463,16 +588,16 @@ The checkout only reads payment data: it cannot move money. It runs in a sandbox
 ## 4. Return to your site
 
 - **Payment button and embedded checkout:** `onReturn` is called; the checkout never navigates your page.
-- **Payment page:** with **Return to your site** set in **Settings** (or `returnUrl` in a token your server makes), the page shows **Back to {merchant}**, with your business name. It never redirects by itself.
+- **Payment page:** with `returnUrl` on the order, the page shows **Back to {merchant}**, with the name the payer sees. For a payment link, the page does this with **Return to your site** from **Settings**, or `u` in a token your server makes. It never redirects by itself.
 
-On the page the payer returns to, ask your server for the order's status and show that. Do not treat the return itself as payment.
+On the page the payer returns to, have your server read the order and show its status. Do not treat the return itself as payment.
 
 ## What your customer sees
 
 <figure><img src="assets/crypto-processing/payer-checkout.gif" alt="The payer chooses a coin and network, sees the address and amount, then the payment is confirmed"><figcaption><p>The checkout as your customer sees it (sample page, no real payment).</p></figcaption></figure>
 
 1. **Choose a coin**, then **Choose the network**. Coins and networks you did not accept are not offered. Each network shows how long a payment takes.
-2. **Awaiting payment.** The exact amount and the address, each with a copy button, a QR code (on a phone, behind **Show QR**), and the pay-by date when the link has one.
+2. **Awaiting payment.** The exact amount and the address, each with a copy button, a QR code (on a phone, behind **Show QR**), and the time to pay by: every order has one, a link when you set one.
 3. **Payment detected.** The transfer was seen and is confirming on its network. The payer does nothing more.
 4. **Payment completed.** The payment is in your Unigox wallet. On the payment page the payer can **Print receipt**.
 

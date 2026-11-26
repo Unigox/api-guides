@@ -2,9 +2,9 @@
 
 > **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, `https://www.unigox.com/checkout.js`, the help pages and the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
 
-> **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) · **Test and go live** · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
+> **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links) · **Test and go live** · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
 
-There is no test mode: a real link takes real money. Build your page against the samples, test your server on a test account, then make one small real payment.
+There is no test mode: a real order or link takes real money. Build your page against the samples, test your server on a test account, then make one small real payment.
 
 ## Test your page without money
 
@@ -59,40 +59,52 @@ Any other id is treated as a link that cannot be read (`INVALID_LINK`, `onError`
 
 <figure><img src="assets/crypto-processing/test-integration.gif" alt="The sample shop: Pay with crypto opens the checkout, the sample payment completes and the shop lists the events it received"><figcaption><p>A test run on the sample shop: no real payment.</p></figcaption></figure>
 
-Then do the same on your own page with a sample id as the token, and check that your page reacts to each callback.
+Then do the same on your own page with a sample id as the token, and check that your page reacts to each callback. While you build, your token function can answer a sample id instead of asking your server for an order: `token: async () => "demo-awaiting"`.
 
 ## Test your server on a test account
 
-Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`, and sign `environment: "staging"`. Before you send anything, ask Unigox which networks and coins the test account accepts.
+Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key of the test account's partner page, and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
+
+First check your server's requests, which move no money:
+
+1. **The same order twice:** create an order, then send the same `reference` and `amount` again. The second answer is `200` with the same `id`.
+2. **Another amount:** the same `reference` with another `amount` answers `409 order_reference_conflict`.
+3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`; the same `reference` then creates a new order with a new `id`.
+4. **Close an order:** it reads `closed`, and its payment page no longer shows an address.
 
 Then make small payments and check each result in three places: on the checkout page, in **Payments** and in your own order records:
 
-1. **Exactly the amount:** the page shows **Payment completed**; your check finds the payment and marks the order paid once.
-2. **Less, then the rest from another network:** the page shows what came and what remains, then **Payment completed**.
-3. **More than the amount:** **Payment completed**, with the extra shown.
-4. **Two transfers** that together make the amount.
-5. **After the pay-by date** (a link with a pay-by date): **Payment arrived after the deadline**.
-6. **Close the window mid-payment**, pay, open it again: the same state.
-7. **Close your page before the payment is credited**: your periodic job still finds the payment.
-8. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
-9. **Unigox unreachable** (point `UNIGOX_PAYMENTS_API` at an address that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
-10. **The same order checked twice at once:** it is marked paid and shipped once.
+5. **Exactly the amount:** the page shows **Payment completed**; the order reads `paid`, and your job marks your order paid once.
+6. **Less, then the rest from another network:** the order reads `partly_paid`, then `paid`.
+7. **More than the amount:** the order reads `overpaid`.
+8. **Two transfers** that together make the amount.
+9. **After the order's time:** a transfer sent more than 15 minutes after the order ended does not change the order, and **Payments** shows it under **Needs attention**.
+10. **Close the window mid-payment**, pay, open it again: the same state.
+11. **Close your page before the payment is credited**: your periodic job still finds the payment.
+12. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
+13. **Unigox unreachable** (point your server's Unigox address at one that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
+14. **The same order checked twice at once:** it is marked paid and shipped once.
+
+With payment links, also pay one after its pay-by date: the page shows **Payment arrived after the deadline**.
 
 With deposit pages:
 
-11. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
-12. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
-13. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
+15. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
+16. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
+17. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
 
 ## Go live
 
-- **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
+- Your server creates orders at `https://api.unigox.com` with your production API key, and the key is only on your server.
+- Every order your server creates carries `merchantName`, the name your customers know.
+- You open **Crypto processing** in the portal often enough that orders find free addresses: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
+- If your server signs requests with your wallet's key: **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
 - Your business is verified, or you know how much is left of the 1,000 USD you can receive before verification (the band at the top of every **Crypto processing** page).
 - Every network you offer is ready for your addresses.
-- Your job checks open orders, and also new payments on orders that are already paid or closed. It passed tests 9 and 10.
+- Your job reads every order until 15 minutes after its `closedAt`, so a payment that arrives after the order is paid or closed is still recorded. It passed tests 13 and 14.
 - With deposit pages: your deposit job, or the person who credits deposits from **Payments**, runs as often as customers expect.
 - If you hold your wallet's key, it is only in your secrets store.
 - Your page ignores events whose `livemode` is not `true`.
-- Your links carry your support email (**Settings → Support email for payers**, or `e` in a token your server makes).
-- A production link opens on `https://www.unigox.com/pay/…` and shows its address, and your `checkout.js` and Content-Security-Policy name `https://www.unigox.com`.
-- One small real payment passed tests 1 and 7.
+- Your payment links carry your support email (**Settings → Support email for payers**, or `e` in a token your server makes).
+- A production order's `payUrl` opens on `https://www.unigox.com/pay/…` and shows its addresses, and your `checkout.js` and Content-Security-Policy name `https://www.unigox.com`.
+- One small real payment passed tests 5 and 11.

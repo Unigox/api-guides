@@ -4,7 +4,7 @@
 
 Crypto processing lets your customers pay you in USDT, USDC, USDG and USDT0 on 13 networks. Unigox shows the payer the amount, the address and the progress of the transfer, so you do not build a payment page. Each payment arrives in your Unigox wallet (your balance at Unigox) in the coin the customer sent: Unigox does not convert it.
 
-This page needs no code. It shows how to open crypto processing for your business, and how to create a payment link, an invoice and a customer's deposit addresses in the portal. The other pages are for the developer who adds the checkout to your website or connects your server. The guide uses each of its terms in one meaning: [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
+This page shows how to open crypto processing for your business, the shortest way to take payments on your website, and how to create a payment link, an invoice and a customer's deposit addresses in the portal, which needs no code. The other pages give the developer of your website every detail. The guide uses each of its terms in one meaning: [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
 
 ## Pick your task
 
@@ -13,21 +13,21 @@ This page needs no code. It shows how to open crypto processing for your busines
 | Send a customer a link to pay an order | None | [Your first payment link](#your-first-payment-link) |
 | Send an invoice with a PDF | None | [Send an invoice](#send-an-invoice) |
 | Give a customer permanent addresses to top up a balance | None | [Give a customer deposit addresses](#give-a-customer-deposit-addresses) |
-| Add a **Pay with crypto** button to your website | A few lines of HTML | [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) |
-| Mark orders paid on your server | Server code, nothing secret | [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) |
-| Create a link for every order automatically | Server code and your wallet's key | [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) |
+| Take payments on your website: a **Pay with crypto** button, the checkout inside your page, or a payment page | A few lines on your page and one request on your server, with your API key | [Your website in four steps](#your-website-in-four-steps), then [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) |
+| Mark orders paid on your server | One request with your API key | [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) |
+| Create deposit pages, or payment links that stay open longer than 7 days, from your server | Server code and your wallet's key | [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links) |
 | Build your own payment page | Server and page code, and your wallet's key | [Your own payment page](https://developers.unigox.com/tutorials/crypto-payments) |
 | Check your integration before real customers pay | None | [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) |
 
 ## How a payment works
 
-1. You create a payment link for an order: in the portal, or from your server. The link is `https://www.unigox.com/pay/{token}`. The token holds the amount, your order reference and the addresses that take the payment.
-2. The customer opens the link, on a Unigox page or in a checkout on your site, and picks a coin and a network.
-3. The customer sends the amount from any wallet or exchange. Each order has its own address, so the customer adds no memo or tag.
+1. A payment starts as an order or as a payment link. On your website, your server creates a new order for each payment, with your API key. A payment link is one you create in the portal and send to one customer. Both open at `https://www.unigox.com/pay/{token}`.
+2. The customer opens the checkout, on a Unigox page or on your site, and picks a coin and a network.
+3. The customer sends the amount from any wallet or exchange. Each order and each link has its own addresses, so the customer adds no memo or tag.
 4. Unigox adds the payment to your Unigox wallet, in the same coin and the same amount. The portal's **Payments** shows it as **Completed**.
-5. You fulfil the order once you see the payment in **Payments**, or once your server has checked it with Unigox.
+5. You fulfil the order once your server reads it as paid, or once you see the payment in **Payments**.
 
-Creating a link and opening a checkout move no money. A message the checkout sends to your web page is not proof of payment: anyone can produce one in their own browser. Proof is the payment in **Payments**, or your server's check ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
+Creating an order or a link and opening a checkout move no money. A message the checkout sends to your web page is not proof of payment: anyone can produce one in their own browser. Proof is the payment in **Payments**, or your server's check ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
 ## Open crypto processing
 
@@ -44,17 +44,21 @@ Creating a link and opening a checkout move no money. A message the checkout sen
 
 <figure><img src="assets/crypto-processing/onboarding.gif" alt="Business onboarding: Crypto processing, then the questions of Before you start accepting crypto, filled in for a sample company"><figcaption><p>The crypto processing questions in business onboarding (sample answers).</p></figcaption></figure>
 
-Until your business is verified, you can receive up to 1,000 USD in total. A band at the top of every **Crypto processing** page shows how much of it you have received, with the **Verify business** button. Once you reach 1,000 USD, you cannot create payment links, invoices or deposit addresses until your business is verified. Payments to the ones you already created still arrive.
+Until your business is verified, you can receive up to 1,000 USD in total. A band at the top of every **Crypto processing** page shows how much of it you have received, with the **Verify business** button. Once you reach 1,000 USD, you cannot create orders, payment links, invoices or deposit addresses until your business is verified. Payments to the ones you already created still arrive.
 
 ## What you need
 
-To take payments from the portal you need only **Crypto processing in your business portal** ([Open crypto processing](#open-crypto-processing)). A developer who connects your website or server also needs:
+To take payments from the portal you need only **Crypto processing in your business portal** ([Open crypto processing](#open-crypto-processing)). A developer who connects your website also needs:
 
-- **Your Unigox wallet address.** It receives every payment. **Developers → Environment** shows it as **Your Unigox wallet**.
-- **The API address**, for server code. **Developers → Environment** shows it as **API address**. It can change, so keep it in your configuration, not in your code. The examples call it `UNIGOX_PAYMENTS_API`.
-- **Your wallet's private key**, only when your server creates links or reads your payment history. There is no separate API key: your server signs those requests with the wallet's key. Unigox gives you the key on request (**Developers → Confirm payments on your server → Ask for the key**). This key can move your whole balance. Keep it in a secrets store on the server that signs, never in browser code or a repository. Keep the wallet's balance low: move the money you collect out regularly.
+- **Your partner API key.** Your server sends it in the `X-API-Key` header to create and read orders, at `https://api.unigox.com`. Step 1 of [Your website in four steps](#your-website-in-four-steps) shows where to get it. Keep it on your server, never in a web page or a repository.
+- **The portal open now and then.** Each order takes payment addresses that the portal reserves while you are signed in with **Crypto processing** open ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
 
-Unigox does not send payment notifications (webhooks) to your server yet. Your server asks Unigox for each payment's status: when the customer returns to your site, and from a job that runs every few minutes.
+Deposit pages, links your server signs and your payment history need two more things:
+
+- **The API address**, which **Developers → Environment** shows as **API address**. It can change, so keep it in your configuration, not in your code. The examples call it `UNIGOX_PAYMENTS_API`.
+- **Your wallet's private key**, to sign those requests. Unigox gives you the key on request (**Developers → Confirm payments on your server → Ask for the key**). This key can move your whole balance. Keep it in a secrets store on the server that signs, never in browser code or a repository. Keep the wallet's balance low: move the money you collect out regularly. **Developers → Environment** shows your wallet's address as **Your Unigox wallet**.
+
+Unigox does not send payment notifications (webhooks) to your server yet. Your server reads each order itself: when the customer returns to your site, and from a job that runs every few minutes.
 
 ## The portal
 
@@ -77,7 +81,85 @@ Everything for crypto processing is under **Crypto processing** in your business
 - **Return to your site (optional)**: an `https://` page the payer can go back to.
 - **Support email for payers (optional)**: shown when a payer has to contact you.
 
-These settings are stored in your browser, not in your account. They go into every link you create or copy in this browser from then on. A link you already sent keeps what it had, and a link made in another browser does not have them.
+These settings are stored in your browser, not in your account. They go into every link you create or copy in this browser from then on. A link you already sent keeps what it had, and a link made in another browser does not have them. Orders do not use them: your server sends the name and the return page with each order (`merchantName`, `returnUrl`).
+
+## Your website in four steps
+
+You add this once. Every payment is then a new order that your server creates.
+
+**1. Get your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Get your API key**. On the page that opens, press **Generate** next to **API key** and copy the key: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Leave **Crypto processing** open for a few minutes the first time: the portal reserves the addresses your orders will take.
+
+**2. Put the checkout on your page.** The button asks your server for an order on its first press and opens the checkout over your page:
+
+```html
+<script src="https://www.unigox.com/checkout.js"></script>
+<button type="button" id="pay-with-crypto">Pay with crypto</button>
+<script>
+  // Your server's route of step 3: it creates the order and answers { token, payUrl }.
+  const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+  let checkout;
+  document.getElementById("pay-with-crypto").addEventListener("click", () => {
+    // checkout.js did not load (an ad blocker, the network, your CSP): the order's payment page takes the payment.
+    if (!window.UnigoxCheckout) return newOrder().then((o) => location.assign(o.payUrl));
+    checkout ??= UnigoxCheckout.create({
+      token: () => newOrder().then((o) => o.token), // called on the first open: your server creates the order
+      mode: "modal",
+      onComplete(payload) { /* update your page; only your server confirms the payment */ },
+    });
+    checkout.open();
+  });
+</script>
+```
+
+**3. Create the order on your server.** One request with your order number and total:
+
+```bash
+curl -X POST https://api.unigox.com/api/v1/partner/crypto/orders \
+  -H "X-API-Key: $UNIGOX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"merchantName": "Northwind", "reference": "A-1001", "amount": "25.00"}'
+```
+
+The answer is `{"status": "order_created", "code": 201, "data": {"id": "ord_…", "token": "o_…", "payUrl": "https://www.unigox.com/pay/o_…", …}}`. The same request as the route your page calls, in Node.js:
+
+```js
+// Node 18+ with express (npm install express). UNIGOX_API_KEY stays on your server, never in the page.
+import express from "express";
+
+const app = express();
+
+app.post("/your-server/crypto-order", async (req, res) => {
+  const cart = await yourCart(req); // your own order, e.g. { id: "A-1001", total: "25.00" }
+  const response = await fetch("https://api.unigox.com/api/v1/partner/crypto/orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
+    body: JSON.stringify({ merchantName: "Northwind", reference: cart.id, amount: cart.total }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) return res.status(502).end();
+  await saveUnigoxOrderId(cart.id, body.data.id); // step 4 reads the order by this id
+  res.json({ token: body.data.token, payUrl: body.data.payUrl });
+});
+
+app.listen(3000);
+```
+
+`yourCart()` and `saveUnigoxOrderId()` stand for your own code. The same `reference` sent again returns the same order, so a second press never makes a second order.
+
+**4. Read the order to confirm.** Ship when the order reads `paid` or `overpaid`. Read it when the payer returns to your site, and from a job every few minutes:
+
+```js
+const unigoxOrderId = await yourUnigoxOrderId(cartId); // the id you saved in step 3, never one from the browser
+const response = await fetch(`https://api.unigox.com/api/v1/partner/crypto/orders/${encodeURIComponent(unigoxOrderId)}`, {
+  headers: { "X-API-Key": process.env.UNIGOX_API_KEY },
+});
+if (!response.ok) throw new Error(`Unigox: HTTP ${response.status}`); // try again on the next pass
+const { data: order } = await response.json();
+if (order.status === "paid" || order.status === "overpaid") { /* mark your order paid, once, and ship */ }
+```
+
+[Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) has the other ways to show the checkout, and [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) every status and the job.
 
 ## Your first payment link
 
@@ -121,7 +203,7 @@ The customer opens the deposit page, picks a coin and a network and copies their
 
 <figure><img src="assets/crypto-processing/deposit-page.gif" alt="The customer's deposit page: choose a coin and a network, copy the address, see earlier deposits"><figcaption><p>The deposit page as your customer sees it (sample page).</p></figcaption></figure>
 
-Unigox does not keep your customers' balances. Add each deposit to the customer's balance in your own system, once: by hand from **Payments**, or from your server ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links#create-a-deposit-page-for-a-customer)).
+Unigox does not keep your customers' balances. Add each deposit to the customer's balance in your own system, once: by hand from **Payments**, or from your server ([Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links#create-a-deposit-page-for-a-customer)).
 
 Next: put the checkout on your website ([Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed)), or mark orders paid on your server ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
@@ -129,68 +211,133 @@ Next: put the checkout on your website ([Website checkout](https://developers.un
 
 **Add checkout to your website**
 
-Show an order's payment on your website: in a window over your page, inside your page, or on a Unigox payment page. The checkout shows the amount, lets the payer choose a coin and a network, shows the address and follows the transfer. It tells your page about each step through callbacks.
+Take payments on your website. You add the code once. For every payment, your server creates a new order with your API key, and the checkout shows that order: in a window over your page, inside your page, or on a Unigox payment page. The checkout shows the amount, lets the payer choose a coin and a network, shows the address and follows the transfer. It tells your page about each step through callbacks.
 
 ## Choose how customers pay
 
 | Way | What the payer sees | What you add |
 | --- | --- | --- |
-| **Payment button** | The checkout opens in a window over your page | `checkout.js` and a button |
-| **Embedded checkout** | The checkout inside your page | `checkout.js` and an empty element |
-| **Payment page** | A Unigox page with the payment, in the same tab | A link |
-| **Your own frame** | The checkout in an iframe you control | An iframe and a message listener |
+| **Payment button** | The checkout opens in a window over your page | `checkout.js`, a button and one request on your server |
+| **Embedded checkout** | The checkout inside your page | `checkout.js`, an empty element and one request on your server |
+| **Payment page** | A Unigox page with the payment, in the same tab | A form that posts to your server, which sends the payer to the order's page |
+| **Your own frame** | The checkout in an iframe you control | An iframe, a message listener and one request on your server |
 
-Use the payment button or the embedded checkout if you can: `checkout.js` takes care of sizing, phones, loading problems and messages. Use the payment page in email, in chat and on any page where you cannot add a script. Use your own frame only when your site cannot load a script from Unigox.
+Use the payment button or the embedded checkout if you can: `checkout.js` takes care of sizing, phones, loading problems and messages. Use the payment page on any page where you cannot add a script. Use your own frame only when your site cannot load a script from Unigox.
 
-## 1. Create the payment
+All four open an order. A payment link you make in the portal is for one payment you send to one customer, by email or in a chat ([Get started](https://developers.unigox.com/tutorials/crypto-checkout#your-first-payment-link)).
 
-A checkout shows one payment link, and one link is one order. Create the link in the portal (**Payment links → Create payment link**) or on your server ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links)). A shop where every customer has a different total needs a link for each order: its server creates them.
+## 1. Create the order on your server
 
-The examples below write `{token}` for the link's token: the part of the link after `/pay/`.
+When the payer chooses to pay with crypto, your page asks your own server for an order. Your server creates it at Unigox with one request and answers the page with the order's `token` and `payUrl`.
+
+**Before you start:**
+
+- **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Get your API key**. It opens your partner page, where **Generate** creates the key under **API key** and shows it once; **Reissue** replaces it and stops the old one. Keep the key on your server, never in a web page or a repository.
+- **Addresses for your orders.** Each order takes one payment address of each address type from the addresses the portal keeps ready for orders. The portal adds them while you are signed in with **Crypto processing** open. Open it once before your first order, and open it again regularly: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
+
+The request, with your order number and total:
+
+```bash
+curl -X POST https://api.unigox.com/api/v1/partner/crypto/orders \
+  -H "X-API-Key: $UNIGOX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"merchantName": "Northwind", "reference": "A-1001", "amount": "25.00", "customer": {"id": "cus-77"}}'
+```
+
+The answer, `201` (shortened):
+
+```json
+{
+  "status": "order_created",
+  "code": 201,
+  "data": {
+    "id": "ord_4f9c2a7e1b3d5c8a0e6f2b4d",
+    "token": "o_4f9c2a7e1b3d5c8a0e6f2b4d",
+    "payUrl": "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d",
+    "reference": "A-1001",
+    "amount": "25.00",
+    "currency": "USD",
+    "status": "open",
+    "received": "0.00",
+    "expiresAt": "2026-11-26T11:00:00.000000Z"
+  }
+}
+```
+
+The same request as the route your page calls, in Node.js:
+
+```js
+// Node 18+ with express (npm install express). UNIGOX_API_KEY stays on your server, never in the page.
+import express from "express";
+
+const app = express();
+const UNIGOX_API = "https://api.unigox.com"; // https://api-staging.unigox.com on a test account
+
+app.post("/your-server/crypto-order", async (req, res) => {
+  const cart = await yourCart(req); // your own order, e.g. { id: "A-1001", total: "25.00", customerId: "cus-77" }
+  const response = await fetch(`${UNIGOX_API}/api/v1/partner/crypto/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
+    body: JSON.stringify({
+      merchantName: "Northwind",         // the name the payer sees
+      reference: cart.id,                // your order number, at most 64 characters
+      amount: cart.total,                // USD as a string, such as "25.00"
+      customer: { id: cart.customerId }, // optional
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    console.error("Unigox order not created:", response.status, body?.details, body?.field);
+    return res.status(502).end();
+  }
+  await saveUnigoxOrderId(cart.id, body.data.id); // you read the order by this id to confirm the payment
+  res.json({ token: body.data.token, payUrl: body.data.payUrl });
+});
+
+app.listen(3000);
+```
+
+`yourCart()` and `saveUnigoxOrderId()` stand for your own code.
+
+- **Create the order when the payer chooses to pay, not when the page loads.** An order holds one address of each type until it ends, and each address then rests 24 hours before another order can take it. Orders that nobody pays use up addresses.
+- **Send the same `reference` for the same cart.** While that order is open or paid, a request with the same `reference` and `amount` returns the same order (`200`), so a double click or a retry never makes a second order. If the cart's total changed, use a new `reference`, or close the old order first: the same `reference` with another amount answers `409 order_reference_conflict`.
+- **Keep `data.id` with your order.** Your server reads the order with it to know when it is paid ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)). Never read an order by an id that the browser sends you.
+- **Send `merchantName`.** It is the name the payer sees. Without it the payer sees your partner account's name. The name under **Settings → Shown to the payer as** is kept in your browser and does not reach orders.
+- **The order takes payments for 60 minutes.** Send `expiresInMinutes` for another time, from 5 to 10,080 (7 days).
+- **When Unigox refuses the order**, show the payer another way to pay. `409 no_free_addresses`: no address is free; open **Crypto processing** in the portal. `403 merchant_unverified_limit`: your business is not verified and has received 1,000 USD. Every field and error is in the [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference#orders-api).
 
 ## 2. Show the checkout
 
 ### Get the code from the portal
 
-1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**. The fourth tile, **Connect your store**, is for a shop whose server creates a link for each order: it opens **Developers** ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links)).
-2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only.
-3. Under **2. Choose an order**, choose one of your payment links. You can also press **Create payment link** to make one, or **Paste a payment link** to use a link made elsewhere.
-4. Under **3. Add checkout to your site**, check the preview of what your customer sees, then press **Copy code** and paste the code into your page.
-5. Read **4. Check the payment**: confirm each payment before you fulfil its order ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
+1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**.
+2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only. The preview beside the steps shows what your customer sees.
+3. Under **2. Add checkout to your site**, press **Copy code** and paste the code into your page.
+4. Under **3. Create the order on your server**, choose **cURL** or **Node.js** and add the request to your server. **Get your API key** leads to your key.
+5. Read **4. Check the payment**: ship once your server reads the order as `paid` ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
 <figure><img src="assets/crypto-processing/website-checkout.gif" alt="Website checkout setup in the portal: choose the way, choose an order, copy the code"><figcaption><p>Setting up the payment button in the portal (sample data).</p></figcaption></figure>
 
-The code you copy already has your order's link in it. Under the code, **Add to your Content-Security-Policy** gives the one line a strict policy needs, and **Callbacks** and **Error codes** list what your page can react to.
-
-### Payment page
-
-Link to the payment, redirect to it, or send it by email:
-
-```html
-<a href="https://www.unigox.com/pay/{token}">Pay with crypto</a>
-```
-
-For a language, put `/es`, `/fr` or `/pt` before `/pay` (`https://www.unigox.com/es/pay/{token}`). Without one, the page follows the payer's browser.
+The code you copy calls `/your-server/crypto-order` on your site: the route of step 1. Under the steps, **Add to your Content-Security-Policy** gives the one line a strict policy needs, and **Callbacks** and **Error codes** list what your page can react to.
 
 ### Payment button
 
-Load `checkout.js` once on the page, from `https://www.unigox.com`:
+Load `checkout.js` once on the page, from `https://www.unigox.com`, and open the checkout from your button:
 
 ```html
 <script src="https://www.unigox.com/checkout.js"></script>
-```
-
-Then open the checkout from your button:
-
-```html
 <button type="button" id="pay-with-crypto">Pay with crypto</button>
 <script>
+  // Your server's route from step 1: it creates the order and answers { token, payUrl }.
+  const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
   let checkout;
   document.getElementById("pay-with-crypto").addEventListener("click", () => {
-    // checkout.js did not load (an ad blocker, the network, your CSP): the hosted page takes the payment.
-    if (!window.UnigoxCheckout) return location.assign("https://www.unigox.com/pay/{token}");
+    // checkout.js did not load (an ad blocker, the network, your CSP): the order's payment page takes the payment.
+    if (!window.UnigoxCheckout) return newOrder().then((o) => location.assign(o.payUrl));
     checkout ??= UnigoxCheckout.create({
-      token: "{token}", // or async () => token, called on the first open
+      token: () => newOrder().then((o) => o.token), // called on the first open: your server creates the order
       mode: "modal",
       onComplete(payload) { /* update your page; only your server confirms the payment */ },
     });
@@ -199,32 +346,55 @@ Then open the checkout from your button:
 </script>
 ```
 
-When your server makes the link at the moment the payer clicks, pass a function that returns the token. Check the answer before you read it, so a failed request reaches `onError` as `TOKEN_MISSING`:
+`checkout.js` calls the `token` function once, on the first `open()`. A failed request reaches `onError` as `TOKEN_MISSING`, and the next `open()` calls the function again. Once it has a token, every `open()` shows the same order. Closing the window does not cancel the payment. If the payer comes back after the order's time ran out, the checkout shows the order as ended: call `checkout.destroy()` and create a new checkout, which creates a new order.
 
-```js
-token: () => fetch("/orders/1042/crypto-token", { method: "POST" })
-  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-  .then((d) => d.token),                      // your route answers {"token": "…"}
-```
-
-Closing the window does not cancel the payment: `open()` shows the same checkout again. On a phone the window fills the screen. The window closes when the browser goes Back or leaves the page. In a single-page app, call `checkout.close()` when your route changes.
+On a phone the window fills the screen. The window closes when the browser goes Back or leaves the page. In a single-page app, call `checkout.close()` when your route changes.
 
 ### Embedded checkout
 
 ```html
+<script src="https://www.unigox.com/checkout.js"></script>
+<button type="button" id="pay-with-crypto">Pay with crypto</button>
 <div id="checkout"></div>
 <script>
-  if (window.UnigoxCheckout) UnigoxCheckout.create({ token: "{token}", mode: "inline" }).mount("#checkout");
-  // checkout.js did not load (an ad blocker, the network, your CSP): a link to the hosted page instead.
-  else document.getElementById("checkout").innerHTML = '<a href="https://www.unigox.com/pay/{token}">Pay with crypto</a>';
+  const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+  const button = document.getElementById("pay-with-crypto");
+  let checkout;
+  // The order is created when the payer chooses crypto: the press mounts the checkout, which asks for the token.
+  button.addEventListener("click", () => {
+    // checkout.js did not load (an ad blocker, the network, your CSP): the order's payment page takes the payment.
+    if (!window.UnigoxCheckout) return newOrder().then((o) => location.assign(o.payUrl));
+    button.hidden = true;
+    checkout ??= UnigoxCheckout.create({
+      token: () => newOrder().then((o) => o.token), // called on the first mount: your server creates the order
+      mode: "inline",
+      onError: ({ code }) => { if (code === "TOKEN_MISSING" || code === "TOKEN_TIMEOUT") button.hidden = false; },
+    });
+    checkout.mount("#checkout");
+  });
 </script>
 ```
 
 The checkout takes the element's full width and the height it needs, so your page never shows a second scrollbar. Keep the element visible: a hidden or zero-height element hides the checkout.
 
+### Payment page
+
+Your button posts a form to your server. Your server creates the order and sends the payer to the order's payment page:
+
+```html
+<form method="post" action="/your-server/crypto-order">
+  <button type="submit">Pay with crypto</button>
+</form>
+```
+
+In the route of step 1, answer the form with `res.redirect(303, body.data.payUrl)` instead of `res.json(…)`. `payUrl` is `https://www.unigox.com/pay/o_…`. For a language, put `/es`, `/fr` or `/pt` before `/pay` (`https://www.unigox.com/es/pay/o_…`). Without one, the page follows the payer's browser.
+
+You can also send `payUrl` by email or in a chat. It takes payments until the order's `expiresAt`.
+
 ### Links you already have
 
-Mark existing links with `data-unigox-checkout`, and the checkout opens in a window over your page instead of on a new page. With `data-unigox-checkout="inline"` and `data-target`, it shows inside the element you name:
+Mark links to a payment page with `data-unigox-checkout`, and the checkout opens in a window over your page instead of on a new page. A link can be an order's `payUrl` that your server put in the page, or a payment link from the portal. With `data-unigox-checkout="inline"` and `data-target`, it shows inside the element you name:
 
 ```html
 <a data-unigox-checkout href="https://www.unigox.com/pay/{token}">Pay with crypto</a>
@@ -233,7 +403,7 @@ Mark existing links with `data-unigox-checkout`, and the checkout opens in a win
 <script>window.UnigoxCheckout && UnigoxCheckout.bind();</script>
 ```
 
-These links give your page no callbacks. Confirm their payments in **Payments**, or from your server with your payment history. On a page where users can post links (reviews, comments), bind only the container that holds your own links: `UnigoxCheckout.bind(document.querySelector("#checkout-links"))`.
+`{token}` is the part of the link after `/pay/`. These links give your page no callbacks. Confirm an order's payment by reading the order on your server, and a payment link's in **Payments** or from your payment history. On a page where users can post links (reviews, comments), bind only the container that holds your own links: `UnigoxCheckout.bind(document.querySelector("#checkout-links"))`.
 
 ### Invoices
 
@@ -331,44 +501,55 @@ Use this only if you cannot load `checkout.js`. Serve your page over HTTPS (or `
       },
     };
   }
-  const frameCheckout = mountCheckoutFrame(document.getElementById("checkout"), "{token}", document.getElementById("checkout-fallback"));
+  let frameCheckout;
+  // Your server creates the order (step 1); its token opens the frame.
+  fetch("/your-server/crypto-order", { method: "POST" })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((o) => {
+      frameCheckout = mountCheckoutFrame(document.getElementById("checkout"), o.token, document.getElementById("checkout-fallback"));
+    });
   // In Spanish, for example: mountCheckoutFrame(container, token, fallback, "es").
-  // Call frameCheckout.destroy() when this view unmounts; remount when its token changes.
+  // Call frameCheckout.destroy() when this view unmounts.
 </script>
 ```
 
 The ordinary payment page cannot be shown in a frame. Only the URL with `embed=1` can.
 
-### React, Next.js, Vue and WordPress
+### React, Next.js, Vue and PHP
+
+Each example calls the route of step 1, `/your-server/crypto-order`, which answers `{ token, payUrl }`.
 
 React:
 
 ```jsx
 import { useEffect, useRef, useState } from "react";
 
-export function PayWithCrypto({ orderId, payUrl }) {
+const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+
+// A button that creates the order on its first press and opens the checkout over the page.
+export function PayWithCrypto({ cartId }) {
   const checkout = useRef(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
     return () => { checkout.current?.destroy(); checkout.current = null; };
-  }, [orderId, payUrl]);
-  const pay = (event) => {
-    if (!window.UnigoxCheckout || failed) return; // follow the real href
-    event.preventDefault();
+  }, [cartId]);
+  const pay = () => {
+    // checkout.js did not load, or the checkout failed: the order's payment page takes the payment.
+    if (!window.UnigoxCheckout || failed) return newOrder().then((o) => window.location.assign(o.payUrl));
     checkout.current ??= window.UnigoxCheckout.create({
-      token: () => fetch(`/api/orders/${orderId}/crypto-token`, { method: "POST" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then((d) => d.token),
-      onError: () => setFailed(true), // next click uses the hosted page, never a dead button
-      onComplete: () => window.location.assign(`/orders/${orderId}`),
+      token: () => newOrder().then((o) => o.token),
+      onError: () => setFailed(true), // the next press uses the payment page, never a dead button
+      onComplete: () => window.location.assign(`/orders/${cartId}`),
     });
     checkout.current.open();
   };
-  return <a href={payUrl} onClick={pay}>Pay with crypto</a>;
+  return <button type="button" onClick={pay}>Pay with crypto</button>;
 }
 
-export function InlineCheckout({ token }) {
+// The checkout inside the page, for an order your server has created: pass its token and payUrl.
+export function InlineCheckout({ token, payUrl }) {
   const box = useRef(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -378,45 +559,60 @@ export function InlineCheckout({ token }) {
     checkout.mount(box.current);
     return () => checkout.destroy();
   }, [token]);
-  return <><div ref={box} />{!ready && <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`}>Open checkout</a>}</>;
+  return <><div ref={box} />{!ready && <a href={payUrl}>Open checkout</a>}</>;
 }
 ```
 
-Next.js (App Router):
+Next.js (App Router), the route and the button:
+
+```js
+// app/your-server/crypto-order/route.js: runs on your server, so UNIGOX_API_KEY never reaches the browser.
+export async function POST(request) {
+  const cart = await yourCart(request); // your own order, e.g. { id: "A-1001", total: "25.00" }
+  const response = await fetch("https://api.unigox.com/api/v1/partner/crypto/orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
+    body: JSON.stringify({ merchantName: "Northwind", reference: cart.id, amount: cart.total }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) return new Response(null, { status: 502 });
+  await saveUnigoxOrderId(cart.id, body.data.id);
+  return Response.json({ token: body.data.token, payUrl: body.data.payUrl });
+}
+```
 
 ```jsx
-// app/orders/[id]/pay-button.jsx
+// app/checkout/pay-button.jsx
 "use client";
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-export default function PayButton({ token }) {
+const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+
+export default function PayButton() {
   const [loaded, setLoaded] = useState(false);
   const checkout = useRef(null);
-  useEffect(() => () => {
-    checkout.current?.destroy();
-    checkout.current = null;
-  }, [token]);
+  useEffect(() => () => { checkout.current?.destroy(); checkout.current = null; }, []);
   return (
     <>
       <Script src="https://www.unigox.com/checkout.js" strategy="afterInteractive" onReady={() => setLoaded(true)} onError={() => setLoaded(false)} />
-      <a href={`https://www.unigox.com/pay/${encodeURIComponent(token)}`} onClick={(event) => {
-        if (!loaded || !window.UnigoxCheckout) return;
-        event.preventDefault();
-        (checkout.current ??= window.UnigoxCheckout.create({ token, onError: () => setLoaded(false) })).open();
-      }}>Pay with crypto</a>
+      <button type="button" onClick={() => {
+        if (!loaded || !window.UnigoxCheckout) return newOrder().then((o) => window.location.assign(o.payUrl));
+        (checkout.current ??= window.UnigoxCheckout.create({ token: () => newOrder().then((o) => o.token), onError: () => setLoaded(false) })).open();
+      }}>Pay with crypto</button>
     </>
   );
 }
 ```
 
-Vue:
+Vue, the checkout inside the page for an order your server has created:
 
 ```vue
-<template><div ref="box" /><a v-if="!ready" :href="`https://www.unigox.com/pay/${encodeURIComponent(props.token)}`">Open checkout</a></template>
+<template><div ref="box" /><a v-if="!ready" :href="props.payUrl">Open checkout</a></template>
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-const props = defineProps({ token: String });
+const props = defineProps({ token: String, payUrl: String });
 const box = ref(null);
 const ready = ref(false);
 let checkout;
@@ -434,18 +630,29 @@ onBeforeUnmount(() => checkout?.destroy());
 </script>
 ```
 
-WordPress (a shortcode in your theme's `functions.php`):
+PHP, the payment page way (WordPress included). Point the `action` of the form in [Payment page](#payment-page) at this file.
 
 ```php
-// [unigox_checkout token="…"] prints a Pay with crypto link. A click shows the checkout inline, in the box above
-// the link; without JavaScript, or before checkout.js has loaded, the link opens the hosted page.
-add_shortcode('unigox_checkout', function ($atts) {
-  $token = preg_replace('/[^A-Za-z0-9_-]/', '', $atts['token'] ?? '');
-  wp_enqueue_script('unigox-checkout', 'https://www.unigox.com/checkout.js', [], null, true);
-  wp_add_inline_script('unigox-checkout', 'window.UnigoxCheckout && UnigoxCheckout.bind();');
-  return '<div id="unigox-checkout-' . esc_attr($token) . '"></div>'
-    . '<a data-unigox-checkout="inline" data-target="#unigox-checkout-' . esc_attr($token) . '" href="https://www.unigox.com/pay/' . esc_attr($token) . '">Pay with crypto</a>';
-});
+<?php
+// your-server/crypto-order.php: creates the order and sends the payer to its payment page.
+// UNIGOX_API_KEY comes from your server's environment, never from the page.
+$cart = your_cart(); // your own order, e.g. ['id' => 'A-1001', 'total' => '25.00']
+$ch = curl_init('https://api.unigox.com/api/v1/partner/crypto/orders');
+curl_setopt_array($ch, [
+  CURLOPT_POST => true,
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_TIMEOUT => 10,
+  CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-API-Key: ' . getenv('UNIGOX_API_KEY')],
+  CURLOPT_POSTFIELDS => json_encode(['merchantName' => 'Northwind', 'reference' => $cart['id'], 'amount' => $cart['total']]),
+]);
+$body = json_decode((string) curl_exec($ch), true);
+$status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+if ($status !== 200 && $status !== 201) {
+  http_response_code(502);
+  exit('Crypto payment is not available right now.');
+}
+save_unigox_order_id($cart['id'], $body['data']['id']); // you read the order by this id to confirm the payment
+header('Location: ' . $body['data']['payUrl'], true, 303);
 ```
 
 ## 3. React to the checkout
@@ -454,8 +661,8 @@ add_shortcode('unigox_checkout', function ($atts) {
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `token` | none | The payment token, or a function that returns it or a promise of it. Called on the first `open()` or `mount()`, and again after an error or a timeout. |
-| `url` | none | The full link instead of `token`. Keeps an invoice attached after `#invoice=`. |
+| `token` | none | The order's token, or a payment link's, or a function that returns it or a promise of it. The function is called on the first `open()` or `mount()`, and again after it failed or timed out. |
+| `url` | none | A whole payment page address instead of `token`: an order's `payUrl` or a payment link. Keeps an invoice attached after `#invoice=`. |
 | `mode` | `"modal"` | `"modal"`: a window over your page. `"inline"`: inside your page. `"hosted"`: `open()` sends the payer to the payment page, in the same tab. A browser without `<dialog>` gets `"hosted"`. |
 | `container` | none | Embedded: the element or a selector, used when `mount()` gets none. |
 | `theme` | light | `"light"` or `"dark"`. |
@@ -498,14 +705,14 @@ Use callbacks to update your page. A callback is not proof of payment, because a
 | `onError({code})` | See below |
 | `onResize({height})` | The checkout changed height (already applied) |
 
-From `onStatusChange` and `onComplete`, post `payload.payments` to your server. Your server then checks those transfers with Unigox.
+For an order, your server reads the order to confirm the payment; the callbacks only tell it when to read. For a payment link, post `payload.payments` from `onStatusChange` and `onComplete` to your server, which checks those transfers with Unigox.
 
 | Error code | What it means and what to do |
 | --- | --- |
 | `TOKEN_MISSING` | No token: none given, or your token function failed. Call `open()` again once you have one. |
-| `TOKEN_TIMEOUT` | Your token function took longer than `readyTimeoutMs`. Let the payer retry; keep the same order on your server so a retry makes no second payment. |
-| `TOKEN_INVALID` | The link is cut off, edited or no longer reserved for this payment. The payer is told not to pay. Copy the link again or make a new one. |
-| `CHECKOUT_UNAVAILABLE` | Unigox cannot be reached right now. Temporary, not a failed payment: keep the order open. |
+| `TOKEN_TIMEOUT` | Your token function took longer than `readyTimeoutMs`. Let the payer retry. Create the order with the same `reference`, so a retry returns the same order instead of a second one. |
+| `TOKEN_INVALID` | The token is not one Unigox can open: a link cut off, edited or no longer reserved for this payment, or an order token that names no order. The payer is told not to pay. Create a new order, or copy the link again. |
+| `CHECKOUT_UNAVAILABLE` | Unigox cannot be reached right now. Temporary, not a failed payment: do not close the order. |
 | `FRAME_TIMEOUT` | The checkout did not load in time, or your Content Security Policy blocked it. The payer sees **Continue to secure checkout**. Temporary: if `onReady` follows, the checkout loaded late. |
 | `FRAME_ERROR` | Anything else went wrong while setting up the checkout; the browser console says what after `[UnigoxCheckout]`. Try again, or send the payer to `checkout.hostedUrl`. |
 | `CONTAINER_NOT_FOUND` | Embedded: no element was found to mount into. |
@@ -527,9 +734,9 @@ None of these codes means that a payment failed or that the payer must pay again
 | `underpaid_closed` | Short, and the pay-by date passed or the link closed | Your server decides |
 | `on_hold` | Received, being reviewed by Unigox; not in your wallet yet | Wait |
 | `failed` | Not credited, or being sent back | Do not fulfil |
-| `expired` | The pay-by date passed and nothing came | Make a new link if the order stands |
-| `cancelled`, `closed` | The payer cancelled, or the link was closed | Nothing; money sent later still reaches your wallet |
-| `unreferenced` | Money reached the address after the link was closed, so it is not recorded under this order | Find it in **Payments** and match it to the order yourself |
+| `expired` | The pay-by date passed and nothing came | Create a new order (or link) if the sale stands |
+| `cancelled`, `closed` | The payer cancelled, or the order or link was closed | Nothing; money sent later still reaches your wallet |
+| `unreferenced` | Money reached the address after the payment was closed, so it is not recorded under it | Find it in **Payments** and match it to the order yourself |
 | `unavailable` | The checkout cannot reach Unigox right now | Nothing; it keeps trying |
 | `credited` | Deposit page only: a deposit was credited | Ask your server to add it to the customer's balance |
 
@@ -588,16 +795,16 @@ The checkout only reads payment data: it cannot move money. It runs in a sandbox
 ## 4. Return to your site
 
 - **Payment button and embedded checkout:** `onReturn` is called; the checkout never navigates your page.
-- **Payment page:** with **Return to your site** set in **Settings** (or `returnUrl` in a token your server makes), the page shows **Back to {merchant}**, with your business name. It never redirects by itself.
+- **Payment page:** with `returnUrl` on the order, the page shows **Back to {merchant}**, with the name the payer sees. For a payment link, the page does this with **Return to your site** from **Settings**, or `u` in a token your server makes. It never redirects by itself.
 
-On the page the payer returns to, ask your server for the order's status and show that. Do not treat the return itself as payment.
+On the page the payer returns to, have your server read the order and show its status. Do not treat the return itself as payment.
 
 ## What your customer sees
 
 <figure><img src="assets/crypto-processing/payer-checkout.gif" alt="The payer chooses a coin and network, sees the address and amount, then the payment is confirmed"><figcaption><p>The checkout as your customer sees it (sample page, no real payment).</p></figcaption></figure>
 
 1. **Choose a coin**, then **Choose the network**. Coins and networks you did not accept are not offered. Each network shows how long a payment takes.
-2. **Awaiting payment.** The exact amount and the address, each with a copy button, a QR code (on a phone, behind **Show QR**), and the pay-by date when the link has one.
+2. **Awaiting payment.** The exact amount and the address, each with a copy button, a QR code (on a phone, behind **Show QR**), and the time to pay by: every order has one, a link when you set one.
 3. **Payment detected.** The transfer was seen and is confirming on its network. The payer does nothing more.
 4. **Payment completed.** The payment is in your Unigox wallet. On the payment page the payer can **Print receipt**.
 
@@ -609,23 +816,126 @@ A payer who already sent the money can press **Already sent? Find my payment** a
 
 Fulfil an order only after your server has checked with Unigox that the payment reached your wallet. A message from the checkout, the customer's return to your site and a screenshot from the customer are not proof: each can be faked.
 
-This page says "reference" for the text that names your order, "address ID" for the number of the payment address reserved for it, and "fingerprint" for the hash of the reference. In the API and in the code they are `memo`, `memoLockId` (or `lockId`) and `memoHash` ([Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses)).
-
 ## Choose how to check
 
-| Way | You need | It finds |
-| --- | --- | --- |
-| [Check the transfers your page reports](#check-the-transfers-your-page-reports) | Three values kept with the order: its reference, its address IDs and your wallet address. Nothing secret. | The transfers the checkout told your page about |
-| [Read your payment history](#read-your-payment-history) | Your wallet's private key | Every payment to the order's addresses, also the ones made while no page was open |
-| Look in the portal | Nothing | Every payment, in **Payments**: for checking by hand |
+| Way | For | You need | It finds |
+| --- | --- | --- | --- |
+| [Read the order](#read-the-order) | Orders your server creates for your website | Your API key and the order's `id` | Every payment that counts for the order, and its status |
+| [Check the transfers your page reports](#check-the-transfers-your-page-reports) | Payment links | Three values kept with the link: its reference, its address IDs and your wallet address. Nothing secret. | The transfers the checkout told your page about |
+| [Read your payment history](#read-your-payment-history) | Payment links and deposit pages | Your wallet's private key | Every payment to the link's addresses, also the ones made while no page was open |
+| Look in the portal | Everything | Nothing | Every payment, in **Payments**: for checking by hand |
 
 Unigox does not send payment notifications (webhooks) to your server yet. Run your check in two places: when the customer returns to your site, and in a job that goes over every open order every few minutes.
 
+## Read the order
+
+`GET /api/v1/partner/crypto/orders/{id}` with your API key answers with the order's `status`, what it has `received` and its `payments`. Read it with the `id` your server saved when it created the order (`data.id`), never with an id the browser sends.
+
+```bash
+curl https://api.unigox.com/api/v1/partner/crypto/orders/ord_4f9c2a7e1b3d5c8a0e6f2b4d \
+  -H "X-API-Key: $UNIGOX_API_KEY"
+```
+
+```json
+{
+  "status": "order_retrieved",
+  "code": 200,
+  "data": {
+    "id": "ord_4f9c2a7e1b3d5c8a0e6f2b4d",
+    "reference": "A-1001",
+    "amount": "25.00",
+    "currency": "USD",
+    "status": "paid",
+    "received": "25.00",
+    "expiresAt": "2026-11-26T11:00:00.000000Z",
+    "closedAt": "2026-11-26T10:07:41.512000Z",
+    "payments": [
+      {
+        "txHash": "0x5f2c8e1d4b7a9c3e6f0d2b5a8c1e4f7d9b3a6c0e2f5d8b1a4c7e9f3d6b0a2c5e",
+        "chainId": 42161,
+        "coin": "USDC",
+        "amount": "25.00",
+        "status": "credited",
+        "at": "2026-11-26T10:06:58.000000Z"
+      }
+    ]
+  }
+}
+```
+
+The answer is shortened: every field is in the [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference#the-order).
+
+`confirmOrder()` reads the order and marks your own order paid once:
+
+```js
+// Node 18+. UNIGOX_API_KEY stays on your server.
+const UNIGOX_API = "https://api.unigox.com"; // https://api-staging.unigox.com on a test account
+
+export async function readOrder(unigoxOrderId) {
+  const response = await fetch(`${UNIGOX_API}/api/v1/partner/crypto/orders/${encodeURIComponent(unigoxOrderId)}`, {
+    headers: { "X-API-Key": process.env.UNIGOX_API_KEY },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.data) throw new Error(`Unigox order ${unigoxOrderId}: HTTP ${response.status} ${body?.details ?? ""}`);
+  return body.data;
+}
+
+// order: your own record, with the Unigox order id your server saved when it created the order.
+export async function confirmOrder(order) {
+  const unigox = await readOrder(order.unigoxOrderId); // throws when Unigox cannot be read: the next pass retries
+  await db.saveReceived(order.id, unigox.status, unigox.received, unigox.closedAt); // for your records and the job
+  if (unigox.status !== "paid" && unigox.status !== "overpaid") return unigox.status;
+  // One conditional update, UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'open', that returns whether
+  // it changed the row: of two passes at the same moment, only one queues the shipment.
+  if (await db.markPaid(order.id)) await db.queueShipment(order.id);
+  return unigox.status;
+}
+
+// The job, every few minutes. db.ordersToCheck() returns your orders whose Unigox order has not ended (no closedAt),
+// or ended less than 15 minutes ago: until then a transfer can still count for it.
+setInterval(async () => {
+  for (const order of await db.ordersToCheck()) {
+    try { await confirmOrder(order); } catch (error) { console.error(error.message); }
+  }
+}, 3 * 60_000);
+```
+
+`db` stands for your own database code. Call `confirmOrder()` also when the payer returns to your site and when your page gets `onComplete`: the callback only tells your server when to read.
+
+### What each status means for shipping
+
+| `status` | What happened | What your server does |
+| --- | --- | --- |
+| `open` | Nothing credited yet. Past `expiresAt` the order stays `open` while a transfer sent in time is still on its way (`pending`) or under review (`on_hold`). | Wait |
+| `partly_paid` | Part of the amount credited. The payer can send the rest, on any network the order offers, until the order's time runs out. | Wait |
+| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It stays `paid`. | Ship, once |
+| `overpaid` | More than the amount credited | Ship, once. The extra is in your wallet: settle it with your customer. |
+| `expired` | The time ran out before the order was paid | Do not ship. If `received` is above `"0.00"`, that part is in your wallet: settle it with your customer. |
+| `closed` | You closed the order before it was paid | Do not ship, unless it turns `paid` (below). Settle any `received` with your customer. |
+
+### What counts for an order
+
+- **`received`** is the USD credited to the order: the sum of its payments with status `credited`. One USDT, USDC, USDG or USDT0 counts as 1 USD. A payment that is `pending`, `on_hold`, `failed` or `refunded` is not in it.
+- **`payments`** lists every transfer to the order's addresses that counts for the order, oldest first, with its network (`chainId`), coin, USD `amount`, `status` and time (`at`). A payment whose `amount` is `""` is one Unigox cannot value; it is not counted.
+- **The allowance.** An order is `paid` when it is short by at most 0.5 % of the amount and by no more than 1.00 USD. This covers an exchange that takes its withdrawal fee out of the amount it sends.
+- **The time.** A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, when you close it, or when it is paid, whichever comes first. So an order read as `expired` or `closed` can still turn `partly_paid`, `paid` or `overpaid` within those 15 minutes, and a `paid` order can turn `overpaid`. Keep reading an order until 15 minutes after its `closedAt`.
+- **A transfer after that time** is not the order's. It still reaches your Unigox wallet, and it appears in the portal's **Payments** under **Needs attention**, with no order. Reading the order does not show it. Match it to your customer by hand.
+
+### Repeated requests and closing
+
+- **One order per `reference`.** While an order is `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order, so retries never make a second one. Another amount answers `409 order_reference_conflict`. Once the order is `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`.
+- **Close an order** that will not be paid, for example when the customer empties the cart: `POST /api/v1/partner/crypto/orders/{id}/close`, with no body. The payment page stops showing its addresses. A transfer sent up to 15 minutes after the close still counts, and if it brings the order to its amount, the order reads `paid`. A `paid` or `overpaid` order cannot be closed (`409 order_already_paid`); a `closed` or `expired` one comes back as it is.
+
+There is no refund request in the API. To return money, agree an address and a network with your customer and send it from your Unigox wallet.
+
 ## Check the transfers your page reports
+
+This way and the next are for payment links: links made in the portal and links your server signs. For a link, this page says "reference" for the text that names your order, "address ID" for the number of the payment address reserved for it, and "fingerprint" for the hash of the reference. In the API and in the code they are `memo`, `memoLockId` (or `lockId`) and `memoHash` ([Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses)).
 
 Anyone can read the status of a transfer with `GET /transaction/{chainId}/{txHash}`: it needs no key and no signature. The status says which payment address the transfer went to (the address ID), which reference it was recorded under (the fingerprint), and whether it was credited to your wallet. Your server reads the status of each transfer your page reports, and counts a transfer only when all three match the order.
 
-1. **Keep three values with the order:** its reference, its address IDs and your wallet address. A link your server made has them already. For a link made in the portal, open **Checkout**, pick a way, and paste the link under **2. Choose an order**: **Payment link details** shows all three.
+1. **Keep three values with the order:** its reference, its address IDs and your wallet address. A link your server made has them already. For a link made in the portal, **Payment links → Export CSV** with **For developers** gives its address IDs (`address_ids`): [read your payment history](#read-your-payment-history) by them, or check the payment in **Payments**.
 2. **Post the transfers from your page.** Send `payload.payments` from `onStatusChange` and `onComplete` (or from your own frame's messages) to your server. Each entry has `chainId`, `txHash`, `logIndex` and `quoteId`.
 3. **Check them on your server** with `verifyTransfers()` below. It reads each reported transfer from Unigox and keeps only the transfers that were credited to your wallet under this order's reference and addresses.
 4. **Mark the order paid once.** In one database transaction: record each transfer's `quoteId` so that it counts once, add its amount to the order, and mark the order paid when `isPaid()` returns true.
@@ -747,7 +1057,7 @@ A Solana transaction can hold several transfers to one address, and `GET /transa
 
 ## Read your payment history
 
-`POST /transactions/history`, signed with your wallet's key, lists every payment to your wallet. Filter it by an order's address ID (`memoLockId`) to see everything that order received. Run it in a job: it finds the payments that no page reported, and the payments that arrive after an order is already paid.
+`POST /transactions/history`, signed with your wallet's key, lists every payment to your wallet. Filter it by a link's address ID (`memoLockId`) to see everything that order received. Run it in a job: it finds the payments that no page reported, and the payments that arrive after an order is already paid.
 
 `fulfilInvoice()` reads the history of one order's address IDs and marks the order paid once the credited payments cover the amount:
 
@@ -834,6 +1144,8 @@ export async function fulfilInvoice(memoLockId) {
 
 ## When is a payment paid
 
+An order tells its own status ([What each status means for shipping](#what-each-status-means-for-shipping)). For a payment link, your server reads each transfer's status:
+
 | Unigox status | Meaning |
 | --- | --- |
 | `DONE` with `subStatus` `COMPLETED`, no `refund` | Credited to your wallet. Only this counts. |
@@ -842,15 +1154,15 @@ export async function fulfilInvoice(memoLockId) {
 
 An older record can be `DONE` with no `subStatus`. It is a credit when it has a `toTx`: the examples read it that way.
 
-An order is paid when its credited payments add up to the amount, or fall short of it by at most 0.5 % and by no more than 1.00 USD. An invoice, and a link your server makes with `tol: "none"`, must be paid in full. Keep the link's allowance with your order: `isPaid()` reads it.
+A payment link is paid when its credited payments add up to the amount, or fall short of it by at most 0.5 % and by no more than 1.00 USD. An invoice, and a link your server makes with `tol: "none"`, must be paid in full. Keep the link's allowance with your order: `isPaid()` reads it.
 
-**Late payments.** The pay-by date only tells the payer when to pay: Unigox credits a later payment like any other. Whether you still fulfil the order is your decision. Compare the transfer's `fromTxMinedAt` (the time of the transfer on its network) with your own deadline, then fulfil, cancel or refund.
+**Late payments.** A link's pay-by date only tells the payer when to pay: Unigox credits a later payment like any other. Whether you still fulfil the order is your decision. Compare the transfer's `fromTxMinedAt` (the time of the transfer on its network) with your own deadline, then fulfil, cancel or refund.
 
-**Too much or too little.** Extra money stays in your wallet. A payment that is short by more than the allowance leaves the order open: the customer can send the rest to the same address.
+**Too much or too little.** Extra money stays in your wallet. A payment that is short by more than the allowance leaves the link open: the customer can send the rest to the same address.
 
 ## Payments in the portal and exports
 
-**Payments** lists every payment with its status, its transactions and the link or the customer it belongs to. **Needs attention** collects the payments to open links that came short of the amount or over it: you decide what to do with each. Open a payment to see its details, the payer's address and the receiving address, the transactions (to look up on the network), and a timeline of what happened.
+**Payments** lists every payment with its status, its transactions and the order, the link or the customer it belongs to. A payment to an order shows the order's reference and its customer. **Needs attention** collects the payments to open links that came short of the amount or over it, and the transfers to an order's address that came outside the order's time: you decide what to do with each. Open a payment to see its details, the payer's address and the receiving address, the transactions (to look up on the network), and a timeline of what happened.
 
 <figure><img src="assets/crypto-processing/payments.gif" alt="Payments in the portal: the list with statuses, Needs attention, and one payment with its details, addresses and timeline"><figcaption><p>Checking payments in the portal (sample data).</p></figcaption></figure>
 
@@ -864,23 +1176,27 @@ Times are in UTC unless you choose your time zone; each file has a `timezone` co
 
 <!-- checkout-links.md -->
 
-**Create payment links from your server**
+**Deposit pages and signed links from your server**
 
-Create a payment link for every order, and a deposit page for every customer, from your server: nobody creates them by hand in the portal.
+Your server can reserve payment addresses itself, signing each request with your Unigox wallet's private key. Use this page for what an order does not do:
 
-For a few orders a day you do not need this page. Create the links in **Payment links** and show them with [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed).
+- **A deposit page** for a customer who keeps a balance with you: permanent addresses and no amount due ([Create a deposit page for a customer](#create-a-deposit-page-for-a-customer)).
+- **A payment link that stays payable longer than an order.** An order takes payments for at most 7 days; a link you sign can have a later pay-by date, or none.
+- **The addresses for a payment page you build yourself** ([Your own payment page](https://developers.unigox.com/tutorials/crypto-payments)).
+
+To take payments on your website you do not need this page or your wallet's key: your server creates an order for each payment with your API key ([Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed)). To send one customer a link, create it in the portal (**Payment links → Create payment link**).
 
 The API has its own names for three things this guide talks about. The reference (the text that names your order) is `memo`. The reservation of a payment address for a reference is a `lock`, under `/memo-locks`. The address ID (the number of a reservation) is `lockId`. The rest is in [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
 
 ## Before you start
 
-- **Your wallet's private key.** Your server signs every request on this page with the private key of your Unigox wallet. There is no other API key. Ask for the key under **Developers → Confirm payments on your server → Ask for the key**. Once Unigox enables export for you, your account settings show **Export Private Key**. This key can move your whole balance. Keep it in a secrets store on the server that signs, never in browser code or a repository. Keep the wallet's balance low: move the money you collect out regularly.
+- **Your wallet's private key.** Your server signs every request on this page with the private key of your Unigox wallet. These requests take no API key. Ask for the key under **Developers → Confirm payments on your server → Ask for the key**. Once Unigox enables export for you, your account settings show **Export Private Key**. This key can move your whole balance. Keep it in a secrets store on the server that signs, never in browser code or a repository. Keep the wallet's balance low: move the money you collect out regularly.
 - **The API address and the environment.** **Developers → Environment** shows the **API address** (`UNIGOX_PAYMENTS_API` below) and the environment. Sign `"production"` when you call the production address, and `"staging"` when you call a test account's.
 - **Node.js 20 or later and [viem](https://viem.sh)**, for the examples. Any language that can sign EIP-712 typed data works.
 
 <figure><img src="assets/crypto-processing/developers.gif" alt="Developers in the portal: the integrations, Confirm payments on your server with its steps, and Environment with the API address and your Unigox wallet"><figcaption><p>Developers in the portal (sample data).</p></figcaption></figure>
 
-## Create a link for an order
+## Create a signed payment link
 
 Your server makes a link in four steps:
 
@@ -944,7 +1260,7 @@ export async function allocationRequest(chainType, memo) {
 // A new payment address, reserved for the memo. `signed` is the request you kept: sent again as it is, also after its
 // deadline, Unigox answers with the address and reservation it made the first time. Without `signed` it signs a new
 // request itself, so a lost answer cannot be sent again and a second call makes a second address: pass the request
-// you kept whenever your server keeps the order's state (server.mjs below does).
+// you kept whenever your server keeps the order's state.
 export async function reserveAddress(chainType, memo, signed = null) {
   signed ??= await allocationRequest(chainType, memo);
   const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/allocate`, {
@@ -1050,7 +1366,7 @@ async function readSignature() {
 
 // The address's newest reservation, from a signed POST /memo-locks/list: { lockId, wallet, memo, status, monitoring, … }
 // as the API reference lists it, or null when the address never had one. It throws when Unigox cannot be read, so the
-// caller cannot mistake "no answer" for "no reservation". "If a request fails" and server.mjs call it after a Lock
+// caller cannot mistake "no answer" for "no reservation". "If a request fails" calls it after a Lock
 // whose answer was lost: a reservation that is ACTIVE with your wallet and your memo is the one that Lock made.
 export async function newestReservation(chainType, address) {
   const { authorization, signature } = await readSignature();
@@ -1145,260 +1461,6 @@ To reuse an address, end its old reservation (`POST /memo-locks/unlock`), then r
 If the second request fails, the address has no reference until a reservation succeeds, and a payment that arrives in between reaches your wallet without a reference. Send the reservation again, and match such a payment by its address in your history.
 
 The portal does the same. It takes new addresses until an address type holds 80 % of its 1,000-address limit. Then it reuses the addresses of links that were paid in full and closed at least 7 days ago, the longest unused first.
-
-### The whole flow in one server
-
-The example has three files. `unigox.mjs` holds the blocks above. `server.mjs` is a small shop's server: it creates an order, builds the order's link once its address is ready, checks the transfers the page reports and marks the order paid once. `public/index.html` is the shop's page with the **Pay with crypto** button. To stay short, the server keeps orders in memory: use your own database.
-
-**`unigox.mjs`**: paste the blocks of steps 1 to 3 (without the example calls), the builders of [The link format](#the-link-format) and the whole block of [Check the transfers your page reports](https://developers.unigox.com/tutorials/crypto-checkout-confirm#check-the-transfers-your-page-reports). Keep one `UNIGOX_PAYMENTS_API` line, move the `import` lines to the top and add:
-
-```js
-// At the top of unigox.mjs. npm install viem. The key comes from your secrets store, never from code.
-import { createWalletClient, http } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { arbitrum } from "viem/chains";
-const account = privateKeyToAccount(process.env.UNIGOX_WALLET_KEY);
-const walletClient = createWalletClient({ account, chain: arbitrum, transport: http() });
-
-// …the pasted blocks…
-
-// At the end of unigox.mjs: the names server.mjs imports that the pasted blocks do not export themselves.
-export { paymentToken, unigoxGet, WALLET };
-```
-
-**`server.mjs`**:
-
-```js
-// Node 20+. UNIGOX_PAYMENTS_API and UNIGOX_WALLET_KEY in the environment; run: node server.mjs
-import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
-import { Buffer } from "node:buffer";
-import { allocationRequest, isPaid, newestReservation, paymentToken, reserveAddress, reserveMemo, unigoxGet, verifyTransfers, waitUntilReady, WALLET } from "./unigox.mjs";
-
-const shop = new Map([["NW-20418", "250.00"]]); // your orders and their amounts in USD
-const orders = new Map();                         // what this example keeps per order: in your shop, a database row
-const counted = new Set();                        // transfer IDs (quoteId) already added, each once
-const HINTS_MAX = 200;                            // reported transfers waiting to be proved, per order (verifyTransfers reads that many)
-
-// 1. Order placed: reserve an address and build the link once the address is ready, once per order. This starts
-//    when the order is placed, because a new address takes a few minutes to be ready: Pay with crypto then gets the
-//    finished link. Every step is saved in the order before the next one starts, so a failed attempt continues where
-//    it stopped and nothing is done twice:
-//    - the signed request is saved before it is sent, and sent again unchanged after a lost answer (the same nonce,
-//      so Unigox answers with the address it made the first time);
-//    - after 401 memo_lock_signature_expired the request is spent: if it made an address, the address is saved and
-//      its memo reserved; if it made none, a new request is signed;
-//    - the address is saved before the order waits for its networks.
-const making = new Map();                         // order ID -> the attempt under way
-const linkFor = (id) => {
-  if (!making.has(id)) making.set(id, makeLink(id).catch((error) => { making.delete(id); throw error; }));
-  return making.get(id);
-};
-async function makeLink(id) {
-  const amount = shop.get(id);
-  if (amount === undefined) throw new Error(`no order ${id}`);
-  // Reject an invalid shop amount/reference BEFORE reserving any address. isPaid validates the same amount contract.
-  isPaid({ amount, tolerance: "none" }, 0n);
-  if (typeof id !== "string" || !id.trim() || id !== id.trim() || Array.from(id).length > 64 || /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(id)) throw new Error("Invalid order reference");
-  let order = orders.get(id);
-  if (!order) {
-    // A random part keeps the reference from being guessed (see step 1).
-    const memo = `${id}-${Math.random().toString(36).slice(2, 8)} · ${amount} USD`;
-    if (Buffer.byteLength(memo, "utf8") > 256) throw new Error("Order reference is too long");
-    order = { id, memo, amount, wallet: WALLET, tolerance: "default", request: null, address: null, lockSent: false, evm: null, token: null, lockIds: [], reported: [], micros: 0n, status: "open" };
-    orders.set(id, order);
-  }
-  if (order.token) return order.token;
-  if (!order.evm && !order.address) {
-    order.request ??= await allocationRequest("evm", order.memo);    // signed and kept before it is sent
-    try {
-      // Can throw (a lost answer): the button reports TOKEN_MISSING, the payer tries again, and the same request is sent again.
-      order.evm = await reserveAddress("evm", order.memo, order.request);
-      order.request = null;                                           // spent: the order has its address
-    } catch (error) {
-      if (error.code !== "memo_lock_signature_expired") {
-        if (error.unusedRequest) order.request = null; // correct configuration, then retry with a fresh signature
-        throw error;
-      }
-      // The deadline passed before the memo was reserved: the kept request is spent either way. An answer that names the
-      // address it made: keep it, its memo is reserved below. One that names none: the request never took effect, and
-      // the next attempt signs a new one (its nonce was never used, so this makes no second address).
-      order.request = null;
-      order.address = error.allocated?.address ?? null;
-      if (!order.address) throw error;
-    }
-  }
-  if (!order.evm) {
-    // The order has an address without its memo: reserve the memo with a signed Lock, a fresh nonce each attempt
-    // (step 1). A Lock whose answer was lost may still have worked, and every later Lock on the address then answers
-    // 409 deposit_address_already_locked. So the order records that a Lock was sent before sending it, and the next
-    // attempt first reads the address's newest reservation ("If a request fails"):
-    // - active, with your wallet and this memo: the lost Lock worked, so its address ID is taken as it is;
-    // - active, with another wallet or memo: the address belongs to another payment. The order stops here for you to
-    //   look at, and no further Lock is signed;
-    // - closed, or none: the Lock never took effect, so a new one is signed.
-    const found = order.lockSent ? await newestReservation("evm", order.address) : null; // throws while Unigox cannot be read: the next attempt reads again
-    if (found?.status === "ACTIVE") {
-      if (found.wallet?.toLowerCase() !== WALLET.toLowerCase() || found.memo !== order.memo) throw new Error(`${id}: ${order.address} is reserved for another payment (address ID ${found.lockId})`);
-      order.evm = { address: order.address, addressId: found.lockId, monitoring: found.monitoring };
-    } else {
-      order.lockSent = true;                                            // written before the Lock is sent
-      order.evm = await reserveMemo("evm", order.address, order.memo);
-    }
-  }
-  order.lockIds = [String(order.evm.addressId)];
-  const monitoring = await waitUntilReady("evm", order.evm.address); // step 2: a link built earlier offers no network
-  if (!monitoring) throw new Error(`${id}: the address is not ready yet`); // the address stays with the order: the next attempt waits again
-  order.token = paymentToken({
-    merchant: "Northwind", memo: order.memo, amount, wallet: WALLET, expiresAt: null, openedAt: Date.now(),
-    addresses: { evm: { address: order.evm.address, lockId: order.evm.addressId, monitoring } },
-  });
-  console.log(`${id}: link https://www.unigox.com/pay/${order.token.slice(0, 12)}…`);
-  return order.token;
-}
-
-// 2. A transfer was reported, or the job runs: ask Unigox, add each proven credit once, mark the order paid once.
-async function check(order) {
-  for (const credit of await verifyTransfers(order, order.reported)) {
-    order.reported = order.reported.filter((r) => r.quoteId !== credit.id); // proven: out of the hint queue, into counted
-    if (counted.has(credit.id)) continue;
-    counted.add(credit.id);
-    order.micros += credit.micros;
-    console.log(`${order.id}: credited ${Number(credit.micros) / 1e6} USD`);
-  }
-  // A hint that Unigox knows as a transfer of this order (pending, not credited yet) stays until it is credited. The
-  // other hints (not indexed yet, or made up) are the ones a full queue drops, oldest first. A hint without a quoteId
-  // (a logIndex, or only the hash) is read again here, so it leaves the queue once its transfer was counted above.
-  for (const r of order.reported) {
-    if (r.known && r.quoteId) continue;           // leaves through the credits loop above once Unigox credits it
-    const tx = await hintTransfer(order, r);
-    r.known = tx !== null;
-    r.proven = tx !== null && counted.has(tx.quoteId);
-  }
-  order.reported = order.reported.filter((r) => !r.proven);
-  if (order.status === "open" && isPaid(order, order.micros)) {
-    order.status = "paid";
-    console.log(`${order.id}: paid`);           // ship the order here, once
-  }
-}
-// One hint is one transfer: its quoteId once the page knows it, before that its place in the transaction (chainId,
-// txHash, logIndex). A report that adds the quoteId is a new hint, not a repeat of the earlier one.
-const sameHint = (a, b) => a.chainId === b.chainId && a.txHash === b.txHash && (a.quoteId || b.quoteId ? a.quoteId === b.quoteId : a.logIndex === b.logIndex);
-// The transfer Unigox knows under the hint, when it is one to this order's address IDs; null for a transfer not indexed
-// yet, a made-up one, another order's, or while Unigox cannot be read (asked again on the next check).
-async function hintTransfer(order, hint) {
-  const pick = hint.quoteId ? `?quoteId=${encodeURIComponent(hint.quoteId)}` : hint.logIndex != null ? `?logIndex=${encodeURIComponent(hint.logIndex)}` : "";
-  try {
-    const tx = (await unigoxGet(`/transaction/${hint.chainId}/${encodeURIComponent(hint.txHash)}${pick}`, "found")).data;
-    return order.lockIds.includes(String(tx.memoLockId)) ? tx : null;
-  } catch {
-    return null;
-  }
-}
-
-const json = (res, code, body) => res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(body));
-
-createServer(async (req, res) => {
-  try {
-    let body = "";
-    for await (const chunk of req) if ((body += chunk).length > 65_536) return json(res, 413, { error: "too large" });
-    // The shop's page, public/index.html below.
-    if (req.method === "GET" && req.url === "/") return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(await readFile(new URL("./public/index.html", import.meta.url)));
-    const [, id, action] = /^\/orders\/([\w-]+)\/(crypto-token|payments|status)$/.exec(req.url) ?? [];
-    if (action === "crypto-token" && req.method === "POST") return json(res, 200, { token: await linkFor(id) });
-    const order = orders.get(id);
-    if (!order) return json(res, 404, { error: "no such order" });
-    if (action === "payments" && req.method === "POST") {
-      // What the page reports is only a hint: check() reads every transfer again from Unigox, so a made-up hint
-      // credits nothing. Hints wait in a queue of HINTS_MAX until a check proves them. When the queue is full, a check
-      // first marks the hints that Unigox knows as this order's transfers (they stay until credited). Then the oldest
-      // hint that Unigox does not know is dropped. So made-up hints cannot push out a real transfer, and a real
-      // transfer that is not indexed yet returns with the page's next report. Each hint costs one read: serve this
-      // route only to the session that owns the order, as your shop does for its other order routes.
-      for (const p of JSON.parse(body || "{}").payments ?? []) {
-        if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
-        const hint = { chainId: p.chainId, txHash: p.txHash, logIndex: p.logIndex ?? null, quoteId: typeof p.quoteId === "string" ? p.quoteId : null, known: false };
-        if ((hint.quoteId && counted.has(hint.quoteId)) || order.reported.some((r) => sameHint(r, hint))) continue;
-        if (order.reported.length >= HINTS_MAX) {
-          await check(order);                       // proves what it can, marks the hints Unigox knows
-          const oldest = order.reported.findIndex((r) => !r.known);
-          if (oldest < 0) continue;                 // every queued hint is a transfer of this order: none makes room
-          order.reported.splice(oldest, 1);         // the oldest hint Unigox does not know goes
-        }
-        order.reported.push(hint);
-      }
-      await check(order);
-    }
-    return json(res, 200, { status: order.status });
-  } catch (error) {
-    console.error(error);                          // Unigox could not be read: the job tries again
-    return json(res, 503, { error: "try again" });
-  }
-}).listen(3000, () => console.log("shop on http://localhost:3000"));
-
-// Your shop places its orders: start making each order's link now, so it is ready when the payer presses Pay.
-for (const id of shop.keys()) linkFor(id).catch(console.error);
-
-// 3. The job, every minute: check the reported transfers of every order, also after the order is paid or cancelled,
-//    so that late money is recorded. It never fulfils an order twice and never reopens a closed one. A transfer that
-//    no page reported is not found here: for those, read your signed history (fulfilInvoice() in "Confirm payments")
-//    or look in the portal's Payments.
-setInterval(() => {
-  for (const order of orders.values()) if (order.reported.length > 0) check(order).catch(console.error);
-}, 60_000);
-```
-
-**`public/index.html`**:
-
-```html
-<script src="https://www.unigox.com/checkout.js"></script>
-<button type="button" id="pay">Pay with crypto</button>
-<a id="hosted-pay" hidden>Open payment page</a>
-<p id="pay-error" role="alert"></p>
-<script>
-  const orderId = "NW-20418";
-  const post = (path, body) => fetch(`/orders/${orderId}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
-  const report = (payload) => post("payments", { payments: payload.payments ?? [] }).catch(console.error);
-  const button = document.getElementById("pay");
-  const fallback = document.getElementById("hosted-pay");
-  const message = document.getElementById("pay-error");
-  let checkout;
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    message.textContent = "";
-    try {
-      // The server reuses the same order reservation on every retry.
-      const response = await post("crypto-token", {});
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const { token } = await response.json();
-      if (typeof token !== "string" || !/^[A-Za-z0-9_-]+$/.test(token)) throw new Error("Payment link is not ready");
-      fallback.href = `https://www.unigox.com/pay/${token}`;
-      fallback.hidden = false;
-      if (!window.UnigoxCheckout) { window.location.assign(fallback.href); return; }
-      checkout ??= UnigoxCheckout.create({
-        token,
-        onStatusChange: (status, payload) => report(payload),
-        onComplete: (payload) => report(payload), // your server has the last word
-        onError: () => { message.textContent = "Open the payment page to continue."; },
-      });
-      checkout.open();
-    } catch {
-      message.textContent = "Payment could not be opened. Try again.";
-    } finally {
-      button.disabled = false;
-    }
-  });
-</script>
-```
-
-Run `UNIGOX_PAYMENTS_API=… UNIGOX_WALLET_KEY=… node server.mjs`, open `http://localhost:3000` and follow the log:
-
-```text
-shop on http://localhost:3000
-NW-20418: link https://www.unigox.com/pay/eyJ2IjoxLCJt…   ← a few minutes after start: the address is ready
-NW-20418: credited 250 USD                                 ← the transfer was credited to your Unigox wallet
-NW-20418: paid                                             ← once, even if the page reports the payment again
-```
 
 ## Create a deposit page for a customer
 
@@ -1619,7 +1681,7 @@ Links made in the portal have a shorter token of their own. It is not JSON, and 
 <reference> · <amount> USD · v2 [· <tag>] [· by <UTC deadline>] [· no tolerance] [· coins <coins>] [· networks <network ids>] [· note <description>]
 ```
 
-For example `NW-1042 · 250.00 USD · v2 · d6ppalq2 · by 2026-11-02T12:00Z · no tolerance · coins USDT,USDC · networks 42161,728126428`. The tag is 8 random characters from `a-z` and `2-7`. Your server can keep writing the short form, `<reference> · <amount> USD`. To confirm the payment of a portal link on your server, use its reference exactly as the portal wrote it: **Payment link details**, under the Website checkout code, shows it.
+For example `NW-1042 · 250.00 USD · v2 · d6ppalq2 · by 2026-11-02T12:00Z · no tolerance · coins USDT,USDC · networks 42161,728126428`. The tag is 8 random characters from `a-z` and `2-7`. Your server can keep writing the short form, `<reference> · <amount> USD`. To confirm the payment of a portal link on your server, read your payment history by its address IDs: **Payment links → Export CSV** with **For developers** lists them (`address_ids`).
 
 ### The builders
 
@@ -1825,7 +1887,7 @@ function supportMailbox(value, unsafe) {
 
 **Test and go live**
 
-There is no test mode: a real link takes real money. Build your page against the samples, test your server on a test account, then make one small real payment.
+There is no test mode: a real order or link takes real money. Build your page against the samples, test your server on a test account, then make one small real payment.
 
 ## Test your page without money
 
@@ -1880,43 +1942,55 @@ Any other id is treated as a link that cannot be read (`INVALID_LINK`, `onError`
 
 <figure><img src="assets/crypto-processing/test-integration.gif" alt="The sample shop: Pay with crypto opens the checkout, the sample payment completes and the shop lists the events it received"><figcaption><p>A test run on the sample shop: no real payment.</p></figcaption></figure>
 
-Then do the same on your own page with a sample id as the token, and check that your page reacts to each callback.
+Then do the same on your own page with a sample id as the token, and check that your page reacts to each callback. While you build, your token function can answer a sample id instead of asking your server for an order: `token: async () => "demo-awaiting"`.
 
 ## Test your server on a test account
 
-Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`, and sign `environment: "staging"`. Before you send anything, ask Unigox which networks and coins the test account accepts.
+Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key of the test account's partner page, and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
+
+First check your server's requests, which move no money:
+
+1. **The same order twice:** create an order, then send the same `reference` and `amount` again. The second answer is `200` with the same `id`.
+2. **Another amount:** the same `reference` with another `amount` answers `409 order_reference_conflict`.
+3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`; the same `reference` then creates a new order with a new `id`.
+4. **Close an order:** it reads `closed`, and its payment page no longer shows an address.
 
 Then make small payments and check each result in three places: on the checkout page, in **Payments** and in your own order records:
 
-1. **Exactly the amount:** the page shows **Payment completed**; your check finds the payment and marks the order paid once.
-2. **Less, then the rest from another network:** the page shows what came and what remains, then **Payment completed**.
-3. **More than the amount:** **Payment completed**, with the extra shown.
-4. **Two transfers** that together make the amount.
-5. **After the pay-by date** (a link with a pay-by date): **Payment arrived after the deadline**.
-6. **Close the window mid-payment**, pay, open it again: the same state.
-7. **Close your page before the payment is credited**: your periodic job still finds the payment.
-8. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
-9. **Unigox unreachable** (point `UNIGOX_PAYMENTS_API` at an address that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
-10. **The same order checked twice at once:** it is marked paid and shipped once.
+5. **Exactly the amount:** the page shows **Payment completed**; the order reads `paid`, and your job marks your order paid once.
+6. **Less, then the rest from another network:** the order reads `partly_paid`, then `paid`.
+7. **More than the amount:** the order reads `overpaid`.
+8. **Two transfers** that together make the amount.
+9. **After the order's time:** a transfer sent more than 15 minutes after the order ended does not change the order, and **Payments** shows it under **Needs attention**.
+10. **Close the window mid-payment**, pay, open it again: the same state.
+11. **Close your page before the payment is credited**: your periodic job still finds the payment.
+12. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
+13. **Unigox unreachable** (point your server's Unigox address at one that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
+14. **The same order checked twice at once:** it is marked paid and shipped once.
+
+With payment links, also pay one after its pay-by date: the page shows **Payment arrived after the deadline**.
 
 With deposit pages:
 
-11. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
-12. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
-13. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
+15. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
+16. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
+17. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
 
 ## Go live
 
-- **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
+- Your server creates orders at `https://api.unigox.com` with your production API key, and the key is only on your server.
+- Every order your server creates carries `merchantName`, the name your customers know.
+- You open **Crypto processing** in the portal often enough that orders find free addresses: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
+- If your server signs requests with your wallet's key: **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
 - Your business is verified, or you know how much is left of the 1,000 USD you can receive before verification (the band at the top of every **Crypto processing** page).
 - Every network you offer is ready for your addresses.
-- Your job checks open orders, and also new payments on orders that are already paid or closed. It passed tests 9 and 10.
+- Your job reads every order until 15 minutes after its `closedAt`, so a payment that arrives after the order is paid or closed is still recorded. It passed tests 13 and 14.
 - With deposit pages: your deposit job, or the person who credits deposits from **Payments**, runs as often as customers expect.
 - If you hold your wallet's key, it is only in your secrets store.
 - Your page ignores events whose `livemode` is not `true`.
-- Your links carry your support email (**Settings → Support email for payers**, or `e` in a token your server makes).
-- A production link opens on `https://www.unigox.com/pay/…` and shows its address, and your `checkout.js` and Content-Security-Policy name `https://www.unigox.com`.
-- One small real payment passed tests 1 and 7.
+- Your payment links carry your support email (**Settings → Support email for payers**, or `e` in a token your server makes).
+- A production order's `payUrl` opens on `https://www.unigox.com/pay/…` and shows its addresses, and your `checkout.js` and Content-Security-Policy name `https://www.unigox.com`.
+- One small real payment passed tests 5 and 11.
 
 <!-- checkout-reference.md -->
 
@@ -1928,21 +2002,118 @@ Each word has one meaning on every page. The last column is its name in the API,
 
 | Word | What it means | In the API |
 | --- | --- | --- |
-| Payment link | A link for one order: `https://www.unigox.com/pay/{token}`. Its token holds the amount, the reference and the payment addresses. | The token: [The link format](https://developers.unigox.com/tutorials/crypto-checkout-links#the-link-format) |
-| Checkout | What the payer sees when a payment link opens: on a Unigox page (the payment page), in a window over your page, or inside your page. | `checkout.js` |
-| Reference | The text that names your order on a payment, for example `NW-20418 · 250.00 USD`. Only your wallet can read it back. | `memo` |
-| Payment address | An address the payer sends coins to. An order has one for each address type you accept. | `address`, `depositAddress` |
-| Address type | Networks that share one address format: `evm` (Ethereum and the networks built like it), `tvm` (TRON), `ton` and `svm` (Solana). | `chainType` |
-| Reservation | A payment address held for one reference. While the reservation is active, every transfer to the address is recorded under that reference. Ending it closes the link. | `memo-locks`, `lock` |
+| Order | One payment your server asks Unigox to take: an amount in USD, your order number and, if you like, your customer. Your server creates it with your API key. Every payment on your website is a new order. | `POST /api/v1/partner/crypto/orders`; its `id` is `ord_…` |
+| Order token | What opens an order's checkout: `o_` and the 24 characters of the order's `id`. It names the order and holds nothing else. | `token`; the payment page is `payUrl` |
+| API key | Your partner key. Your server sends it in the `X-API-Key` header to create and read orders. Never put it in a web page. | `X-API-Key` |
+| Payment link | A link for one payment that you make in the portal or that your server signs: `https://www.unigox.com/pay/{token}`. Its token holds the amount, the reference and the payment addresses. | The token: [The link format](https://developers.unigox.com/tutorials/crypto-checkout-links#the-link-format) |
+| Checkout | What the payer sees when an order or a payment link opens: on a Unigox page (the payment page), in a window over your page, or inside your page. | `checkout.js` |
+| Reference | For an order, your order number. For a payment link, the text that names your order, for example `NW-20418 · 250.00 USD`; only your wallet can read it back. | `reference` on an order; `memo` on a link |
+| Payment address | An address the payer sends coins to. An order or a link has one for each address type it accepts. | `address`, `depositAddress` |
+| Address type | Networks that share one address format: `evm` (Ethereum and the networks built like it), `tvm` (TRON), `ton` and `svm` (Solana). | `family` on an order; `chainType` on a link |
+| Rest | The 24 hours an order's address waits after the order ends before another order can take it. A late transfer from the last payer then cannot land in the next order. | none |
+| Reservation | A payment address held for one reference of a link. While the reservation is active, every transfer to the address is recorded under that reference. Ending it closes the link. | `memo-locks`, `lock` |
 | Address ID | The number of a reservation. An address gets a new one each time it is reserved again. | `lockId`; on a payment, `memoLockId` |
-| Fingerprint | The keccak-256 hash of the reference. It is public; the reference is not. | `memoHash` |
+| Fingerprint | The keccak-256 hash of a link's reference. It is public; the reference is not. | `memoHash` |
 | Transfer | One movement of coins on a network. One transaction can hold several transfers. | `quoteId` names one transfer |
-| Credited | The money is in your Unigox wallet. Only a credited payment counts as paid. | `status: "DONE"` with `subStatus: "COMPLETED"` and no `refund` |
+| Credited | The money is in your Unigox wallet. Only a credited payment counts as paid. | `credited` on an order's payment; `status: "DONE"` with `subStatus: "COMPLETED"` and no `refund` on a transfer |
 | Unigox wallet | Your balance at Unigox, and its `0x` address. It receives every payment and owns your payment addresses. | `wallet`, `recipientAddress` |
-| Allowance | How far short a payment may be and still count as paid: 0.5 % of the amount, and never more than 1.00 USD. | `tol` in the token; `tolerance` in the examples |
-| Pay-by date | The time the payer is asked to pay by. The page shows it; a payment after it is still credited. | `x` in the token |
+| Allowance | How far short a payment may be and still count as paid: 0.5 % of the amount, and never more than 1.00 USD. | `tol` in a link's token; `tolerance` in the examples |
+| Pay-by date | The time the payer is asked to pay by. An order stops taking payments at it; a link's page only shows it. | `expiresAt` on an order; `x` in a link's token |
 | Deposit page | A page with one customer's permanent payment addresses. It has no amount due. | `p: "topup"` in the token |
 | Link check | The request the payment page makes before it shows an address: is this address still reserved for this link? | [Link check](https://developers.unigox.com/api-reference/payment-addresses#link-check) |
+
+## Orders API
+
+Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). The API reference lists them under **Crypto Processing**.
+
+| Request | What it does |
+| --- | --- |
+| `POST /api/v1/partner/crypto/orders` | Creates an order. `201` with the order, or `200` with the existing order for a repeated `reference` |
+| `GET /api/v1/partner/crypto/orders/{id}` | The order with what it received and its payments |
+| `POST /api/v1/partner/crypto/orders/{id}/close` | Closes an order that is not paid. No body |
+| `PUT /api/v1/partner/crypto/customers/{external_id}` | Creates or updates your customer under your own id |
+| `GET /api/v1/partner/crypto/customers/{external_id}` | The customer with their latest 20 orders, newest first |
+
+`{id}` is the order's `id` (`ord_…`) or its `token` (`o_…`). `{external_id}` is your own id for the customer, URL-encoded.
+
+Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The order is in `data`, so its token is `data.token`. An error is `{"status": "bad_request" or "order_failed", "code": <HTTP status>, "details": "<error code>"}`, with `field` on a `400`. A missing or unknown API key answers `401` with `{"success": false, "error": …}`.
+
+### Create an order
+
+| Field | Required | Value |
+| --- | --- | --- |
+| `reference` | Yes | Your order number, 1 to 64 characters, no line breaks. Spaces at either end are removed. |
+| `amount` | Yes | USD as a string with up to 12 digits and up to two decimals, at least `"1.00"`. A JSON number is accepted too. |
+| `merchantName` | No | The name the payer sees, up to 64 characters. Without it the payer sees your partner account's name, written as the portal writes it (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** is kept in your browser, so orders never use it: send `merchantName` with every order. |
+| `description` | No | Text about the order for the payer, up to 200 characters, no line breaks. The payment page shows at most 140. |
+| `customer` | No | `{"id": "…", "name": "…", "email": "…"}`. `id` is your own id for the customer, 1 to 64 characters; `name` is up to 120 characters; `email` up to 254 and must look like an email address. The customer is created, or their name and email updated; a field you leave out keeps its stored value. |
+| `expiresInMinutes` | No | How long the order takes payments: 5 to 10,080 minutes (7 days). Default 60. |
+| `returnUrl` | No | An `https://` page of your site, up to 2,048 characters, without a user name or password. The payment page offers it as a link back to you and never opens it by itself. |
+
+Fields the API does not know are ignored.
+
+### The order
+
+| Field | Value |
+| --- | --- |
+| `id` | `ord_` and 24 letters and digits. Keep it with your order to read the order later. |
+| `token` | `o_` and the same 24 characters. Give it to `checkout.js`. |
+| `payUrl` | The order's payment page, `https://www.unigox.com/pay/o_…`. Use it as it is. |
+| `reference`, `description`, `returnUrl` | As you sent them. `description` is `""` and `returnUrl` is `null` when you sent none. |
+| `amount`, `currency` | The amount due with two decimals, such as `"25.00"`, and `"USD"` |
+| `status` | See [Order statuses](#order-statuses) |
+| `received` | USD credited to the order so far, with two to six decimals (`"0.00"`, `"24.995"`). The sum of its `credited` payments. |
+| `createdAt`, `expiresAt` | When the order was created, and when it stops taking payments. UTC, such as `"2026-11-26T10:00:00.000000Z"`. |
+| `closedAt` | When the order ended: paid, closed, or its time ran out (then it equals `expiresAt`). `null` until then. An order whose time ran out can keep `null` for 15 minutes after `expiresAt`, and longer while a transfer to it is on its way. |
+| `addresses` | `[{"family": "evm", "address": "0x…"}, …]`: one payment address for each address type that had a free address when the order was created |
+| `customer` | `{"id", "name", "email"}`, or `null`. A name or email that was never sent is `""`. |
+| `payments` | When you read or close the order: every transfer that counts for it, oldest first (below) |
+
+Each payment:
+
+| Field | Value |
+| --- | --- |
+| `txHash` | The transaction on the network the payer sent from |
+| `chainId` | That network, a number: see [Networks and coins](#networks-and-coins) |
+| `coin` | The coin sent, such as `"USDT"`; `""` when Unigox has no symbol for it |
+| `amount` | What the transfer is worth in USD: the amount credited to your wallet, one for one. `""` when Unigox cannot read the coin's decimals; such a payment is not counted. |
+| `status` | `credited` (in your wallet, counted in `received`), `pending` (on its way), `on_hold` (stopped for a compliance review), `failed` (not credited) or `refunded` (sent back, or marked to be) |
+| `at` | When the transfer was mined on its network; before that, when Unigox first saw it |
+
+A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, or earlier when you close it or when it is paid. A transfer to the same address outside that time is not the order's: it still reaches your wallet, and it appears in the portal's **Payments** under **Needs attention**, with no order.
+
+### Order statuses
+
+| `status` | What it means | Ship? |
+| --- | --- | --- |
+| `open` | Nothing credited yet, and the order takes payments. Past `expiresAt` it stays `open` while a transfer sent in time is `pending` or `on_hold`. | No. Wait. |
+| `partly_paid` | Some money credited, short of the amount by more than the allowance. The payer can still send the rest, on any network the order offers, until the order's time runs out. | No. Wait. |
+| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. Once `paid`, the order stays `paid`. | Yes |
+| `overpaid` | More than the amount credited. The extra is in your wallet. | Yes. Settle the extra with your customer. |
+| `expired` | The time ran out before the order was paid. `received` says what came. For 15 minutes after `expiresAt` a transfer sent in that time can still make it `partly_paid`, `paid` or `overpaid`. | No. If `received` is above `"0.00"`, settle that part with your customer. |
+| `closed` | You closed the order before it was paid. `received` says what came. A transfer sent up to 15 minutes after you closed it still counts: if it brings the order to its amount, the order reads `paid`. | No, unless it turns `paid` |
+
+A `partly_paid` order whose time has run out and whose 15 minutes have passed becomes `expired`, and its addresses go to rest. An order does not hold its addresses past its time for the rest of a payment.
+
+### Customers
+
+`PUT /api/v1/partner/crypto/customers/{external_id}` takes `{"name": "…", "email": "…"}`, both optional, with the same limits as an order's `customer`. Send `{}` to create a customer with only an id. The answer (`customer_saved`) is `{"id", "name", "email", "createdAt", "updatedAt"}`. `GET` on the same path answers `customer_retrieved` with the same fields and `orders`: the customer's latest 20 orders, newest first, each without `customer` and `payments`.
+
+### Errors
+
+| HTTP | `details` | What to do |
+| --- | --- | --- |
+| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
+| 401 | none | No `X-API-Key` header, or a key Unigox does not know. The body is `{"success": false, "error": …}`. |
+| 403 | `merchant_unverified_limit` | Your business is not verified and has received 1,000 USD in total. Verify your business in the portal. Orders created before keep taking payments. |
+| 404 | `order_not_found` | You have no order with this id. |
+| 404 | `customer_not_found` | You have no customer with this id. |
+| 409 | `order_reference_conflict` | The order with this `reference` is not closed or expired and has another amount. Use a new `reference`, or close that order first. |
+| 409 | `no_free_addresses` | No address type has a free address: see [Limits](#limits). Show the payer another way to pay, and open **Crypto processing** in the portal. |
+| 409 | `merchant_wallet_missing` | The account behind this API key has no Unigox wallet to receive payments. Write to support@unigox.com. |
+| 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed. |
+| 500 | `internal_error` | Send the request again later. A repeated create with the same `reference` and `amount` never makes a second order. |
+| 503 | `merchant_limit_unavailable` | Unigox could not check how much you may still receive before verification, so no order was created. Send the request again later. |
 
 ## Networks and coins
 
@@ -1966,21 +2137,28 @@ Each word has one meaning on every page. The last column is its name in the API,
 | Solana | `1151111081099710` | USDT, USDC, USDG | 1 min |
 <!-- networks:end -->
 
-- **You receive the coin that was sent.** A USDG payment arrives in your Unigox wallet as USDG, in the same amount. Unigox does not convert it.
+- **You receive the coin that was sent.** A USDG payment arrives in your Unigox wallet as USDG, in the same amount. Unigox does not convert it. Amounts are in USD: one USDT, USDC, USDG or USDT0 counts as 1 USD.
 - **Native coins are not accepted:** ETH, TRX, TON, SOL and the like.
 - **A coin or a network the page did not offer.** Such a transfer is not credited to the payment, and Unigox does not return it automatically. The payer contacts you; you write to support@unigox.com with the network, the transaction hash, the coin, the amount and the receiving address. Recovery is not guaranteed.
-- **Minimums.** A payment link is for at least 1.00 USD. Each coin and network also has a minimum transfer, which the page shows. A transfer below it is neither credited nor returned.
-- **Count a payment only once it is credited** (`DONE` with `COMPLETED`). A transfer that the checkout shows as seen or confirming is not a payment yet.
+- **Minimums.** An order or a payment link is for at least 1.00 USD. Each coin and network also has a minimum transfer, which the page shows. A transfer below it is neither credited nor returned.
+- **Count a payment only once it is credited.** A transfer that the checkout shows as seen or confirming is not a payment yet.
 
 ## Limits
 
 | What | Limit |
 | --- | --- |
-| Received before your business is verified | 1,000 USD in total. After that you cannot create links, invoices or deposit addresses until your business is verified. Payments to existing ones still arrive. |
+| Received before your business is verified | 1,000 USD in total. After that you cannot create orders (`403 merchant_unverified_limit`), links, invoices or deposit addresses until your business is verified. Payments to the ones you already created still arrive. If Unigox cannot check the total, no order is created (`503 merchant_limit_unavailable`). |
+| Order amount | 1.00 USD to 999,999,999,999.99 USD, up to two decimals |
+| Order time | 5 to 10,080 minutes (7 days); 60 minutes when you send none |
+| Addresses an order holds | One per address type, from its creation until it ends. Each then rests 24 hours before another order can take it. |
+| Addresses kept ready for orders | The portal adds addresses while you are signed in with **Crypto processing** open: it keeps 10 free addresses of each type, up to 200 of each type in all. Addresses that have rested become free again on their own; new ones are added only while the portal is open. |
+| Orders a day | Each address serves one order, then rests 24 hours. 200 addresses of a type serve about 190 orders of 60 minutes a day, and fewer when orders take longer. Write to support@unigox.com if you need more. |
+| A late transfer | Counts for the order up to 15 minutes after the order ends |
+| Customer's orders returned with the customer | The latest 20 |
 | Payment link amount | At least 1.00 USD in the portal, up to two decimals. Use the same minimum for links from your server. |
 | Allowed shortfall | 0.5 % of the amount, never more than 1.00 USD. Invoices, and links made with `tol: "none"`, allow none. |
-| Addresses per address type | 1,000; write to support@unigox.com to raise it |
-| Reference text | 256 bytes |
+| Addresses per address type | 1,000 for orders, links and deposit pages together; the portal stops adding addresses for orders at 80 % of it. Write to support@unigox.com to raise it. |
+| Reference text of a link | 256 bytes |
 | Transfers followed per payment | 200 |
 | Signed request deadline | 10 minutes ahead at most |
 
@@ -1988,7 +2166,12 @@ Each word has one meaning on every page. The last column is its name in the API,
 
 | What you see | What to do |
 | --- | --- |
-| The payer sees "This payment link can't be used" (`TOKEN_INVALID`) | The link was edited, or its addresses are not reserved for it any more. Copy it again from **Payment links**, or build it again from your server's answers. |
+| `409 no_free_addresses` when you create an order | Every address of every type is held by an order or resting. Open **Crypto processing** in the portal, signed in, and leave it open for a few minutes: it adds addresses. Meanwhile offer the payer another way to pay. |
+| An order offers fewer networks than you expected | The order was created while some address types had no free address. Keep the portal open more often, so each type keeps free addresses. |
+| `403 merchant_unverified_limit` | Verify your business: **Verify business** in the band at the top of every **Crypto processing** page. |
+| `409 order_reference_conflict` | You sent a `reference` that an order still holds, with another amount. A changed cart needs a new `reference`, or close the old order first. |
+| The payer sees an order as closed or expired | Create a new order for the payment and open the checkout with its token. |
+| The payer sees "This payment link can't be used" (`TOKEN_INVALID`) | The link was edited, or its addresses are not reserved for it any more. Copy it again from **Payment links**, or build it again from your server's answers. For an order, check that your page passes the `token` of an order your server created. |
 | The payer sees "This payment link doesn't work" | The link was cut off. Send the whole link again. |
 | The payer sees "We couldn't check this payment link" (`CHECKOUT_UNAVAILABLE`) | Unigox did not answer, or too many checks came from the payer's network. Nothing is wrong with the link: the payer presses **Try again**. |
 | The payer sees "This payment request is closed" | The link was closed, or a newer payment uses its address. Create a new link. |
@@ -1998,21 +2181,23 @@ Each word has one meaning on every page. The last column is its name in the API,
 | `UnigoxCheckout is not defined` | `checkout.js` did not load (an ad blocker, the network, your `script-src`). Send the payer to the payment page when `window.UnigoxCheckout` is missing. |
 | A deposit is missing from the customer's page | The page lists deposits from the time the customer's first address was made, on the coins and networks it offers. The customer can find a deposit by its hash with **Deposit missing? Find it by its hash**. Otherwise look the address up in **Payments**. |
 | A deposit was credited twice in your system | Count each deposit once by its `quoteId`, in the same database transaction that adds it to the balance, never by the transaction hash alone. |
-| An API error | See the error table in the [API reference](https://developers.unigox.com/api-reference/payment-addresses#errors). |
+| An API error | Orders: [Errors](#errors). Payment addresses signed with your wallet's key: the [API reference](https://developers.unigox.com/api-reference/payment-addresses#errors). |
 
 ## Questions
 
-**Do I need a developer?** Not for payment links, invoices, deposit pages or a payment button for a link you made in the portal. You need one to create links for every order from your server, or to confirm payments on your server.
+**Do I need a developer?** Not for payment links, invoices or deposit pages made in the portal. You need one to take payments on your website (your server creates an order for each payment) and to confirm payments on your server.
 
-**Is there an API key?** No. Showing the checkout and checking a payment need nothing secret. To create links or read your payment history, your server signs its requests with your wallet's private key.
+**Is there an API key?** Yes, for orders. Your server creates and reads orders with your partner API key. Showing the checkout needs nothing secret. Deposit pages and links your server signs itself, and your payment history, use your wallet's private key instead ([Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links)).
 
-**Why does my server need the key of my whole wallet?** A payment address is reserved by the wallet that owns it. Unigox has no narrower key yet, one that could only reserve addresses or only read payments. Keep the wallet's balance low and the key in a secrets store.
+**Does my server need the key of my whole wallet?** Not for your website: orders need only your API key. Your wallet's private key is needed only to create deposit pages or links from your server, or to read your payment history. Unigox has no narrower key for those. Keep the wallet's balance low and the key in a secrets store.
 
 **Can my customer pay from an exchange?** Yes, if the exchange can withdraw the chosen coin on the chosen network. The customer covers the withdrawal fee. If the exchange takes the fee out of the amount, a shortfall within the allowance still counts as paid.
 
-**What if the customer pays too little, too much or late?** Too little shows as `underpaid`: the customer can send the rest to the same address. Too much is credited in full and shows as `overpaid`. A payment that was completed only after the pay-by date shows as `paid_late`. In each case your server decides what happens to the order.
+**What if the customer pays too little, too much or late?** On an order: too little is `partly_paid`, and the customer can send the rest before the order's time runs out; after that the order is `expired` with `received` showing what came. Too much is `overpaid`. A transfer sent more than 15 minutes after the order ended is not the order's: find it in **Payments** under **Needs attention**. On a payment link: too little shows as `underpaid`, too much as `overpaid`, and a payment completed after the pay-by date as `paid_late`. In each case your server decides what happens to the order.
 
-**Can I refund a payment?** Yes. Agree an address and a network with the payer, then send the money from your Unigox wallet. Unigox does not do this for you. It is a different thing from Unigox sending back a transfer it could not credit.
+**Can I refund a payment?** Agree an address and a network with the payer, then send the money from your Unigox wallet. Unigox has no refund request in the API and does not do this for you. It is a different thing from Unigox sending back a transfer it could not credit.
+
+**Can an order be in another currency?** No. Orders are in USD.
 
 **Which languages does the checkout have?** English, Spanish, French and Portuguese. It follows the payer's browser, or the `locale` you pass.
 
@@ -2032,7 +2217,8 @@ The API address and the link check address can change: keep both in your configu
 
 ## Changes
 
-- **2026-11-26:** the guide is rewritten in plainer words, with [Words this guide uses](#words-this-guide-uses). The sample server of [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links#the-whole-flow-in-one-server) serves its own page. The onboarding no longer asks whether you can link payments to customers. The limit before verification shows on every page. Money: no change.
+- **2026-11-26, orders:** every payment on your website is a new order that your server creates with your API key (`POST /api/v1/partner/crypto/orders`) and reads to confirm. The checkout is no longer tied to one payment link, and the website no longer needs your wallet's key. Payment links, invoices and deposit pages stay as they were. Money: an order is paid by the same rule as a link, short by at most 0.5 % and never more than 1.00 USD.
+- **2026-11-26:** the guide is rewritten in plainer words, with [Words this guide uses](#words-this-guide-uses). The onboarding no longer asks whether you can link payments to customers. The limit before verification shows on every page. Money: no change.
 - **2026-11-25:** the guide is rewritten around tasks. Crypto processing opens before verification, up to 1,000 USD received. Money: no change to how payments are credited.
 - **2026-11-15:** portal setup starts in **Checkout**; invoice links keep their document in the checkout; several transfers in one Solana transaction can be listed. Money: listing a transfer never counts it as a credit.
 - **2026-11-02:** `checkout.d.ts` lists the `onClose` reason `return`. Money: no change.
@@ -2044,4 +2230,4 @@ None of these is in production yet: the first public release is early access.
 
 ## Payment notifications
 
-Unigox does not send payment notifications (webhooks) to your server yet, so there is nothing to build for them. Your server asks for each payment's status itself, as [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) shows. When Unigox turns notifications on, this page will describe them. Links made in the portal will not send them even then.
+Unigox does not send payment notifications (webhooks) to your server yet, for orders or for links, so there is nothing to build for them. Your server reads each order itself ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)): when the payer returns to your site, and from a job that reads your open orders every few minutes. When Unigox turns notifications on, this page will describe them.

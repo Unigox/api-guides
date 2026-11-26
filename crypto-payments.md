@@ -12,11 +12,11 @@ Your own page then has to do everything the checkout does:
 - handle payments that are short, late or too large;
 - confirm the payment on your server.
 
-You need your wallet's private key ([Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links#before-you-start)). The guide's terms are in [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
+You need your wallet's private key ([Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links#before-you-start)). The guide's terms are in [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
 
 ## How it works
 
-1. **Reserve an address for the order** with its reference (`POST /memo-locks/allocate`, as in [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links#1-reserve-an-address-for-the-order)). The customer sends an ordinary transfer to that address and adds no memo or tag.
+1. **Reserve an address for the order** with its reference (`POST /memo-locks/allocate`, as in [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links#1-reserve-an-address-for-the-order)). The customer sends an ordinary transfer to that address and adds no memo or tag.
 2. **Wait until the network is ready** (`monitoring.chains[].confirmed`, or `watched` on TON and Solana).
 3. **Offer only coins and networks that can pay** (below).
 4. **Check the address before you show it**, with the [link check](https://developers.unigox.com/api-reference/payment-addresses#link-check). Show the address only when the reservation is `ACTIVE` and its wallet, address and fingerprint match your own order record.
