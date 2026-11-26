@@ -110,7 +110,7 @@ app.listen(3000);
 4. Under **3. Create the order on your server**, choose **cURL** or **Node.js** and add the request to your server. **Get your API key** leads to your key.
 5. Read **4. Check the payment**: ship once your server reads the order as `paid` ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
-<figure><img src="assets/crypto-processing/website-checkout.gif" alt="Website checkout setup in the portal: choose the way, choose an order, copy the code"><figcaption><p>Setting up the payment button in the portal (sample data).</p></figcaption></figure>
+<figure><img src="assets/crypto-processing/website-checkout.gif" alt="Website checkout setup in the portal: choose the way, copy the code for your site, the request for your server, how to check the payment"><figcaption><p>Setting up the payment button in the portal (sample data).</p></figcaption></figure>
 
 The code you copy calls `/your-server/crypto-order` on your site: the route of step 1. Under the steps, **Add to your Content-Security-Policy** gives the one line a strict policy needs, and **Callbacks** and **Error codes** list what your page can react to.
 
