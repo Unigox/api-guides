@@ -50,15 +50,16 @@ Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The o
 
 | Field | Required | Value |
 | --- | --- | --- |
-| `reference` | Yes | Your order number, 1 to 64 characters, no line breaks. Spaces at either end are removed. |
+| `reference` | Yes | Your order number, 1 to 64 characters. The payer sees it. |
 | `amount` | Yes | USD as a string with up to 12 digits and up to two decimals, at least `"1.00"`. A JSON number is accepted too. |
 | `merchantName` | No | The name the payer sees, up to 64 characters. Without it the payer sees your partner account's name, written as the portal writes it (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** is kept in your browser, so orders never use it: send `merchantName` with every order. |
-| `description` | No | Text about the order for the payer, up to 200 characters, no line breaks. The payment page shows at most 140. |
+| `currency` | No | `"USD"`. Orders are in USD; any other value answers `400` with `field` `currency`. |
+| `description` | No | Text about the order for the payer, up to 140 characters. |
 | `customer` | No | `{"id": "…", "name": "…", "email": "…"}`. `id` is your own id for the customer, 1 to 64 characters; `name` is up to 120 characters; `email` up to 254 and must look like an email address. The customer is created, or their name and email updated; a field you leave out keeps its stored value. |
 | `expiresInMinutes` | No | How long the order takes payments: 5 to 10,080 minutes (7 days). Default 60. |
 | `returnUrl` | No | An `https://` page of your site, up to 2,048 characters, without a user name or password. The payment page offers it as a link back to you and never opens it by itself. |
 
-Fields the API does not know are ignored.
+Texts the payer reads (`merchantName`, `reference`, `description` and the customer's fields) refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069). Spaces at either end are removed. Fields the API does not know are ignored.
 
 ### The order
 
@@ -67,12 +68,13 @@ Fields the API does not know are ignored.
 | `id` | `ord_` and 24 letters and digits. Keep it with your order to read the order later. |
 | `token` | `o_` and the same 24 characters. Give it to `checkout.js`. |
 | `payUrl` | The order's payment page, `https://www.unigox.com/pay/o_…`. Use it as it is. |
+| `merchantName` | The name the payer sees: the one you sent, or your partner account's name |
 | `reference`, `description`, `returnUrl` | As you sent them. `description` is `""` and `returnUrl` is `null` when you sent none. |
 | `amount`, `currency` | The amount due with two decimals, such as `"25.00"`, and `"USD"` |
 | `status` | See [Order statuses](#order-statuses) |
 | `received` | USD credited to the order so far, with two to six decimals (`"0.00"`, `"24.995"`). The sum of its `credited` payments. |
 | `createdAt`, `expiresAt` | When the order was created, and when it stops taking payments. UTC, such as `"2026-11-26T10:00:00.000000Z"`. |
-| `closedAt` | When the order ended: paid, closed, or its time ran out (then it equals `expiresAt`). `null` until then. An order whose time ran out can keep `null` for 15 minutes after `expiresAt`, and longer while a transfer to it is on its way. |
+| `closedAt` | When the order ended: paid, closed, or its time ran out (then it equals `expiresAt`). `null` until then. An order whose time ran out can keep `null` until 15 minutes after `expiresAt`. |
 | `addresses` | `[{"family": "evm", "address": "0x…"}, …]`: one payment address for each address type that had a free address when the order was created |
 | `customer` | `{"id", "name", "email"}`, or `null`. A name or email that was never sent is `""`. |
 | `payments` | When you read or close the order: every transfer that counts for it, oldest first (below) |
@@ -85,7 +87,7 @@ Each payment:
 | `chainId` | That network, a number: see [Networks and coins](#networks-and-coins) |
 | `coin` | The coin sent, such as `"USDT"`; `""` when Unigox has no symbol for it |
 | `amount` | What the transfer is worth in USD: the amount credited to your wallet, one for one. `""` when Unigox cannot read the coin's decimals; such a payment is not counted. |
-| `status` | `credited` (in your wallet, counted in `received`), `pending` (on its way), `on_hold` (stopped for a compliance review), `failed` (not credited) or `refunded` (sent back, or marked to be) |
+| `status` | `credited` (in your wallet, counted in `received`), `pending` (on its way; it counts once credited, also after the order ended), `on_hold` (stopped for a compliance review; it counts if credited), `failed` (not credited) or `refunded` (sent back, or marked to be) |
 | `at` | When the transfer was mined on its network; before that, when Unigox first saw it |
 
 A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, or earlier when you close it or when it is paid. A transfer to the same address outside that time is not the order's: it still reaches your wallet, and it appears in the portal's **Payments** under **Needs attention**, with no order.
@@ -94,14 +96,16 @@ A transfer counts for the order when it was sent between one minute before the o
 
 | `status` | What it means | Ship? |
 | --- | --- | --- |
-| `open` | Nothing credited yet, and the order takes payments. Past `expiresAt` it stays `open` while a transfer sent in time is `pending` or `on_hold`. | No. Wait. |
-| `partly_paid` | Some money credited, short of the amount by more than the allowance. The payer can still send the rest, on any network the order offers, until the order's time runs out. | No. Wait. |
-| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. Once `paid`, the order stays `paid`. | Yes |
+| `open` | Nothing credited yet. Before `expiresAt` the order takes payments. In the 15 minutes after `expiresAt`, `open` means a transfer sent in time is still on its way. | No. Wait. |
+| `partly_paid` | Some money credited, short of the amount by more than the allowance. Before `expiresAt` the payer can send the rest, on any network the order offers. | No. Wait. |
+| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It never goes back to another status; a later credit inside the window can make it `overpaid`. | Yes |
 | `overpaid` | More than the amount credited. The extra is in your wallet. | Yes. Settle the extra with your customer. |
-| `expired` | The time ran out before the order was paid. `received` says what came. For 15 minutes after `expiresAt` a transfer sent in that time can still make it `partly_paid`, `paid` or `overpaid`. | No. If `received` is above `"0.00"`, settle that part with your customer. |
-| `closed` | You closed the order before it was paid. `received` says what came. A transfer sent up to 15 minutes after you closed it still counts: if it brings the order to its amount, the order reads `paid`. | No, unless it turns `paid` |
+| `expired` | The time ran out before the order was paid; `received` says what came. In the 15 minutes after `expiresAt`, an order with nothing credited and nothing on its way already reads `expired`. 15 minutes after `expiresAt`, every order that is not paid ends as `expired`, whatever came and whatever is still on its way. | No. If `received` is above `"0.00"`, settle that part with your customer. |
+| `closed` | You closed the order before it was paid. `received` says what came. | No |
 
-A `partly_paid` order whose time has run out and whose 15 minutes have passed becomes `expired`, and its addresses go to rest. An order does not hold its addresses past its time for the rest of a payment.
+**When a status is final.** A transfer counts for an order when it was sent inside the order's window: from one minute before the order was created until 15 minutes after it ended. A transfer sent inside the window that is credited later still counts, also after the order has ended. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`. A status is final once the window has passed and none of the order's `payments` is `pending` or `on_hold`.
+
+An order that is not paid gives up its addresses 15 minutes after `expiresAt` at the latest; they then rest 24 hours.
 
 ### Customers
 
@@ -111,15 +115,15 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 | HTTP | `details` | What to do |
 | --- | --- | --- |
-| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
+| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
 | 401 | none | No `X-API-Key` header, or a key Unigox does not know. The body is `{"success": false, "error": …}`. |
 | 403 | `merchant_unverified_limit` | Your business is not verified and has received 1,000 USD in total. Verify your business in the portal. Orders created before keep taking payments. |
 | 404 | `order_not_found` | You have no order with this id. |
 | 404 | `customer_not_found` | You have no customer with this id. |
-| 409 | `order_reference_conflict` | The order with this `reference` is not closed or expired and has another amount. Use a new `reference`, or close that order first. |
+| 409 | `order_reference_conflict` | The order with this `reference` reads `open`, `partly_paid`, `paid` or `overpaid` and has another amount. Use a new `reference`, or close that order first. |
 | 409 | `no_free_addresses` | No address type has a free address: see [Limits](#limits). Show the payer another way to pay, and open **Crypto processing** in the portal. |
 | 409 | `merchant_wallet_missing` | The account behind this API key has no Unigox wallet to receive payments. Write to support@unigox.com. |
-| 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed. |
+| 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it. Ship it. |
 | 500 | `internal_error` | Send the request again later. A repeated create with the same `reference` and `amount` never makes a second order. |
 | 503 | `merchant_limit_unavailable` | Unigox could not check how much you may still receive before verification, so no order was created. Send the request again later. |
 
@@ -155,11 +159,11 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 | What | Limit |
 | --- | --- |
-| Received before your business is verified | 1,000 USD in total. After that you cannot create orders (`403 merchant_unverified_limit`), links, invoices or deposit addresses until your business is verified. Payments to the ones you already created still arrive. If Unigox cannot check the total, no order is created (`503 merchant_limit_unavailable`). |
+| Received before your business is verified | 1,000 USD in total. Once you reach it, new orders are refused (`403 merchant_unverified_limit`), and you cannot create links, invoices or deposit addresses, until your business is verified. Payments to the ones you already created still arrive. If Unigox cannot check the total, no order is created (`503 merchant_limit_unavailable`). |
 | Order amount | 1.00 USD to 999,999,999,999.99 USD, up to two decimals |
 | Order time | 5 to 10,080 minutes (7 days); 60 minutes when you send none |
 | Addresses an order holds | One per address type, from its creation until it ends. Each then rests 24 hours before another order can take it. |
-| Addresses kept ready for orders | The portal adds addresses while you are signed in with **Crypto processing** open: it keeps 10 free addresses of each type, up to 200 of each type in all. Addresses that have rested become free again on their own; new ones are added only while the portal is open. |
+| Addresses kept ready for orders | The portal adds addresses while you are signed in with **Crypto processing** open, as the account whose wallet receives your orders' payments; a team member signed in with another account adds none. It keeps 10 free addresses of each type, up to 200 of each type in all. Addresses that have rested become free again on their own; new ones are added only while the portal is open. |
 | Orders a day | Each address serves one order, then rests 24 hours. 200 addresses of a type serve about 190 orders of 60 minutes a day, and fewer when orders take longer. Write to support@unigox.com if you need more. |
 | A late transfer | Counts for the order up to 15 minutes after the order ends |
 | Customer's orders returned with the customer | The latest 20 |
@@ -174,7 +178,7 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 | What you see | What to do |
 | --- | --- |
-| `409 no_free_addresses` when you create an order | Every address of every type is held by an order or resting. Open **Crypto processing** in the portal, signed in, and leave it open for a few minutes: it adds addresses. Meanwhile offer the payer another way to pay. |
+| `409 no_free_addresses` when you create an order | Every address of every type is held by an order or resting. Open **Crypto processing** in the portal, signed in as the account whose wallet receives the payments, and leave it open for a few minutes: it adds addresses. Meanwhile offer the payer another way to pay. |
 | An order offers fewer networks than you expected | The order was created while some address types had no free address. Keep the portal open more often, so each type keeps free addresses. |
 | `403 merchant_unverified_limit` | Verify your business: **Verify business** in the band at the top of every **Crypto processing** page. |
 | `409 order_reference_conflict` | You sent a `reference` that an order still holds, with another amount. A changed cart needs a new `reference`, or close the old order first. |
@@ -201,7 +205,7 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 **Can my customer pay from an exchange?** Yes, if the exchange can withdraw the chosen coin on the chosen network. The customer covers the withdrawal fee. If the exchange takes the fee out of the amount, a shortfall within the allowance still counts as paid.
 
-**What if the customer pays too little, too much or late?** On an order: too little is `partly_paid`, and the customer can send the rest before the order's time runs out; after that the order is `expired` with `received` showing what came. Too much is `overpaid`. A transfer sent more than 15 minutes after the order ended is not the order's: find it in **Payments** under **Needs attention**. On a payment link: too little shows as `underpaid`, too much as `overpaid`, and a payment completed after the pay-by date as `paid_late`. In each case your server decides what happens to the order.
+**What if the customer pays too little, too much or late?** On an order: too little is `partly_paid`, and the customer can send the rest before `expiresAt`; 15 minutes after it the order ends as `expired`, with `received` showing what came. Too much is `overpaid`. A transfer sent more than 15 minutes after the order ended is not the order's: find it in **Payments** under **Needs attention**. On a payment link: too little shows as `underpaid`, too much as `overpaid`, and a payment completed after the pay-by date as `paid_late`. In each case your server decides what happens to the order.
 
 **Can I refund a payment?** Agree an address and a network with the payer, then send the money from your Unigox wallet. Unigox has no refund request in the API and does not do this for you. It is a different thing from Unigox sending back a transfer it could not credit.
 

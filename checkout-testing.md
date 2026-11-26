@@ -71,27 +71,28 @@ First check your server's requests, which move no money:
 2. **Another amount:** the same `reference` with another `amount` answers `409 order_reference_conflict`.
 3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`; the same `reference` then creates a new order with a new `id`.
 4. **Close an order:** it reads `closed`, and its payment page no longer shows an address.
+5. **A currency other than USD:** `"currency": "EUR"` answers `400` with `field` `currency`.
 
 Then make small payments and check each result in three places: on the checkout page, in **Payments** and in your own order records:
 
-5. **Exactly the amount:** the page shows **Payment completed**; the order reads `paid`, and your job marks your order paid once.
-6. **Less, then the rest from another network:** the order reads `partly_paid`, then `paid`.
-7. **More than the amount:** the order reads `overpaid`.
-8. **Two transfers** that together make the amount.
-9. **After the order's time:** a transfer sent more than 15 minutes after the order ended does not change the order, and **Payments** shows it under **Needs attention**.
-10. **Close the window mid-payment**, pay, open it again: the same state.
-11. **Close your page before the payment is credited**: your periodic job still finds the payment.
-12. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
-13. **Unigox unreachable** (point your server's Unigox address at one that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
-14. **The same order checked twice at once:** it is marked paid and shipped once.
+6. **Exactly the amount:** the page shows **Payment completed**; the order reads `paid`, and your job marks your order paid once.
+7. **Less, then the rest from another network:** the order reads `partly_paid`, then `paid`.
+8. **More than the amount:** the order reads `overpaid`.
+9. **Two transfers** that together make the amount.
+10. **After the order's time:** a transfer sent more than 15 minutes after the order ended does not change the order, and **Payments** shows it under **Needs attention**.
+11. **Close the window mid-payment**, pay, open it again: the same state.
+12. **Close your page before the payment is credited**: your periodic job still finds the payment.
+13. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
+14. **Unigox unreachable** (point your server's Unigox address at one that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
+15. **The same order checked twice at once:** it is marked paid and shipped once.
 
 With payment links, also pay one after its pay-by date: the page shows **Payment arrived after the deadline**.
 
 With deposit pages:
 
-15. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
-16. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
-17. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
+16. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
+17. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
+18. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
 
 ## Go live
 
@@ -101,10 +102,10 @@ With deposit pages:
 - If your server signs requests with your wallet's key: **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
 - Your business is verified, or you know how much is left of the 1,000 USD you can receive before verification (the band at the top of every **Crypto processing** page).
 - Every network you offer is ready for your addresses.
-- Your job reads every order until 15 minutes after its `closedAt`, so a payment that arrives after the order is paid or closed is still recorded. It passed tests 13 and 14.
+- Your job reads every order until it is final (15 minutes after its `closedAt`, and none of its payments `pending` or `on_hold`), so a payment that is credited after the order ended is still recorded. It passed tests 14 and 15.
 - With deposit pages: your deposit job, or the person who credits deposits from **Payments**, runs as often as customers expect.
 - If you hold your wallet's key, it is only in your secrets store.
 - Your page ignores events whose `livemode` is not `true`.
 - Your payment links carry your support email (**Settings → Support email for payers**, or `e` in a token your server makes).
 - A production order's `payUrl` opens on `https://www.unigox.com/pay/…` and shows its addresses, and your `checkout.js` and Content-Security-Policy name `https://www.unigox.com`.
-- One small real payment passed tests 5 and 11.
+- One small real payment passed tests 6 and 12.

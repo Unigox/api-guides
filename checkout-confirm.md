@@ -74,7 +74,7 @@ export async function readOrder(unigoxOrderId) {
 // order: your own record, with the Unigox order id your server saved when it created the order.
 export async function confirmOrder(order) {
   const unigox = await readOrder(order.unigoxOrderId); // throws when Unigox cannot be read: the next pass retries
-  await db.saveReceived(order.id, unigox.status, unigox.received, unigox.closedAt); // for your records and the job
+  await db.saveReceived(order.id, unigox.status, unigox.received, unigox.closedAt, unigox.payments); // for your records and the job
   if (unigox.status !== "paid" && unigox.status !== "overpaid") return unigox.status;
   // One conditional update, UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'open', that returns whether
   // it changed the row: of two passes at the same moment, only one queues the shipment.
@@ -82,8 +82,8 @@ export async function confirmOrder(order) {
   return unigox.status;
 }
 
-// The job, every few minutes. db.ordersToCheck() returns your orders whose Unigox order has not ended (no closedAt),
-// or ended less than 15 minutes ago: until then a transfer can still count for it.
+// The job, every few minutes. db.ordersToCheck() returns your orders whose Unigox order is not final: it has not
+// ended (no closedAt), or ended less than 15 minutes ago, or has a payment that is still pending or on_hold.
 setInterval(async () => {
   for (const order of await db.ordersToCheck()) {
     try { await confirmOrder(order); } catch (error) { console.error(error.message); }
@@ -97,11 +97,11 @@ setInterval(async () => {
 
 | `status` | What happened | What your server does |
 | --- | --- | --- |
-| `open` | Nothing credited yet. Past `expiresAt` the order stays `open` while a transfer sent in time is still on its way (`pending`) or under review (`on_hold`). | Wait |
-| `partly_paid` | Part of the amount credited. The payer can send the rest, on any network the order offers, until the order's time runs out. | Wait |
-| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It stays `paid`. | Ship, once |
+| `open` | Nothing credited yet. In the 15 minutes after `expiresAt`, `open` means a transfer sent in time is still on its way. | Wait |
+| `partly_paid` | Part of the amount credited. Before `expiresAt` the payer can send the rest, on any network the order offers. | Wait |
+| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It never goes back; it can still become `overpaid`. | Ship, once |
 | `overpaid` | More than the amount credited | Ship, once. The extra is in your wallet: settle it with your customer. |
-| `expired` | The time ran out before the order was paid | Do not ship. If `received` is above `"0.00"`, that part is in your wallet: settle it with your customer. |
+| `expired` | The time ran out before the order was paid. 15 minutes after `expiresAt`, every order that is not paid ends as `expired`, whatever came. | Do not ship, unless it turns `paid` (below). If `received` is above `"0.00"`, that part is in your wallet: settle it with your customer. |
 | `closed` | You closed the order before it was paid | Do not ship, unless it turns `paid` (below). Settle any `received` with your customer. |
 
 ### What counts for an order
@@ -109,13 +109,14 @@ setInterval(async () => {
 - **`received`** is the USD credited to the order: the sum of its payments with status `credited`. One USDT, USDC, USDG or USDT0 counts as 1 USD. A payment that is `pending`, `on_hold`, `failed` or `refunded` is not in it.
 - **`payments`** lists every transfer to the order's addresses that counts for the order, oldest first, with its network (`chainId`), coin, USD `amount`, `status` and time (`at`). A payment whose `amount` is `""` is one Unigox cannot value; it is not counted.
 - **The allowance.** An order is `paid` when it is short by at most 0.5 % of the amount and by no more than 1.00 USD. This covers an exchange that takes its withdrawal fee out of the amount it sends.
-- **The time.** A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, when you close it, or when it is paid, whichever comes first. So an order read as `expired` or `closed` can still turn `partly_paid`, `paid` or `overpaid` within those 15 minutes, and a `paid` order can turn `overpaid`. Keep reading an order until 15 minutes after its `closedAt`.
+- **The window.** A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, when you close it, or when it is paid, whichever comes first. A transfer sent inside the window counts when it is credited, also if that is later. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`.
+- **When a status is final.** Once the window has passed and none of the order's `payments` is `pending` or `on_hold`, nothing changes the order any more. Keep reading an order until then.
 - **A transfer after that time** is not the order's. It still reaches your Unigox wallet, and it appears in the portal's **Payments** under **Needs attention**, with no order. Reading the order does not show it. Match it to your customer by hand.
 
 ### Repeated requests and closing
 
-- **One order per `reference`.** While an order is `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order, so retries never make a second one. Another amount answers `409 order_reference_conflict`. Once the order is `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`.
-- **Close an order** that will not be paid, for example when the customer empties the cart: `POST /api/v1/partner/crypto/orders/{id}/close`, with no body. The payment page stops showing its addresses. A transfer sent up to 15 minutes after the close still counts, and if it brings the order to its amount, the order reads `paid`. A `paid` or `overpaid` order cannot be closed (`409 order_already_paid`); a `closed` or `expired` one comes back as it is.
+- **One order per `reference`.** While an order reads `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order, so retries never make a second one. Another amount answers `409 order_reference_conflict`. Once the order reads `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`, and keep reading the old one until it is final. If the old order turns `paid` after all, it holds the `reference` again, unless the new order has taken it; ship once, for whichever order is paid.
+- **Close an order** that will not be paid, for example when the customer empties the cart: `POST /api/v1/partner/crypto/orders/{id}/close`, with no body. The payment page stops showing its addresses. A transfer sent up to 15 minutes after the close still counts, and if it brings the order to its amount, the order reads `paid`. A `paid` or `overpaid` order cannot be closed (`409 order_already_paid`), also when the payment is credited at the moment you close it: read the order and ship. A `closed` or `expired` one comes back as it is.
 
 There is no refund request in the API. To return money, agree an address and a network with your customer and send it from your Unigox wallet.
 

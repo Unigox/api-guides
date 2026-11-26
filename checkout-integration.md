@@ -51,7 +51,7 @@ Until your business is verified, you can receive up to 1,000 USD in total. A ban
 To take payments from the portal you need only **Crypto processing in your business portal** ([Open crypto processing](#open-crypto-processing)). A developer who connects your website also needs:
 
 - **Your partner API key.** Your server sends it in the `X-API-Key` header to create and read orders, at `https://api.unigox.com`. Step 1 of [Your website in four steps](#your-website-in-four-steps) shows where to get it. Keep it on your server, never in a web page or a repository.
-- **The portal open now and then.** Each order takes payment addresses that the portal reserves while you are signed in with **Crypto processing** open ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
+- **The portal open now and then.** Each order takes payment addresses that the portal reserves while you are signed in with **Crypto processing** open, as the account whose wallet receives the payments ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
 
 Deposit pages, links your server signs and your payment history need two more things:
 
@@ -87,7 +87,7 @@ These settings are stored in your browser, not in your account. They go into eve
 
 You add this once. Every payment is then a new order that your server creates.
 
-**1. Get your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Get your API key**. On the page that opens, press **Generate** next to **API key** and copy the key: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Leave **Crypto processing** open for a few minutes the first time: the portal reserves the addresses your orders will take.
+**1. Get your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Get your API key**. On the page that opens, press **Generate** next to **API key** and copy the key: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take.
 
 **2. Put the checkout on your page.** The button asks your server for an order on its first press and opens the checkout over your page:
 
@@ -233,7 +233,7 @@ When the payer chooses to pay with crypto, your page asks your own server for an
 **Before you start:**
 
 - **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Get your API key**. It opens your partner page, where **Generate** creates the key under **API key** and shows it once; **Reissue** replaces it and stops the old one. Keep the key on your server, never in a web page or a repository.
-- **Addresses for your orders.** Each order takes one payment address of each address type from the addresses the portal keeps ready for orders. The portal adds them while you are signed in with **Crypto processing** open. Open it once before your first order, and open it again regularly: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
+- **Addresses for your orders.** Each order takes one payment address of each address type from the addresses the portal keeps ready for orders. The portal adds them while you are signed in with **Crypto processing** open, as the account whose wallet receives the payments. Open it once before your first order, and open it again regularly: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
 
 The request, with your order number and total:
 
@@ -303,7 +303,7 @@ app.listen(3000);
 - **Create the order when the payer chooses to pay, not when the page loads.** An order holds one address of each type until it ends, and each address then rests 24 hours before another order can take it. Orders that nobody pays use up addresses.
 - **Send the same `reference` for the same cart.** While that order is open or paid, a request with the same `reference` and `amount` returns the same order (`200`), so a double click or a retry never makes a second order. If the cart's total changed, use a new `reference`, or close the old order first: the same `reference` with another amount answers `409 order_reference_conflict`.
 - **Keep `data.id` with your order.** Your server reads the order with it to know when it is paid ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)). Never read an order by an id that the browser sends you.
-- **Send `merchantName`.** It is the name the payer sees. Without it the payer sees your partner account's name. The name under **Settings → Shown to the payer as** is kept in your browser and does not reach orders.
+- **Send `merchantName`.** It is the name the payer sees, and every answer about the order returns it. Without it the payer sees your partner account's name. The name under **Settings → Shown to the payer as** is kept in your browser and does not reach orders.
 - **The order takes payments for 60 minutes.** Send `expiresInMinutes` for another time, from 5 to 10,080 (7 days).
 - **When Unigox refuses the order**, show the payer another way to pay. `409 no_free_addresses`: no address is free; open **Crypto processing** in the portal. `403 merchant_unverified_limit`: your business is not verified and has received 1,000 USD. Every field and error is in the [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference#orders-api).
 
@@ -884,7 +884,7 @@ export async function readOrder(unigoxOrderId) {
 // order: your own record, with the Unigox order id your server saved when it created the order.
 export async function confirmOrder(order) {
   const unigox = await readOrder(order.unigoxOrderId); // throws when Unigox cannot be read: the next pass retries
-  await db.saveReceived(order.id, unigox.status, unigox.received, unigox.closedAt); // for your records and the job
+  await db.saveReceived(order.id, unigox.status, unigox.received, unigox.closedAt, unigox.payments); // for your records and the job
   if (unigox.status !== "paid" && unigox.status !== "overpaid") return unigox.status;
   // One conditional update, UPDATE orders SET status = 'paid' WHERE id = $1 AND status = 'open', that returns whether
   // it changed the row: of two passes at the same moment, only one queues the shipment.
@@ -892,8 +892,8 @@ export async function confirmOrder(order) {
   return unigox.status;
 }
 
-// The job, every few minutes. db.ordersToCheck() returns your orders whose Unigox order has not ended (no closedAt),
-// or ended less than 15 minutes ago: until then a transfer can still count for it.
+// The job, every few minutes. db.ordersToCheck() returns your orders whose Unigox order is not final: it has not
+// ended (no closedAt), or ended less than 15 minutes ago, or has a payment that is still pending or on_hold.
 setInterval(async () => {
   for (const order of await db.ordersToCheck()) {
     try { await confirmOrder(order); } catch (error) { console.error(error.message); }
@@ -907,11 +907,11 @@ setInterval(async () => {
 
 | `status` | What happened | What your server does |
 | --- | --- | --- |
-| `open` | Nothing credited yet. Past `expiresAt` the order stays `open` while a transfer sent in time is still on its way (`pending`) or under review (`on_hold`). | Wait |
-| `partly_paid` | Part of the amount credited. The payer can send the rest, on any network the order offers, until the order's time runs out. | Wait |
-| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It stays `paid`. | Ship, once |
+| `open` | Nothing credited yet. In the 15 minutes after `expiresAt`, `open` means a transfer sent in time is still on its way. | Wait |
+| `partly_paid` | Part of the amount credited. Before `expiresAt` the payer can send the rest, on any network the order offers. | Wait |
+| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It never goes back; it can still become `overpaid`. | Ship, once |
 | `overpaid` | More than the amount credited | Ship, once. The extra is in your wallet: settle it with your customer. |
-| `expired` | The time ran out before the order was paid | Do not ship. If `received` is above `"0.00"`, that part is in your wallet: settle it with your customer. |
+| `expired` | The time ran out before the order was paid. 15 minutes after `expiresAt`, every order that is not paid ends as `expired`, whatever came. | Do not ship, unless it turns `paid` (below). If `received` is above `"0.00"`, that part is in your wallet: settle it with your customer. |
 | `closed` | You closed the order before it was paid | Do not ship, unless it turns `paid` (below). Settle any `received` with your customer. |
 
 ### What counts for an order
@@ -919,13 +919,14 @@ setInterval(async () => {
 - **`received`** is the USD credited to the order: the sum of its payments with status `credited`. One USDT, USDC, USDG or USDT0 counts as 1 USD. A payment that is `pending`, `on_hold`, `failed` or `refunded` is not in it.
 - **`payments`** lists every transfer to the order's addresses that counts for the order, oldest first, with its network (`chainId`), coin, USD `amount`, `status` and time (`at`). A payment whose `amount` is `""` is one Unigox cannot value; it is not counted.
 - **The allowance.** An order is `paid` when it is short by at most 0.5 % of the amount and by no more than 1.00 USD. This covers an exchange that takes its withdrawal fee out of the amount it sends.
-- **The time.** A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, when you close it, or when it is paid, whichever comes first. So an order read as `expired` or `closed` can still turn `partly_paid`, `paid` or `overpaid` within those 15 minutes, and a `paid` order can turn `overpaid`. Keep reading an order until 15 minutes after its `closedAt`.
+- **The window.** A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, when you close it, or when it is paid, whichever comes first. A transfer sent inside the window counts when it is credited, also if that is later. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`.
+- **When a status is final.** Once the window has passed and none of the order's `payments` is `pending` or `on_hold`, nothing changes the order any more. Keep reading an order until then.
 - **A transfer after that time** is not the order's. It still reaches your Unigox wallet, and it appears in the portal's **Payments** under **Needs attention**, with no order. Reading the order does not show it. Match it to your customer by hand.
 
 ### Repeated requests and closing
 
-- **One order per `reference`.** While an order is `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order, so retries never make a second one. Another amount answers `409 order_reference_conflict`. Once the order is `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`.
-- **Close an order** that will not be paid, for example when the customer empties the cart: `POST /api/v1/partner/crypto/orders/{id}/close`, with no body. The payment page stops showing its addresses. A transfer sent up to 15 minutes after the close still counts, and if it brings the order to its amount, the order reads `paid`. A `paid` or `overpaid` order cannot be closed (`409 order_already_paid`); a `closed` or `expired` one comes back as it is.
+- **One order per `reference`.** While an order reads `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order, so retries never make a second one. Another amount answers `409 order_reference_conflict`. Once the order reads `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`, and keep reading the old one until it is final. If the old order turns `paid` after all, it holds the `reference` again, unless the new order has taken it; ship once, for whichever order is paid.
+- **Close an order** that will not be paid, for example when the customer empties the cart: `POST /api/v1/partner/crypto/orders/{id}/close`, with no body. The payment page stops showing its addresses. A transfer sent up to 15 minutes after the close still counts, and if it brings the order to its amount, the order reads `paid`. A `paid` or `overpaid` order cannot be closed (`409 order_already_paid`), also when the payment is credited at the moment you close it: read the order and ship. A `closed` or `expired` one comes back as it is.
 
 There is no refund request in the API. To return money, agree an address and a network with your customer and send it from your Unigox wallet.
 
@@ -1954,27 +1955,28 @@ First check your server's requests, which move no money:
 2. **Another amount:** the same `reference` with another `amount` answers `409 order_reference_conflict`.
 3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`; the same `reference` then creates a new order with a new `id`.
 4. **Close an order:** it reads `closed`, and its payment page no longer shows an address.
+5. **A currency other than USD:** `"currency": "EUR"` answers `400` with `field` `currency`.
 
 Then make small payments and check each result in three places: on the checkout page, in **Payments** and in your own order records:
 
-5. **Exactly the amount:** the page shows **Payment completed**; the order reads `paid`, and your job marks your order paid once.
-6. **Less, then the rest from another network:** the order reads `partly_paid`, then `paid`.
-7. **More than the amount:** the order reads `overpaid`.
-8. **Two transfers** that together make the amount.
-9. **After the order's time:** a transfer sent more than 15 minutes after the order ended does not change the order, and **Payments** shows it under **Needs attention**.
-10. **Close the window mid-payment**, pay, open it again: the same state.
-11. **Close your page before the payment is credited**: your periodic job still finds the payment.
-12. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
-13. **Unigox unreachable** (point your server's Unigox address at one that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
-14. **The same order checked twice at once:** it is marked paid and shipped once.
+6. **Exactly the amount:** the page shows **Payment completed**; the order reads `paid`, and your job marks your order paid once.
+7. **Less, then the rest from another network:** the order reads `partly_paid`, then `paid`.
+8. **More than the amount:** the order reads `overpaid`.
+9. **Two transfers** that together make the amount.
+10. **After the order's time:** a transfer sent more than 15 minutes after the order ended does not change the order, and **Payments** shows it under **Needs attention**.
+11. **Close the window mid-payment**, pay, open it again: the same state.
+12. **Close your page before the payment is credited**: your periodic job still finds the payment.
+13. **Block the checkout** with `frame-src 'none'` in your policy: **Continue to secure checkout** opens the same payment.
+14. **Unigox unreachable** (point your server's Unigox address at one that fails): your job logs the error, keeps running, and marks the order paid once Unigox answers.
+15. **The same order checked twice at once:** it is marked paid and shipped once.
 
 With payment links, also pay one after its pay-by date: the page shows **Payment arrived after the deadline**.
 
 With deposit pages:
 
-15. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
-16. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
-17. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
+16. Send two small deposits on two networks: **Payments** shows both, and your ledger adds two credits.
+17. Open the deposit page again: `onDeposit` reports both again, and your ledger adds nothing.
+18. Archive the customer, then deposit: the money reaches your wallet without the customer's reference and is not added to their balance.
 
 ## Go live
 
@@ -1984,13 +1986,13 @@ With deposit pages:
 - If your server signs requests with your wallet's key: **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
 - Your business is verified, or you know how much is left of the 1,000 USD you can receive before verification (the band at the top of every **Crypto processing** page).
 - Every network you offer is ready for your addresses.
-- Your job reads every order until 15 minutes after its `closedAt`, so a payment that arrives after the order is paid or closed is still recorded. It passed tests 13 and 14.
+- Your job reads every order until it is final (15 minutes after its `closedAt`, and none of its payments `pending` or `on_hold`), so a payment that is credited after the order ended is still recorded. It passed tests 14 and 15.
 - With deposit pages: your deposit job, or the person who credits deposits from **Payments**, runs as often as customers expect.
 - If you hold your wallet's key, it is only in your secrets store.
 - Your page ignores events whose `livemode` is not `true`.
 - Your payment links carry your support email (**Settings → Support email for payers**, or `e` in a token your server makes).
 - A production order's `payUrl` opens on `https://www.unigox.com/pay/…` and shows its addresses, and your `checkout.js` and Content-Security-Policy name `https://www.unigox.com`.
-- One small real payment passed tests 5 and 11.
+- One small real payment passed tests 6 and 12.
 
 <!-- checkout-reference.md -->
 
@@ -2042,15 +2044,16 @@ Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The o
 
 | Field | Required | Value |
 | --- | --- | --- |
-| `reference` | Yes | Your order number, 1 to 64 characters, no line breaks. Spaces at either end are removed. |
+| `reference` | Yes | Your order number, 1 to 64 characters. The payer sees it. |
 | `amount` | Yes | USD as a string with up to 12 digits and up to two decimals, at least `"1.00"`. A JSON number is accepted too. |
 | `merchantName` | No | The name the payer sees, up to 64 characters. Without it the payer sees your partner account's name, written as the portal writes it (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** is kept in your browser, so orders never use it: send `merchantName` with every order. |
-| `description` | No | Text about the order for the payer, up to 200 characters, no line breaks. The payment page shows at most 140. |
+| `currency` | No | `"USD"`. Orders are in USD; any other value answers `400` with `field` `currency`. |
+| `description` | No | Text about the order for the payer, up to 140 characters. |
 | `customer` | No | `{"id": "…", "name": "…", "email": "…"}`. `id` is your own id for the customer, 1 to 64 characters; `name` is up to 120 characters; `email` up to 254 and must look like an email address. The customer is created, or their name and email updated; a field you leave out keeps its stored value. |
 | `expiresInMinutes` | No | How long the order takes payments: 5 to 10,080 minutes (7 days). Default 60. |
 | `returnUrl` | No | An `https://` page of your site, up to 2,048 characters, without a user name or password. The payment page offers it as a link back to you and never opens it by itself. |
 
-Fields the API does not know are ignored.
+Texts the payer reads (`merchantName`, `reference`, `description` and the customer's fields) refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069). Spaces at either end are removed. Fields the API does not know are ignored.
 
 ### The order
 
@@ -2059,12 +2062,13 @@ Fields the API does not know are ignored.
 | `id` | `ord_` and 24 letters and digits. Keep it with your order to read the order later. |
 | `token` | `o_` and the same 24 characters. Give it to `checkout.js`. |
 | `payUrl` | The order's payment page, `https://www.unigox.com/pay/o_…`. Use it as it is. |
+| `merchantName` | The name the payer sees: the one you sent, or your partner account's name |
 | `reference`, `description`, `returnUrl` | As you sent them. `description` is `""` and `returnUrl` is `null` when you sent none. |
 | `amount`, `currency` | The amount due with two decimals, such as `"25.00"`, and `"USD"` |
 | `status` | See [Order statuses](#order-statuses) |
 | `received` | USD credited to the order so far, with two to six decimals (`"0.00"`, `"24.995"`). The sum of its `credited` payments. |
 | `createdAt`, `expiresAt` | When the order was created, and when it stops taking payments. UTC, such as `"2026-11-26T10:00:00.000000Z"`. |
-| `closedAt` | When the order ended: paid, closed, or its time ran out (then it equals `expiresAt`). `null` until then. An order whose time ran out can keep `null` for 15 minutes after `expiresAt`, and longer while a transfer to it is on its way. |
+| `closedAt` | When the order ended: paid, closed, or its time ran out (then it equals `expiresAt`). `null` until then. An order whose time ran out can keep `null` until 15 minutes after `expiresAt`. |
 | `addresses` | `[{"family": "evm", "address": "0x…"}, …]`: one payment address for each address type that had a free address when the order was created |
 | `customer` | `{"id", "name", "email"}`, or `null`. A name or email that was never sent is `""`. |
 | `payments` | When you read or close the order: every transfer that counts for it, oldest first (below) |
@@ -2077,7 +2081,7 @@ Each payment:
 | `chainId` | That network, a number: see [Networks and coins](#networks-and-coins) |
 | `coin` | The coin sent, such as `"USDT"`; `""` when Unigox has no symbol for it |
 | `amount` | What the transfer is worth in USD: the amount credited to your wallet, one for one. `""` when Unigox cannot read the coin's decimals; such a payment is not counted. |
-| `status` | `credited` (in your wallet, counted in `received`), `pending` (on its way), `on_hold` (stopped for a compliance review), `failed` (not credited) or `refunded` (sent back, or marked to be) |
+| `status` | `credited` (in your wallet, counted in `received`), `pending` (on its way; it counts once credited, also after the order ended), `on_hold` (stopped for a compliance review; it counts if credited), `failed` (not credited) or `refunded` (sent back, or marked to be) |
 | `at` | When the transfer was mined on its network; before that, when Unigox first saw it |
 
 A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, or earlier when you close it or when it is paid. A transfer to the same address outside that time is not the order's: it still reaches your wallet, and it appears in the portal's **Payments** under **Needs attention**, with no order.
@@ -2086,14 +2090,16 @@ A transfer counts for the order when it was sent between one minute before the o
 
 | `status` | What it means | Ship? |
 | --- | --- | --- |
-| `open` | Nothing credited yet, and the order takes payments. Past `expiresAt` it stays `open` while a transfer sent in time is `pending` or `on_hold`. | No. Wait. |
-| `partly_paid` | Some money credited, short of the amount by more than the allowance. The payer can still send the rest, on any network the order offers, until the order's time runs out. | No. Wait. |
-| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. Once `paid`, the order stays `paid`. | Yes |
+| `open` | Nothing credited yet. Before `expiresAt` the order takes payments. In the 15 minutes after `expiresAt`, `open` means a transfer sent in time is still on its way. | No. Wait. |
+| `partly_paid` | Some money credited, short of the amount by more than the allowance. Before `expiresAt` the payer can send the rest, on any network the order offers. | No. Wait. |
+| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It never goes back to another status; a later credit inside the window can make it `overpaid`. | Yes |
 | `overpaid` | More than the amount credited. The extra is in your wallet. | Yes. Settle the extra with your customer. |
-| `expired` | The time ran out before the order was paid. `received` says what came. For 15 minutes after `expiresAt` a transfer sent in that time can still make it `partly_paid`, `paid` or `overpaid`. | No. If `received` is above `"0.00"`, settle that part with your customer. |
-| `closed` | You closed the order before it was paid. `received` says what came. A transfer sent up to 15 minutes after you closed it still counts: if it brings the order to its amount, the order reads `paid`. | No, unless it turns `paid` |
+| `expired` | The time ran out before the order was paid; `received` says what came. In the 15 minutes after `expiresAt`, an order with nothing credited and nothing on its way already reads `expired`. 15 minutes after `expiresAt`, every order that is not paid ends as `expired`, whatever came and whatever is still on its way. | No. If `received` is above `"0.00"`, settle that part with your customer. |
+| `closed` | You closed the order before it was paid. `received` says what came. | No |
 
-A `partly_paid` order whose time has run out and whose 15 minutes have passed becomes `expired`, and its addresses go to rest. An order does not hold its addresses past its time for the rest of a payment.
+**When a status is final.** A transfer counts for an order when it was sent inside the order's window: from one minute before the order was created until 15 minutes after it ended. A transfer sent inside the window that is credited later still counts, also after the order has ended. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`. A status is final once the window has passed and none of the order's `payments` is `pending` or `on_hold`.
+
+An order that is not paid gives up its addresses 15 minutes after `expiresAt` at the latest; they then rest 24 hours.
 
 ### Customers
 
@@ -2103,15 +2109,15 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 | HTTP | `details` | What to do |
 | --- | --- | --- |
-| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
+| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
 | 401 | none | No `X-API-Key` header, or a key Unigox does not know. The body is `{"success": false, "error": …}`. |
 | 403 | `merchant_unverified_limit` | Your business is not verified and has received 1,000 USD in total. Verify your business in the portal. Orders created before keep taking payments. |
 | 404 | `order_not_found` | You have no order with this id. |
 | 404 | `customer_not_found` | You have no customer with this id. |
-| 409 | `order_reference_conflict` | The order with this `reference` is not closed or expired and has another amount. Use a new `reference`, or close that order first. |
+| 409 | `order_reference_conflict` | The order with this `reference` reads `open`, `partly_paid`, `paid` or `overpaid` and has another amount. Use a new `reference`, or close that order first. |
 | 409 | `no_free_addresses` | No address type has a free address: see [Limits](#limits). Show the payer another way to pay, and open **Crypto processing** in the portal. |
 | 409 | `merchant_wallet_missing` | The account behind this API key has no Unigox wallet to receive payments. Write to support@unigox.com. |
-| 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed. |
+| 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it. Ship it. |
 | 500 | `internal_error` | Send the request again later. A repeated create with the same `reference` and `amount` never makes a second order. |
 | 503 | `merchant_limit_unavailable` | Unigox could not check how much you may still receive before verification, so no order was created. Send the request again later. |
 
@@ -2147,11 +2153,11 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 | What | Limit |
 | --- | --- |
-| Received before your business is verified | 1,000 USD in total. After that you cannot create orders (`403 merchant_unverified_limit`), links, invoices or deposit addresses until your business is verified. Payments to the ones you already created still arrive. If Unigox cannot check the total, no order is created (`503 merchant_limit_unavailable`). |
+| Received before your business is verified | 1,000 USD in total. Once you reach it, new orders are refused (`403 merchant_unverified_limit`), and you cannot create links, invoices or deposit addresses, until your business is verified. Payments to the ones you already created still arrive. If Unigox cannot check the total, no order is created (`503 merchant_limit_unavailable`). |
 | Order amount | 1.00 USD to 999,999,999,999.99 USD, up to two decimals |
 | Order time | 5 to 10,080 minutes (7 days); 60 minutes when you send none |
 | Addresses an order holds | One per address type, from its creation until it ends. Each then rests 24 hours before another order can take it. |
-| Addresses kept ready for orders | The portal adds addresses while you are signed in with **Crypto processing** open: it keeps 10 free addresses of each type, up to 200 of each type in all. Addresses that have rested become free again on their own; new ones are added only while the portal is open. |
+| Addresses kept ready for orders | The portal adds addresses while you are signed in with **Crypto processing** open, as the account whose wallet receives your orders' payments; a team member signed in with another account adds none. It keeps 10 free addresses of each type, up to 200 of each type in all. Addresses that have rested become free again on their own; new ones are added only while the portal is open. |
 | Orders a day | Each address serves one order, then rests 24 hours. 200 addresses of a type serve about 190 orders of 60 minutes a day, and fewer when orders take longer. Write to support@unigox.com if you need more. |
 | A late transfer | Counts for the order up to 15 minutes after the order ends |
 | Customer's orders returned with the customer | The latest 20 |
@@ -2166,7 +2172,7 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 | What you see | What to do |
 | --- | --- |
-| `409 no_free_addresses` when you create an order | Every address of every type is held by an order or resting. Open **Crypto processing** in the portal, signed in, and leave it open for a few minutes: it adds addresses. Meanwhile offer the payer another way to pay. |
+| `409 no_free_addresses` when you create an order | Every address of every type is held by an order or resting. Open **Crypto processing** in the portal, signed in as the account whose wallet receives the payments, and leave it open for a few minutes: it adds addresses. Meanwhile offer the payer another way to pay. |
 | An order offers fewer networks than you expected | The order was created while some address types had no free address. Keep the portal open more often, so each type keeps free addresses. |
 | `403 merchant_unverified_limit` | Verify your business: **Verify business** in the band at the top of every **Crypto processing** page. |
 | `409 order_reference_conflict` | You sent a `reference` that an order still holds, with another amount. A changed cart needs a new `reference`, or close the old order first. |
@@ -2193,7 +2199,7 @@ A `partly_paid` order whose time has run out and whose 15 minutes have passed be
 
 **Can my customer pay from an exchange?** Yes, if the exchange can withdraw the chosen coin on the chosen network. The customer covers the withdrawal fee. If the exchange takes the fee out of the amount, a shortfall within the allowance still counts as paid.
 
-**What if the customer pays too little, too much or late?** On an order: too little is `partly_paid`, and the customer can send the rest before the order's time runs out; after that the order is `expired` with `received` showing what came. Too much is `overpaid`. A transfer sent more than 15 minutes after the order ended is not the order's: find it in **Payments** under **Needs attention**. On a payment link: too little shows as `underpaid`, too much as `overpaid`, and a payment completed after the pay-by date as `paid_late`. In each case your server decides what happens to the order.
+**What if the customer pays too little, too much or late?** On an order: too little is `partly_paid`, and the customer can send the rest before `expiresAt`; 15 minutes after it the order ends as `expired`, with `received` showing what came. Too much is `overpaid`. A transfer sent more than 15 minutes after the order ended is not the order's: find it in **Payments** under **Needs attention**. On a payment link: too little shows as `underpaid`, too much as `overpaid`, and a payment completed after the pay-by date as `paid_late`. In each case your server decides what happens to the order.
 
 **Can I refund a payment?** Agree an address and a network with the payer, then send the money from your Unigox wallet. Unigox has no refund request in the API and does not do this for you. It is a different thing from Unigox sending back a transfer it could not credit.
 

@@ -7567,11 +7567,13 @@ paths:
         keeps ready while you have **Crypto processing** open. The order offers the address types that
         had a free address; with none free, the answer is `409 no_free_addresses`.
 
-        **Repeats.** While the order with this `reference` is `open`, `partly_paid`, `paid` or
+        **Repeats.** While the order with this `reference` reads `open`, `partly_paid`, `paid` or
         `overpaid`, a request with the same `reference` and the same `amount` answers `200` with that
         order and creates nothing; the other fields of the repeat are not applied. The same `reference`
-        with another `amount` answers `409 order_reference_conflict`. After the order was closed or
-        has expired, the `reference` is free again and a request with it creates a new order.
+        with another `amount` answers `409 order_reference_conflict`. Once the order reads `expired` or
+        `closed`, the `reference` is free and a request with it creates a new order. An order that was
+        closed or expired and then receives its amount inside its window reads `paid` and holds its
+        `reference` again, unless a newer order has taken it.
 
         Amounts are USD. One USDT, USDC, USDG or USDT0 counts as 1 USD.
       security:
@@ -7586,6 +7588,7 @@ paths:
               merchantName: "Northwind"
               reference: "A-1001"
               amount: "25.00"
+              currency: USD
               description: "Order A-1001"
               customer:
                 id: "cus-77"
@@ -7607,6 +7610,7 @@ paths:
                   id: "ord_4f9c2a7e1b3d5c8a0e6f2b4d"
                   token: "o_4f9c2a7e1b3d5c8a0e6f2b4d"
                   payUrl: "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  merchantName: "Northwind"
                   reference: "A-1001"
                   amount: "25.00"
                   currency: USD
@@ -7637,8 +7641,8 @@ paths:
         '400':
           description: |
             A field cannot be accepted (`validation_order_request_invalid`). `field` names it: `body`
-            (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `reference`,
-            `amount`, `description`, `customer.id`, `customer.name`, `customer.email`,
+            (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `currency`,
+            `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`,
             `expiresInMinutes` or `returnUrl`.
           content:
             application/json:
@@ -7706,8 +7710,9 @@ paths:
 
         A transfer counts for the order when it was sent between one minute before the order was
         created and 15 minutes after the order ended (its `expiresAt`, or the time it was closed or
-        paid, if sooner). Unigox sends no notification when an order is paid: read the order when
-        the payer returns to your site, and from a job that reads your open orders every few minutes.
+        paid, if sooner). After that time the status changes only when a transfer sent inside it is
+        credited. Unigox sends no notification when an order is paid: read the order when the payer
+        returns to your site, and from a job that reads your open orders every few minutes.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -7726,6 +7731,7 @@ paths:
                   id: "ord_4f9c2a7e1b3d5c8a0e6f2b4d"
                   token: "o_4f9c2a7e1b3d5c8a0e6f2b4d"
                   payUrl: "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  merchantName: "Northwind"
                   reference: "A-1001"
                   amount: "25.00"
                   currency: USD
@@ -7771,7 +7777,8 @@ paths:
         brings the order to its amount, the order reads `paid`. No request body.
 
         An order that is already `closed` or `expired` is returned as it is. A `paid` or `overpaid`
-        order cannot be closed (`409 order_already_paid`).
+        order cannot be closed (`409 order_already_paid`), also when the payment is credited at the
+        moment you close it.
       security:
         - ApiKeyAuth: []
       parameters:
@@ -7788,7 +7795,7 @@ paths:
         '404':
           $ref: '#/components/responses/CryptoCheckoutOrderNotFound'
         '409':
-          description: '`order_already_paid`: the order is `paid` or `overpaid`.'
+          description: '`order_already_paid`: the order is `paid` or `overpaid`, or became so while it was being closed.'
           content:
             application/json:
               schema:
@@ -12239,19 +12246,25 @@ components:
           type: string
           maxLength: 64
           description: |
-            The name the payer sees. Left out or empty: the name of your partner account, with dashes and
+            The name the payer sees, up to 64 characters, with the character rules of `reference`. Left
+            out or empty: the name of your partner account, with dashes and
             underscores as spaces, a trailing number dropped and the first letter capitalised
             (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** in
             the portal is kept in your browser, so orders never use it.
           example: Northwind
+        currency:
+          type: string
+          enum: [USD]
+          description: Optional. Orders are in USD; any other value is refused (`field` is `currency`).
         reference:
           type: string
           minLength: 1
           maxLength: 64
           description: |
-            Your order number, 1 to 64 characters after spaces at either end are removed, without line
-            breaks or other control characters. It names the order in the portal and makes a repeated
-            request return the same order.
+            Your order number, 1 to 64 characters after spaces at either end are removed, without control
+            characters (line breaks among them) or the characters that change the direction of text
+            (U+202A to U+202E, U+2066 to U+2069). It names the order to the payer and in the portal, and
+            makes a repeated request return the same order.
           example: A-1001
         amount:
           type: string
@@ -12262,10 +12275,8 @@ components:
           example: "25.00"
         description:
           type: string
-          maxLength: 200
-          description: |
-            Text about the order for the payer, up to 200 characters, without line breaks. The payment
-            page shows at most the first 140.
+          maxLength: 140
+          description: Text about the order for the payer, up to 140 characters, with the character rules of `reference`.
         customer:
           type: object
           required: [id]
@@ -12277,7 +12288,9 @@ components:
               type: string
               minLength: 1
               maxLength: 64
-              description: Your own id for the customer, 1 to 64 characters.
+              description: |
+                Your own id for the customer, 1 to 64 characters. The customer's fields follow the character
+                rules of `reference`.
             name:
               type: string
               maxLength: 120
@@ -12330,7 +12343,7 @@ components:
 
     CryptoCheckoutOrderFields:
       type: object
-      required: [id, token, payUrl, reference, amount, currency, description, status, received, createdAt, expiresAt, closedAt, returnUrl, addresses]
+      required: [id, token, payUrl, merchantName, reference, amount, currency, description, status, received, createdAt, expiresAt, closedAt, returnUrl, addresses]
       properties:
         id:
           type: string
@@ -12344,6 +12357,10 @@ components:
           type: string
           description: The order's payment page. Send the payer there as it is.
           example: "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d"
+        merchantName:
+          type: string
+          description: The name the payer sees, as you sent it or taken from your partner account.
+          example: Northwind
         reference:
           type: string
         amount:
@@ -12360,14 +12377,22 @@ components:
           type: string
           enum: [open, partly_paid, paid, overpaid, expired, closed]
           description: |
-            - `open`: nothing credited yet, and the order takes payments.
-            - `partly_paid`: less than the amount credited, short by more than the allowance; the payer
-              can still send the rest.
-            - `paid`: the amount credited, or short by at most 0.5 % of it and never more than 1.00 USD.
-              Stays `paid`.
+            - `open`: nothing credited yet. Before `expiresAt` the order takes payments; in the 15
+              minutes after it, `open` means a transfer sent in time is still on its way.
+            - `partly_paid`: less than the amount credited, short by more than the allowance. Before
+              `expiresAt` the payer can still send the rest.
+            - `paid`: the amount credited, or short of it by at most 0.5 % and never more than 1.00 USD.
+              It never goes back; it can still become `overpaid`.
             - `overpaid`: more than the amount credited.
-            - `expired`: the time ran out before the order was paid; `received` says what came.
+            - `expired`: the time ran out before the order was paid. In the 15 minutes after
+              `expiresAt`, an order with nothing credited and nothing on its way reads `expired`. 15
+              minutes after `expiresAt` every order that is not paid ends as `expired`, whatever came;
+              `received` says what came.
             - `closed`: you closed it before it was paid; `received` says what came.
+
+            `expired` and `closed` turn `paid` or `overpaid` when a transfer sent inside the order's
+            window is credited later. A status is final once the window has passed and none of the
+            order's `payments` is `pending` or `on_hold`.
         received:
           type: string
           description: |
@@ -12387,8 +12412,8 @@ components:
           nullable: true
           description: |
             When the order ended: the time it was paid or closed, or `expiresAt` when its time ran out.
-            `null` while it has not ended. An order whose time ran out keeps `null` for up to 15 minutes
-            after `expiresAt`, and longer while a transfer to it is on its way.
+            `null` while it has not ended. An order whose time ran out can keep `null` until 15 minutes
+            after `expiresAt`.
         returnUrl:
           type: string
           nullable: true
@@ -12434,8 +12459,8 @@ components:
           enum: [credited, pending, on_hold, failed, refunded]
           description: |
             - `credited`: in your Unigox wallet; counted in `received`.
-            - `pending`: seen, on its way. The order waits for it, also past `expiresAt`.
-            - `on_hold`: stopped for a compliance review. The order waits for it.
+            - `pending`: seen, on its way. It counts when it is credited, also after the order has ended.
+            - `on_hold`: stopped for a compliance review. It counts if it is credited.
             - `failed`: not credited.
             - `refunded`: sent back, or marked to be.
         at:
@@ -12484,6 +12509,7 @@ components:
 
     CryptoCheckoutCustomerRequest:
       type: object
+      description: Both fields follow the character rules of an order's `reference`.
       properties:
         name:
           type: string
@@ -12581,7 +12607,7 @@ components:
             | `order_reference_conflict` | 409 | The order with this `reference` is not closed or expired and has another amount |
             | `no_free_addresses` | 409 | No address type has a free address |
             | `merchant_wallet_missing` | 409 | Your account has no Unigox wallet to receive payments |
-            | `order_already_paid` | 409 | A `paid` or `overpaid` order cannot be closed |
+            | `order_already_paid` | 409 | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it |
             | `internal_error` | 500 | Unigox failed; send the request again later |
             | `merchant_limit_unavailable` | 503 | The limit before verification could not be checked; send the request again later |
         field:
@@ -12609,6 +12635,7 @@ components:
                   type: string
                 message:
                   type: string
+
   parameters:
     UserUUIDPath:
       name: user_uuid

@@ -53,7 +53,7 @@ Until your business is verified, you can receive up to 1,000 USD in total. A ban
 To take payments from the portal you need only **Crypto processing in your business portal** ([Open crypto processing](#open-crypto-processing)). A developer who connects your website also needs:
 
 - **Your partner API key.** Your server sends it in the `X-API-Key` header to create and read orders, at `https://api.unigox.com`. Step 1 of [Your website in four steps](#your-website-in-four-steps) shows where to get it. Keep it on your server, never in a web page or a repository.
-- **The portal open now and then.** Each order takes payment addresses that the portal reserves while you are signed in with **Crypto processing** open ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
+- **The portal open now and then.** Each order takes payment addresses that the portal reserves while you are signed in with **Crypto processing** open, as the account whose wallet receives the payments ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
 
 Deposit pages, links your server signs and your payment history need two more things:
 
@@ -89,7 +89,7 @@ These settings are stored in your browser, not in your account. They go into eve
 
 You add this once. Every payment is then a new order that your server creates.
 
-**1. Get your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Get your API key**. On the page that opens, press **Generate** next to **API key** and copy the key: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Leave **Crypto processing** open for a few minutes the first time: the portal reserves the addresses your orders will take.
+**1. Get your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Get your API key**. On the page that opens, press **Generate** next to **API key** and copy the key: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take.
 
 **2. Put the checkout on your page.** The button asks your server for an order on its first press and opens the checkout over your page:
 
