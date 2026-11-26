@@ -51,7 +51,7 @@ Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The o
 | Field | Required | Value |
 | --- | --- | --- |
 | `reference` | Yes | Your order number, 1 to 64 characters. The payer sees it. |
-| `amount` | Yes | USD as a string with up to 12 digits and up to two decimals, at least `"1.00"`. A JSON number is accepted too. |
+| `amount` | Yes | USD as a string with up to 12 digits and up to two decimals, at least `"1.00"`. A JSON number is accepted too. The value is taken exactly as sent: spaces around it, a comma or a currency sign answer `400` with `field` `amount`. |
 | `merchantName` | No | The name the payer sees, up to 64 characters. Without it the payer sees your partner account's name, written as the portal writes it (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** is kept in your browser, so orders never use it: send `merchantName` with every order. |
 | `currency` | No | `"USD"`. Orders are in USD; any other value answers `400` with `field` `currency`. |
 | `description` | No | Text about the order for the payer, up to 140 characters. |
@@ -59,7 +59,7 @@ Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The o
 | `expiresInMinutes` | No | How long the order takes payments: 5 to 10,080 minutes (7 days). Default 60. |
 | `returnUrl` | No | An `https://` page of your site, up to 2,048 characters, without a user name or password. The payment page offers it as a link back to you and never opens it by itself. |
 
-Texts the payer reads (`merchantName`, `reference`, `description` and the customer's fields) refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069). Spaces at either end are removed. Fields the API does not know are ignored.
+Texts the payer reads (`merchantName`, `reference`, `description` and the customer's fields) refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069). Spaces at either end of these texts are removed. Fields the API does not know are ignored.
 
 ### The order
 
@@ -115,7 +115,7 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 
 | HTTP | `details` | What to do |
 | --- | --- | --- |
-| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, such as a number for `reference` or `5.5` for `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
+| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, anything after the object, a field of the wrong type, such as a number for `reference` or `5.5` for `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
 | 401 | none | No `X-API-Key` header, or a key Unigox does not know. The body is `{"success": false, "error": "…"}`, with the reason as text. |
 | 403 | `api_key_required` | The request was signed in to the portal, not made with your API key. The body is `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. Send the request from your server with `X-API-Key`. |
 | 403 | none | Your partner access is suspended: `{"success": false, "error": "partner access is suspended"}`. Write to support@unigox.com. |

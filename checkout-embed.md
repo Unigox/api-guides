@@ -25,7 +25,7 @@ When the payer chooses to pay with crypto, your page asks your own server for an
 
 **Before you start:**
 
-- **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Create API key**. Press it and confirm: the key appears there on the page and is shown once. Creating a key again replaces it and stops the old one at once, so give the new key to your server before you close the page. Keep the key on your server, never in a web page or a repository.
+- **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Create API key**. Press it and confirm: the key appears there on the page and is shown once. Creating a key again replaces it and stops the old one at once, so give the new key to your server before you close the page. It is the one API key of your Unigox account: another integration of yours that calls the partner API needs the new key too. Keep the key on your server, never in a web page or a repository.
 - **Addresses for your orders.** Each order takes one payment address of each address type from the addresses the portal keeps ready for orders. The portal adds them while you are signed in with **Crypto processing** open, as the account whose wallet receives the payments. Open it once before your first order, and open it again regularly: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
 
 The request, with your order number and total:
@@ -106,7 +106,7 @@ app.listen(3000);
 
 ### Get the code from the portal
 
-1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**.
+1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**. The fourth tile, **Connect your store**, opens the same setup in **Developers**.
 2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only. The preview beside the steps shows what your customer sees.
 3. Under **2. Add checkout to your site**, press **Copy code** and paste the code into your page.
 4. Under **3. Create the order on your server**, choose **cURL** or **Node.js** and add the request to your server. **Create API key**, under the code, makes the key your server sends.
@@ -719,4 +719,4 @@ On the page the payer returns to, have your server read the order and show its s
 3. **Payment detected.** The transfer was seen and is confirming on its network. The payer does nothing more.
 4. **Payment completed.** The payment is in your Unigox wallet. On the payment page the payer can **Print receipt**.
 
-A payer who already sent the money can press **Already sent? Find my payment** and enter the transaction hash.
+A payer who already sent the money opens **Help with this payment** on the payment page and enters the transaction hash there.

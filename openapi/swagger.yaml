@@ -7637,7 +7637,8 @@ paths:
                     email: "ana@example.com"
         '200':
           description: |
-            The order with this `reference` and this `amount` already exists and is not closed or expired
+            The order with this `reference` and this `amount` already exists and still holds its
+            `reference`: it is open or paid, or its time ended less than 15 minutes ago
             (`order_retrieved`). It is returned as it is now; nothing was created.
           content:
             application/json:
@@ -7646,7 +7647,8 @@ paths:
         '400':
           description: |
             A field cannot be accepted (`validation_order_request_invalid`). `field` names it: `body`
-            (not a JSON object, a field of the wrong type, such as a number for `reference` or `5.5` for
+            (not a JSON object, anything after the object, a field of the wrong type, such as a number
+            for `reference` or `5.5` for
             `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`,
             `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`,
             `expiresInMinutes` or `returnUrl`.
@@ -7685,8 +7687,9 @@ paths:
                     details: api_key_required
         '409':
           description: |
-            - `order_reference_conflict`: the order with this `reference` is not closed or expired and
-              has another `amount`. Use a new `reference`, or close that order first.
+            - `order_reference_conflict`: the order with this `reference` still holds it (it is open or
+              paid, or its time ended less than 15 minutes ago) and has another `amount`. Use a new
+              `reference`, or close that order first.
             - `no_free_addresses`: no address type has a free address. Open **Crypto processing** in the
               portal so it can add addresses, or wait until addresses of ended orders have rested.
             - `merchant_wallet_missing`: the account of this API key has no Unigox wallet to receive
@@ -12294,7 +12297,8 @@ components:
           pattern: '^[0-9]{1,12}(\.[0-9]{1,2})?$'
           description: |
             The amount due in USD, at least `1.00`: up to 12 digits and up to two decimals, such as
-            `"25.00"`. A JSON number with the same digits is accepted too.
+            `"25.00"`. A JSON number with the same digits is accepted too. The value is taken exactly as
+            sent: spaces around it answer `400` with `field` `amount`.
           example: "25.00"
         description:
           type: string
@@ -12629,7 +12633,7 @@ components:
             | `merchant_unverified_limit` | 403 | Not verified, and 1,000 USD received in total: no new order until verified |
             | `order_not_found` | 404 | You have no order with this id |
             | `customer_not_found` | 404 | You have no customer with this id |
-            | `order_reference_conflict` | 409 | The order with this `reference` is not closed or expired and has another amount |
+            | `order_reference_conflict` | 409 | The order with this `reference` still holds it (open or paid, or ended less than 15 minutes ago) and has another amount |
             | `no_free_addresses` | 409 | No address type has a free address |
             | `merchant_wallet_missing` | 409 | Your account has no Unigox wallet to receive payments |
             | `order_already_paid` | 409 | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it |

@@ -71,7 +71,7 @@ Everything for crypto processing is under **Crypto processing** in your business
 | **Overview** | Money received, recent payments and shortcuts to the three ways to get paid |
 | **Payments** | Every payment, its status and its transactions; **Export CSV** |
 | **Payment links** | Create links and invoices, follow them, close them; **Export CSV** |
-| **Checkout** | Set up the checkout on your website and copy its code |
+| **Checkout** | Set up the checkout on your website and copy its code. The payment links you created are listed under it |
 | **Deposit addresses** | Customers with permanent addresses and deposit pages |
 | **Developers** | Code for your website and server, test pages, the API address and your wallet |
 
@@ -89,7 +89,7 @@ These settings are stored in your browser, not in your account. They go into eve
 
 You add this once. Every payment is then a new order that your server creates.
 
-**1. Create your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Create API key** and confirm. The key appears there on the page; copy it: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Creating a key again replaces it, and a server that still sends the old key gets `401` at once. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`.
+**1. Create your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Create API key** and confirm. The key appears there on the page; copy it: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Creating a key again replaces it, and a server that still sends the old key gets `401` at once. It is the one API key of your Unigox account: if another integration of yours calls the partner API, give it the new key too. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`.
 
 **2. Put the checkout on your page.** The button asks your server for an order on its first press and opens the checkout over your page:
 

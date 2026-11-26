@@ -64,7 +64,7 @@ Then do the same on your own page with a sample id as the token, and check that 
 
 ## Test your server on a test account
 
-Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key of the test account's partner page, and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
+Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key you create in the test account's portal (**Crypto processing → Checkout**, step **3. Create the order on your server**, **Create API key**), and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
 
 First check your server's requests, which move no money:
 

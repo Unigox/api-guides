@@ -69,7 +69,7 @@ Everything for crypto processing is under **Crypto processing** in your business
 | **Overview** | Money received, recent payments and shortcuts to the three ways to get paid |
 | **Payments** | Every payment, its status and its transactions; **Export CSV** |
 | **Payment links** | Create links and invoices, follow them, close them; **Export CSV** |
-| **Checkout** | Set up the checkout on your website and copy its code |
+| **Checkout** | Set up the checkout on your website and copy its code. The payment links you created are listed under it |
 | **Deposit addresses** | Customers with permanent addresses and deposit pages |
 | **Developers** | Code for your website and server, test pages, the API address and your wallet |
 
@@ -87,7 +87,7 @@ These settings are stored in your browser, not in your account. They go into eve
 
 You add this once. Every payment is then a new order that your server creates.
 
-**1. Create your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Create API key** and confirm. The key appears there on the page; copy it: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Creating a key again replaces it, and a server that still sends the old key gets `401` at once. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`.
+**1. Create your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Create API key** and confirm. The key appears there on the page; copy it: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Creating a key again replaces it, and a server that still sends the old key gets `401` at once. It is the one API key of your Unigox account: if another integration of yours calls the partner API, give it the new key too. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`.
 
 **2. Put the checkout on your page.** The button asks your server for an order on its first press and opens the checkout over your page:
 
@@ -254,7 +254,7 @@ When the payer chooses to pay with crypto, your page asks your own server for an
 
 **Before you start:**
 
-- **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Create API key**. Press it and confirm: the key appears there on the page and is shown once. Creating a key again replaces it and stops the old one at once, so give the new key to your server before you close the page. Keep the key on your server, never in a web page or a repository.
+- **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Create API key**. Press it and confirm: the key appears there on the page and is shown once. Creating a key again replaces it and stops the old one at once, so give the new key to your server before you close the page. It is the one API key of your Unigox account: another integration of yours that calls the partner API needs the new key too. Keep the key on your server, never in a web page or a repository.
 - **Addresses for your orders.** Each order takes one payment address of each address type from the addresses the portal keeps ready for orders. The portal adds them while you are signed in with **Crypto processing** open, as the account whose wallet receives the payments. Open it once before your first order, and open it again regularly: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
 
 The request, with your order number and total:
@@ -335,7 +335,7 @@ app.listen(3000);
 
 ### Get the code from the portal
 
-1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**.
+1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**. The fourth tile, **Connect your store**, opens the same setup in **Developers**.
 2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only. The preview beside the steps shows what your customer sees.
 3. Under **2. Add checkout to your site**, press **Copy code** and paste the code into your page.
 4. Under **3. Create the order on your server**, choose **cURL** or **Node.js** and add the request to your server. **Create API key**, under the code, makes the key your server sends.
@@ -948,7 +948,7 @@ On the page the payer returns to, have your server read the order and show its s
 3. **Payment detected.** The transfer was seen and is confirming on its network. The payer does nothing more.
 4. **Payment completed.** The payment is in your Unigox wallet. On the payment page the payer can **Print receipt**.
 
-A payer who already sent the money can press **Already sent? Find my payment** and enter the transaction hash.
+A payer who already sent the money opens **Help with this payment** on the payment page and enters the transaction hash there.
 
 <!-- checkout-confirm.md -->
 
@@ -2089,7 +2089,7 @@ Then do the same on your own page with a sample id as the token, and check that 
 
 ## Test your server on a test account
 
-Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key of the test account's partner page, and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
+Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key you create in the test account's portal (**Crypto processing → Checkout**, step **3. Create the order on your server**, **Create API key**), and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
 
 First check your server's requests, which move no money:
 
@@ -2187,7 +2187,7 @@ Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The o
 | Field | Required | Value |
 | --- | --- | --- |
 | `reference` | Yes | Your order number, 1 to 64 characters. The payer sees it. |
-| `amount` | Yes | USD as a string with up to 12 digits and up to two decimals, at least `"1.00"`. A JSON number is accepted too. |
+| `amount` | Yes | USD as a string with up to 12 digits and up to two decimals, at least `"1.00"`. A JSON number is accepted too. The value is taken exactly as sent: spaces around it, a comma or a currency sign answer `400` with `field` `amount`. |
 | `merchantName` | No | The name the payer sees, up to 64 characters. Without it the payer sees your partner account's name, written as the portal writes it (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** is kept in your browser, so orders never use it: send `merchantName` with every order. |
 | `currency` | No | `"USD"`. Orders are in USD; any other value answers `400` with `field` `currency`. |
 | `description` | No | Text about the order for the payer, up to 140 characters. |
@@ -2195,7 +2195,7 @@ Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The o
 | `expiresInMinutes` | No | How long the order takes payments: 5 to 10,080 minutes (7 days). Default 60. |
 | `returnUrl` | No | An `https://` page of your site, up to 2,048 characters, without a user name or password. The payment page offers it as a link back to you and never opens it by itself. |
 
-Texts the payer reads (`merchantName`, `reference`, `description` and the customer's fields) refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069). Spaces at either end are removed. Fields the API does not know are ignored.
+Texts the payer reads (`merchantName`, `reference`, `description` and the customer's fields) refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069). Spaces at either end of these texts are removed. Fields the API does not know are ignored.
 
 ### The order
 
@@ -2251,7 +2251,7 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 
 | HTTP | `details` | What to do |
 | --- | --- | --- |
-| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, such as a number for `reference` or `5.5` for `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
+| 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, anything after the object, a field of the wrong type, such as a number for `reference` or `5.5` for `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
 | 401 | none | No `X-API-Key` header, or a key Unigox does not know. The body is `{"success": false, "error": "…"}`, with the reason as text. |
 | 403 | `api_key_required` | The request was signed in to the portal, not made with your API key. The body is `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. Send the request from your server with `X-API-Key`. |
 | 403 | none | Your partner access is suspended: `{"success": false, "error": "partner access is suspended"}`. Write to support@unigox.com. |
