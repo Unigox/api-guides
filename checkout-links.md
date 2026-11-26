@@ -437,7 +437,7 @@ const ENVIRONMENT = "production"; // one ledger per environment
 // customer: your record, e.g. { id: "CUST-7", wallet: "0x…", memo: "Top-up · CUST-7 · abcdefghij", lockIds: ["31", "32", "57"] },
 //   with every address ID the customer ever had (a restore adds new ones). reported: [{ chainId: payload.chainId,
 //   txHash: payload.txHash, quoteId: payload.quoteId }] from an onDeposit payload (one deposit per payload, no payments
-//   list), or [{ chainId, txHash }] for a hash a customer gave you (add quoteId or logIndex when you have it). Returns how many new credits it added.
+//   list), or [{ chainId, txHash }] for a hash a customer gave you (add quoteId or logIndex when you have it). Returns how many new deposits it recorded.
 export async function creditDeposits(customer, reported) {
   const credits = await verifyTransfers(customer, reported); // each one proven by Unigox, never taken from the browser
   let added = 0;

@@ -12,6 +12,7 @@ Each sample is a real checkout page of a made-up merchant, fixed in one state. N
 
 On a sample that waits for a payment, **Send the payment (sample)** plays the payment through to the end. On an underpaid sample, **Send the rest (sample)** does the same. This way your page receives every event of a paid checkout.
 
+<!-- samples:start -->
 | Id | Shows | Events your page receives |
 | --- | --- | --- |
 | `demo` | Start: the payer picks a coin and a network | `READY`, `CHOOSING` |

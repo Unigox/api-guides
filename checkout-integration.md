@@ -982,7 +982,7 @@ The status of one transfer looks like this (shortened). `verifyTransfers()` read
 import { keccak256, toBytes } from "viem";
 
 const UNIGOX_PAYMENTS_API = process.env.UNIGOX_PAYMENTS_API; // the API address on the Developers page
-const UNIGOX_BALANCE_CHAIN_ID = 660279;                    // fixed: marks a payment credited to your Unigox wallet; copy as is
+const UNIGOX_BALANCE_CHAIN_ID = 660279;                    // fixed: marks a payment received in your Unigox wallet; copy as is
 
 // One read of the Unigox payments API, at most 10 seconds: its JSON when the answer is ok and its status is `want`, else an error.
 async function unigoxGet(path, want) {
@@ -992,7 +992,7 @@ async function unigoxGet(path, want) {
   return body;
 }
 
-// Credited, the way the checkout reads it: DONE and completed, nothing refunded.
+// Received, the way the checkout reads it: DONE and completed, nothing refunded.
 const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" || (!tx.subStatus && tx.toTx)) && !tx.refund;
 
 // order: your own record of the link, e.g. { wallet: "0x…", memo: "NW-20418 · 250.00 USD · v2", lockIds: ["27", "28"],
@@ -1000,7 +1000,7 @@ const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" ||
 //   read again here. Returns [{ id, micros, fromTxMinedAt }]; the timestamp comes from Unigox, never the browser.
 export async function verifyTransfers(order, reported) {
   // One transaction can hold several transfers. quoteId or logIndex names one of them exactly. A hash alone reads the
-  // first transfer of that transaction: it is counted only when it is this link's credit, and can miss the others.
+  // first transfer of that transaction: it is counted only when it is this link's payment, and can miss the others.
   const hints = (Array.isArray(reported) ? reported : []).slice(0, 200);
   const memoHash = keccak256(toBytes(order.memo));
   const config = await unigoxGet("/config", "fetched");
@@ -1018,7 +1018,7 @@ export async function verifyTransfers(order, reported) {
     }
     if (!order.lockIds.includes(String(tx.memoLockId))) continue;                    // one of this link's address IDs
     if (tx.memoHash?.toLowerCase() !== memoHash) continue;                            // under this link's memo
-    if (tx.recipientAddress?.toLowerCase() !== order.wallet.toLowerCase()) continue;  // credited to your wallet
+    if (tx.recipientAddress?.toLowerCase() !== order.wallet.toLowerCase()) continue;  // received in your wallet
     if (Number(tx.toChain) !== UNIGOX_BALANCE_CHAIN_ID || !settled(tx)) continue;
     const token = settlement.find((t) => t.address.toLowerCase() === tx.toToken?.toLowerCase());
     if (!token) continue;
@@ -1086,9 +1086,9 @@ async function readHistory(query) {
   return data;
 }
 
-const UNIGOX_BALANCE_CHAIN_ID = 660279;                    // fixed: marks a payment credited to your Unigox wallet; copy as is
+const UNIGOX_BALANCE_CHAIN_ID = 660279;                    // fixed: marks a payment received in your Unigox wallet; copy as is
 
-// Credited, the way the checkout reads it: DONE and completed, nothing refunded.
+// Received, the way the checkout reads it: DONE and completed, nothing refunded.
 const settled = (tx) => tx.status === "DONE" && (tx.subStatus === "COMPLETED" || (!tx.subStatus && tx.toTx)) && !tx.refund;
 
 export async function fulfilInvoice(memoLockId) {
@@ -1612,7 +1612,7 @@ const ENVIRONMENT = "production"; // one ledger per environment
 // customer: your record, e.g. { id: "CUST-7", wallet: "0x…", memo: "Top-up · CUST-7 · abcdefghij", lockIds: ["31", "32", "57"] },
 //   with every address ID the customer ever had (a restore adds new ones). reported: [{ chainId: payload.chainId,
 //   txHash: payload.txHash, quoteId: payload.quoteId }] from an onDeposit payload (one deposit per payload, no payments
-//   list), or [{ chainId, txHash }] for a hash a customer gave you (add quoteId or logIndex when you have it). Returns how many new credits it added.
+//   list), or [{ chainId, txHash }] for a hash a customer gave you (add quoteId or logIndex when you have it). Returns how many new deposits it recorded.
 export async function creditDeposits(customer, reported) {
   const credits = await verifyTransfers(customer, reported); // each one proven by Unigox, never taken from the browser
   let added = 0;
@@ -1896,6 +1896,7 @@ Each sample is a real checkout page of a made-up merchant, fixed in one state. N
 
 On a sample that waits for a payment, **Send the payment (sample)** plays the payment through to the end. On an underpaid sample, **Send the rest (sample)** does the same. This way your page receives every event of a paid checkout.
 
+<!-- samples:start -->
 | Id | Shows | Events your page receives |
 | --- | --- | --- |
 | `demo` | Start: the payer picks a coin and a network | `READY`, `CHOOSING` |
