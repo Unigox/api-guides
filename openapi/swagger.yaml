@@ -31,6 +31,7 @@ info:
 
     Endpoint groups are ordered for partner integration flow:
     `Health` → `Supported Resources` → `Exchange Pairs` → `User Management` → `On-Ramp` → `Off-Ramp` → `Orders` → `Webhooks`.
+    Crypto payments on your website are under `Crypto Processing`.
   version: 1.0.0
   contact:
     name: Unigox API Support
@@ -127,6 +128,16 @@ tags:
 
       Enabled per partner. Closing an account and crypto withdrawals stay in the B2B console.
     x-page-icon: briefcase
+  - name: Crypto Processing
+    description: |
+      Orders for crypto payments on your website. Your server creates an order for each payment with
+      your API key, opens the Unigox checkout with the order's `token` or sends the payer to its
+      `payUrl`, and reads the order to know when it is paid. Unigox sends no notification when an
+      order is paid: read the order.
+
+      Every answer is `{status, code, data}`. An error is `{status, code, details}`, with `field` on a
+      `400`. The step-by-step guide is [Crypto processing](https://developers.unigox.com/tutorials/crypto-checkout).
+    x-page-icon: coins
   - name: Orders
     description: Order management, status tracking, and lifecycle actions
     x-page-icon: receipt
@@ -7540,6 +7551,345 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartnerErrorResponse'
+  /api/v1/partner/crypto/orders:
+    post:
+      tags:
+        - Crypto Processing
+      summary: Create an order for one payment
+      operationId: createCryptoCheckoutOrder
+      description: |
+        Creates an order for one payment and answers with its `token` and `payUrl`. Open the checkout
+        on your page with `data.token` (`checkout.js`), or send the payer to `data.payUrl`.
+
+        Call it when the payer chooses to pay, not when the page loads. The order holds one payment
+        address of each address type (`evm`, `tvm`, `ton`, `svm`) until it ends; each address then
+        rests 24 hours before another order can take it. The addresses come from the ones the portal
+        keeps ready while you have **Crypto processing** open. The order offers the address types that
+        had a free address; with none free, the answer is `409 no_free_addresses`.
+
+        **Repeats.** While the order with this `reference` is `open`, `partly_paid`, `paid` or
+        `overpaid`, a request with the same `reference` and the same `amount` answers `200` with that
+        order and creates nothing; the other fields of the repeat are not applied. The same `reference`
+        with another `amount` answers `409 order_reference_conflict`. After the order was closed or
+        has expired, the `reference` is free again and a request with it creates a new order.
+
+        Amounts are USD. One USDT, USDC, USDG or USDT0 counts as 1 USD.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CryptoCheckoutOrderRequest'
+            example:
+              merchantName: "Northwind"
+              reference: "A-1001"
+              amount: "25.00"
+              description: "Order A-1001"
+              customer:
+                id: "cus-77"
+                name: "Ana Silva"
+                email: "ana@example.com"
+              expiresInMinutes: 60
+              returnUrl: "https://shop.example.com/orders/A-1001"
+      responses:
+        '201':
+          description: The order was created (`order_created`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutOrderResponse'
+              example:
+                status: order_created
+                code: 201
+                data:
+                  id: "ord_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  token: "o_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  payUrl: "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  reference: "A-1001"
+                  amount: "25.00"
+                  currency: USD
+                  description: "Order A-1001"
+                  status: open
+                  received: "0.00"
+                  createdAt: "2026-11-26T10:00:00.000000Z"
+                  expiresAt: "2026-11-26T11:00:00.000000Z"
+                  closedAt: null
+                  returnUrl: "https://shop.example.com/orders/A-1001"
+                  addresses:
+                    - family: evm
+                      address: "0x8d2f1c3b7a9e4d6f0b2c5a8e1f3d7b9c4a6e2f10"
+                    - family: tvm
+                      address: "TXa7Qm2kP9rLc4VbN8wE3hJ6sD1fG5yZuK"
+                  customer:
+                    id: "cus-77"
+                    name: "Ana Silva"
+                    email: "ana@example.com"
+        '200':
+          description: |
+            The order with this `reference` and this `amount` already exists and is not closed or expired
+            (`order_retrieved`). It is returned as it is now; nothing was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutOrderResponse'
+        '400':
+          description: |
+            A field cannot be accepted (`validation_order_request_invalid`). `field` names it: `body`
+            (not a JSON object, a field of the wrong type, or over 64 KB), `merchantName`, `reference`,
+            `amount`, `description`, `customer.id`, `customer.name`, `customer.email`,
+            `expiresInMinutes` or `returnUrl`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutError'
+              example:
+                status: bad_request
+                code: 400
+                details: validation_order_request_invalid
+                field: amount
+        '401':
+          $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '403':
+          description: |
+            `merchant_unverified_limit`: your business is not verified and has received 1,000 USD in
+            total. No new order until the verification is approved. Orders created before keep taking
+            payments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutError'
+              example:
+                status: order_failed
+                code: 403
+                details: merchant_unverified_limit
+        '409':
+          description: |
+            - `order_reference_conflict`: the order with this `reference` is not closed or expired and
+              has another `amount`. Use a new `reference`, or close that order first.
+            - `no_free_addresses`: no address type has a free address. Open **Crypto processing** in the
+              portal so it can add addresses, or wait until addresses of ended orders have rested.
+            - `merchant_wallet_missing`: the account of this API key has no Unigox wallet to receive
+              payments. Write to support@unigox.com.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutError'
+              example:
+                status: order_failed
+                code: 409
+                details: no_free_addresses
+        '500':
+          $ref: '#/components/responses/CryptoCheckoutInternalError'
+        '503':
+          description: |
+            `merchant_limit_unavailable`: Unigox could not check how much your business may still
+            receive before verification, so the order was not created. Send the request again later.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutError'
+              example:
+                status: order_failed
+                code: 503
+                details: merchant_limit_unavailable
+  /api/v1/partner/crypto/orders/{id}:
+    get:
+      tags:
+        - Crypto Processing
+      summary: Read an order and its payments
+      operationId: getCryptoCheckoutOrder
+      description: |
+        The order as it is now: its `status`, what it has `received` and every transfer to its
+        addresses that counts for it (`payments`). Ship when `status` is `paid` or `overpaid`.
+
+        A transfer counts for the order when it was sent between one minute before the order was
+        created and 15 minutes after the order ended (its `expiresAt`, or the time it was closed or
+        paid, if sooner). Unigox sends no notification when an order is paid: read the order when
+        the payer returns to your site, and from a job that reads your open orders every few minutes.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CryptoCheckoutOrderId'
+      responses:
+        '200':
+          description: The order with its payments (`order_retrieved`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutOrderReadResponse'
+              example:
+                status: order_retrieved
+                code: 200
+                data:
+                  id: "ord_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  token: "o_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  payUrl: "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d"
+                  reference: "A-1001"
+                  amount: "25.00"
+                  currency: USD
+                  description: "Order A-1001"
+                  status: paid
+                  received: "25.00"
+                  createdAt: "2026-11-26T10:00:00.000000Z"
+                  expiresAt: "2026-11-26T11:00:00.000000Z"
+                  closedAt: "2026-11-26T10:07:41.512000Z"
+                  returnUrl: "https://shop.example.com/orders/A-1001"
+                  addresses:
+                    - family: evm
+                      address: "0x8d2f1c3b7a9e4d6f0b2c5a8e1f3d7b9c4a6e2f10"
+                    - family: tvm
+                      address: "TXa7Qm2kP9rLc4VbN8wE3hJ6sD1fG5yZuK"
+                  customer:
+                    id: "cus-77"
+                    name: "Ana Silva"
+                    email: "ana@example.com"
+                  payments:
+                    - txHash: "0x5f2c8e1d4b7a9c3e6f0d2b5a8c1e4f7d9b3a6c0e2f5d8b1a4c7e9f3d6b0a2c5e"
+                      chainId: 42161
+                      coin: USDC
+                      amount: "25.00"
+                      status: credited
+                      at: "2026-11-26T10:06:58.000000Z"
+        '401':
+          $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '404':
+          $ref: '#/components/responses/CryptoCheckoutOrderNotFound'
+        '500':
+          $ref: '#/components/responses/CryptoCheckoutInternalError'
+  /api/v1/partner/crypto/orders/{id}/close:
+    post:
+      tags:
+        - Crypto Processing
+      summary: Close an order that is not paid
+      operationId: closeCryptoCheckoutOrder
+      description: |
+        Ends an order that has not received its amount, for example when the payer cancels on your
+        site. The payment page stops showing its addresses, and they rest 24 hours before another order
+        takes them. A transfer sent up to 15 minutes after the close still counts for the order: if it
+        brings the order to its amount, the order reads `paid`. No request body.
+
+        An order that is already `closed` or `expired` is returned as it is. A `paid` or `overpaid`
+        order cannot be closed (`409 order_already_paid`).
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CryptoCheckoutOrderId'
+      responses:
+        '200':
+          description: The order as it is after the request, with its payments (`order_closed`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutOrderReadResponse'
+        '401':
+          $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '404':
+          $ref: '#/components/responses/CryptoCheckoutOrderNotFound'
+        '409':
+          description: '`order_already_paid`: the order is `paid` or `overpaid`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutError'
+              example:
+                status: order_failed
+                code: 409
+                details: order_already_paid
+        '500':
+          $ref: '#/components/responses/CryptoCheckoutInternalError'
+  /api/v1/partner/crypto/customers/{external_id}:
+    put:
+      tags:
+        - Crypto Processing
+      summary: Create or update a customer
+      operationId: putCryptoCheckoutCustomer
+      description: |
+        Creates your customer under your own id for them, or updates one you created. A field you
+        leave out keeps its stored value; an empty string clears it. An order whose `customer.id` names
+        the customer updates it the same way. The body is required: send `{}` to create a customer
+        with only its id.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CryptoCheckoutCustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CryptoCheckoutCustomerRequest'
+            example:
+              name: "Ana Silva"
+              email: "ana@example.com"
+      responses:
+        '200':
+          description: The customer as stored (`customer_saved`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutCustomerResponse'
+              example:
+                status: customer_saved
+                code: 200
+                data:
+                  id: "cus-77"
+                  name: "Ana Silva"
+                  email: "ana@example.com"
+                  createdAt: "2026-11-20T08:15:02.104000Z"
+                  updatedAt: "2026-11-26T10:00:00.000000Z"
+        '400':
+          description: |
+            A value cannot be accepted (`validation_order_request_invalid`). `field` is `customer.id`
+            (the id in the path), `customer.name`, `customer.email` or `body`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutError'
+              example:
+                status: bad_request
+                code: 400
+                details: validation_order_request_invalid
+                field: customer.email
+        '401':
+          $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '500':
+          $ref: '#/components/responses/CryptoCheckoutInternalError'
+    get:
+      tags:
+        - Crypto Processing
+      summary: Read a customer and their latest orders
+      operationId: getCryptoCheckoutCustomer
+      description: |
+        The customer with their latest 20 orders, newest first. Each order is as
+        `POST /api/v1/partner/crypto/orders` answers it, without `customer`; read one order for its
+        payments.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CryptoCheckoutCustomerId'
+      responses:
+        '200':
+          description: The customer and their orders (`customer_retrieved`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutCustomerOrdersResponse'
+        '401':
+          $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '404':
+          description: '`customer_not_found`: you have no customer with this id.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoCheckoutError'
+              example:
+                status: order_failed
+                code: 404
+                details: customer_not_found
+        '500':
+          $ref: '#/components/responses/CryptoCheckoutInternalError'
 components:
   schemas:
     WalletType:
@@ -11880,6 +12230,385 @@ components:
               description: Whether another page exists after this one.
               example: false
 
+
+    CryptoCheckoutOrderRequest:
+      type: object
+      required: [reference, amount]
+      properties:
+        merchantName:
+          type: string
+          maxLength: 64
+          description: |
+            The name the payer sees. Left out or empty: the name of your partner account, with dashes and
+            underscores as spaces, a trailing number dropped and the first letter capitalised
+            (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** in
+            the portal is kept in your browser, so orders never use it.
+          example: Northwind
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Your order number, 1 to 64 characters after spaces at either end are removed, without line
+            breaks or other control characters. It names the order in the portal and makes a repeated
+            request return the same order.
+          example: A-1001
+        amount:
+          type: string
+          pattern: '^[0-9]{1,12}(\.[0-9]{1,2})?$'
+          description: |
+            The amount due in USD, at least `1.00`: up to 12 digits and up to two decimals, such as
+            `"25.00"`. A JSON number with the same digits is accepted too.
+          example: "25.00"
+        description:
+          type: string
+          maxLength: 200
+          description: |
+            Text about the order for the payer, up to 200 characters, without line breaks. The payment
+            page shows at most the first 140.
+        customer:
+          type: object
+          required: [id]
+          description: |
+            Your customer. Creates the customer under `id`, or updates the name and email of the one you
+            have; a field you leave out keeps its stored value.
+          properties:
+            id:
+              type: string
+              minLength: 1
+              maxLength: 64
+              description: Your own id for the customer, 1 to 64 characters.
+            name:
+              type: string
+              maxLength: 120
+            email:
+              type: string
+              maxLength: 254
+              description: An address with one `@` and a dot after it, or an empty string.
+        expiresInMinutes:
+          type: integer
+          minimum: 5
+          maximum: 10080
+          default: 60
+          description: How long the order takes payments, in minutes. 10,080 minutes is 7 days.
+        returnUrl:
+          type: string
+          maxLength: 2048
+          description: |
+            An `https://` page of your site, without a user name or password. The payment page offers it
+            as a link back to you and never opens it by itself.
+          example: "https://shop.example.com/orders/A-1001"
+
+    CryptoCheckoutOrderAddress:
+      type: object
+      required: [family, address]
+      properties:
+        family:
+          type: string
+          enum: [evm, tvm, ton, svm]
+          description: |
+            The address type: `evm` (Ethereum and the networks built like it), `tvm` (TRON), `ton`
+            (TON) or `svm` (Solana).
+        address:
+          type: string
+
+    CryptoCheckoutOrderCustomer:
+      type: object
+      nullable: true
+      required: [id, name, email]
+      description: The order's customer, `null` when the order names none.
+      properties:
+        id:
+          type: string
+          description: Your own id for the customer.
+        name:
+          type: string
+          description: Empty when none is stored.
+        email:
+          type: string
+          description: Empty when none is stored.
+
+    CryptoCheckoutOrderFields:
+      type: object
+      required: [id, token, payUrl, reference, amount, currency, description, status, received, createdAt, expiresAt, closedAt, returnUrl, addresses]
+      properties:
+        id:
+          type: string
+          description: The order's id, `ord_` and 24 letters and digits. Keep it to read the order.
+          example: "ord_4f9c2a7e1b3d5c8a0e6f2b4d"
+        token:
+          type: string
+          description: What `checkout.js` opens, `o_` and the same 24 characters. It names the order only.
+          example: "o_4f9c2a7e1b3d5c8a0e6f2b4d"
+        payUrl:
+          type: string
+          description: The order's payment page. Send the payer there as it is.
+          example: "https://www.unigox.com/pay/o_4f9c2a7e1b3d5c8a0e6f2b4d"
+        reference:
+          type: string
+        amount:
+          type: string
+          description: The amount due in USD, with two decimals.
+          example: "25.00"
+        currency:
+          type: string
+          enum: [USD]
+        description:
+          type: string
+          description: Empty when none was sent.
+        status:
+          type: string
+          enum: [open, partly_paid, paid, overpaid, expired, closed]
+          description: |
+            - `open`: nothing credited yet, and the order takes payments.
+            - `partly_paid`: less than the amount credited, short by more than the allowance; the payer
+              can still send the rest.
+            - `paid`: the amount credited, or short by at most 0.5 % of it and never more than 1.00 USD.
+              Stays `paid`.
+            - `overpaid`: more than the amount credited.
+            - `expired`: the time ran out before the order was paid; `received` says what came.
+            - `closed`: you closed it before it was paid; `received` says what came.
+        received:
+          type: string
+          description: |
+            USD credited so far to the order's addresses, the sum of its `credited` payments, with two
+            to six decimals. `"0.00"` on a new order.
+          example: "25.00"
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the order stops taking payments.
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When the order ended: the time it was paid or closed, or `expiresAt` when its time ran out.
+            `null` while it has not ended. An order whose time ran out keeps `null` for up to 15 minutes
+            after `expiresAt`, and longer while a transfer to it is on its way.
+        returnUrl:
+          type: string
+          nullable: true
+          description: The `returnUrl` you sent, `null` when none.
+        addresses:
+          type: array
+          description: The order's payment addresses, one per address type that had a free address.
+          items:
+            $ref: '#/components/schemas/CryptoCheckoutOrderAddress'
+
+    CryptoCheckoutOrder:
+      allOf:
+        - $ref: '#/components/schemas/CryptoCheckoutOrderFields'
+        - type: object
+          required: [customer]
+          properties:
+            customer:
+              $ref: '#/components/schemas/CryptoCheckoutOrderCustomer'
+
+    CryptoCheckoutOrderPayment:
+      type: object
+      required: [txHash, chainId, coin, amount, status, at]
+      properties:
+        txHash:
+          type: string
+          description: The transfer's transaction on the network it was sent on.
+        chainId:
+          type: integer
+          format: int64
+          description: The network the transfer was sent on, as in the Reference's network table.
+          example: 42161
+        coin:
+          type: string
+          description: The coin sent, such as `USDT`; empty when Unigox has no symbol for it.
+        amount:
+          type: string
+          description: |
+            What the transfer is worth in USD, the amount credited to your wallet, one for one. Empty when
+            Unigox cannot read the coin's decimals; such a payment is not counted in `received`.
+          example: "25.00"
+        status:
+          type: string
+          enum: [credited, pending, on_hold, failed, refunded]
+          description: |
+            - `credited`: in your Unigox wallet; counted in `received`.
+            - `pending`: seen, on its way. The order waits for it, also past `expiresAt`.
+            - `on_hold`: stopped for a compliance review. The order waits for it.
+            - `failed`: not credited.
+            - `refunded`: sent back, or marked to be.
+        at:
+          type: string
+          format: date-time
+          description: When the transfer was mined on its network; until then, when Unigox first saw it.
+
+    CryptoCheckoutOrderWithPayments:
+      allOf:
+        - $ref: '#/components/schemas/CryptoCheckoutOrder'
+        - type: object
+          required: [payments]
+          properties:
+            payments:
+              type: array
+              description: Every transfer to the order's addresses that counts for the order, oldest first.
+              items:
+                $ref: '#/components/schemas/CryptoCheckoutOrderPayment'
+
+    CryptoCheckoutOrderResponse:
+      type: object
+      required: [status, code, data]
+      properties:
+        status:
+          type: string
+          enum: [order_created, order_retrieved]
+          description: '`order_created` with HTTP 201, `order_retrieved` with 200 for a repeated request.'
+        code:
+          type: integer
+          enum: [200, 201]
+        data:
+          $ref: '#/components/schemas/CryptoCheckoutOrder'
+
+    CryptoCheckoutOrderReadResponse:
+      type: object
+      required: [status, code, data]
+      properties:
+        status:
+          type: string
+          enum: [order_retrieved, order_closed]
+        code:
+          type: integer
+          enum: [200]
+        data:
+          $ref: '#/components/schemas/CryptoCheckoutOrderWithPayments'
+
+    CryptoCheckoutCustomerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          maxLength: 254
+          description: An address with one `@` and a dot after it, or an empty string.
+
+    CryptoCheckoutCustomer:
+      type: object
+      required: [id, name, email, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          description: Your own id for the customer.
+        name:
+          type: string
+        email:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CryptoCheckoutCustomerResponse:
+      type: object
+      required: [status, code, data]
+      properties:
+        status:
+          type: string
+          enum: [customer_saved]
+        code:
+          type: integer
+          enum: [200]
+        data:
+          $ref: '#/components/schemas/CryptoCheckoutCustomer'
+
+    CryptoCheckoutCustomerOrdersResponse:
+      type: object
+      required: [status, code, data]
+      properties:
+        status:
+          type: string
+          enum: [customer_retrieved]
+        code:
+          type: integer
+          enum: [200]
+        data:
+          allOf:
+            - $ref: '#/components/schemas/CryptoCheckoutCustomer'
+            - type: object
+              required: [orders]
+              properties:
+                orders:
+                  type: array
+                  description: The customer's latest 20 orders, newest first, without `customer` and `payments`.
+                  items:
+                    $ref: '#/components/schemas/CryptoCheckoutOrderFields'
+
+    CryptoCheckoutError:
+      type: object
+      required: [status, code, details]
+      properties:
+        status:
+          type: string
+          enum: [bad_request, order_failed]
+          description: '`bad_request` with HTTP 400, `order_failed` with every other error status.'
+        code:
+          type: integer
+          description: The HTTP status.
+          enum: [400, 403, 404, 409, 500, 503]
+        details:
+          type: string
+          enum:
+            - validation_order_request_invalid
+            - merchant_unverified_limit
+            - order_not_found
+            - customer_not_found
+            - order_reference_conflict
+            - no_free_addresses
+            - merchant_wallet_missing
+            - order_already_paid
+            - internal_error
+            - merchant_limit_unavailable
+          description: |
+            | `details` | HTTP | Meaning |
+            | --- | --- | --- |
+            | `validation_order_request_invalid` | 400 | `field` names the value that cannot be accepted |
+            | `merchant_unverified_limit` | 403 | Not verified, and 1,000 USD received in total: no new order until verified |
+            | `order_not_found` | 404 | You have no order with this id |
+            | `customer_not_found` | 404 | You have no customer with this id |
+            | `order_reference_conflict` | 409 | The order with this `reference` is not closed or expired and has another amount |
+            | `no_free_addresses` | 409 | No address type has a free address |
+            | `merchant_wallet_missing` | 409 | Your account has no Unigox wallet to receive payments |
+            | `order_already_paid` | 409 | A `paid` or `overpaid` order cannot be closed |
+            | `internal_error` | 500 | Unigox failed; send the request again later |
+            | `merchant_limit_unavailable` | 503 | The limit before verification could not be checked; send the request again later |
+        field:
+          type: string
+          description: With `validation_order_request_invalid` only, the value that cannot be accepted.
+          example: amount
+
+    CryptoCheckoutUnauthorized:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          description: |
+            Without a key: `{"code": "UNAUTHORIZED", "message": "missing X-API-Key header"}`. With a key
+            Unigox does not know: the text `"invalid API key"`.
+          oneOf:
+            - type: string
+            - type: object
+              required: [code, message]
+              properties:
+                code:
+                  type: string
+                message:
+                  type: string
   parameters:
     UserUUIDPath:
       name: user_uuid
@@ -11924,6 +12653,55 @@ components:
         type: string
         format: uuid
       example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+    CryptoCheckoutOrderId:
+      name: id
+      in: path
+      required: true
+      description: The order's `id` (`ord_…`) or its `token` (`o_…`). An order that is not yours answers `404`.
+      schema:
+        type: string
+        pattern: '^(ord|o)_[0-9A-Za-z]{24}$'
+      example: "ord_4f9c2a7e1b3d5c8a0e6f2b4d"
+    CryptoCheckoutCustomerId:
+      name: external_id
+      in: path
+      required: true
+      description: Your own id for the customer, as in `customer.id` of an order, URL-encoded.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+      example: "cus-77"
+  responses:
+    CryptoCheckoutUnauthorized:
+      description: No `X-API-Key` header, or a key Unigox does not know.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CryptoCheckoutUnauthorized'
+          example:
+            success: false
+            error: invalid API key
+    CryptoCheckoutOrderNotFound:
+      description: '`order_not_found`: you have no order with this id.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CryptoCheckoutError'
+          example:
+            status: order_failed
+            code: 404
+            details: order_not_found
+    CryptoCheckoutInternalError:
+      description: '`internal_error`: Unigox failed. Send the request again later.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CryptoCheckoutError'
+          example:
+            status: order_failed
+            code: 500
+            details: internal_error
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
