@@ -1015,7 +1015,7 @@ setInterval(async () => {
 
 ### Repeated requests and closing
 
-- **One order per `reference`.** While an order reads `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order and changes nothing in it, so retries never make a second one. Another amount answers `409 order_reference_conflict`. This holds in the 15 minutes after `expiresAt` too, while the order still reads `open` or `partly_paid` but takes no new transfer: use a new `reference` for a new attempt then. Once the order reads `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`, and keep reading the old one until it is final. If the old order turns `paid` after all, it holds the `reference` again, unless the new order has taken it; ship once, for whichever order is paid.
+- **One order per `reference`.** While an order reads `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order and changes nothing in it, so retries never make a second one. Another amount answers `409 order_reference_conflict`. This holds in the 15 minutes after `expiresAt` too, also when the order already reads `expired` then: the same `reference` returns that order, which takes no new transfer. Use a new `reference` for a new attempt. Once those 15 minutes have passed, or once you closed the order, an order that is not paid frees its `reference`, and the same `reference` creates a new order: read the new one by its new `id`, and keep reading the old one until it is final. If the old order turns `paid` after all, it holds the `reference` again, unless the new order has taken it; ship once, for whichever order is paid.
 - **Close an order** that will not be paid, for example when the customer empties the cart: `POST /api/v1/partner/crypto/orders/{id}/close`, with no body. The payment page stops showing its addresses. A transfer sent up to 15 minutes after the close still counts, and if it brings the order to its amount, the order reads `paid`. A `paid` or `overpaid` order cannot be closed (`409 order_already_paid`), also when the payment is credited at the moment you close it: read the order and ship. A `closed` or `expired` one comes back as it is.
 
 There is no refund request in the API. To return money, agree an address and a network with your customer and send it from your Unigox wallet.
@@ -1260,6 +1260,7 @@ A payment link is paid when its credited payments add up to the amount, or fall 
 **Export CSV** writes the list for a period:
 
 - Choose **Readable** for a file people read, or **For developers** for a file a program reads: its column names and codes do not change. The developer file of payments has `reference`, `status`, `amount_due_usd`, `received`, `coin`, `source_network`, `source_tx`, `credit_tx`, `seen_at`, `credited_at`, `address_id`, `payment_key`, `source` and more.
+- In the developer file of payments, `source` says what a payment was for: `website_checkout` for an order from your website, `payment_link` for a payment link or an invoice, `deposit_address` for a customer's deposit page, and `other_credit` for money that matches none of them.
 - **Payment links → Export CSV** writes one row per link, with its status, amounts and address IDs.
 - **Deposit addresses → Export CSV** writes one row per customer and network, with every address ID the customer had.
 
@@ -2044,7 +2045,7 @@ First check your server's requests, which move no money:
 
 1. **The same order twice:** create an order, then send the same `reference` and `amount` again. The second answer is `200` with the same `id`.
 2. **Another amount:** the same `reference` with another `amount` answers `409 order_reference_conflict`.
-3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`; the same `reference` then creates a new order with a new `id`.
+3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`, and for 15 more minutes the same `reference` returns this order. After that, the same `reference` creates a new order with a new `id`.
 4. **Close an order:** it reads `closed`, and its payment page no longer shows an address.
 5. **A currency other than USD:** `"currency": "EUR"` answers `400` with `field` `currency`.
 
@@ -2117,7 +2118,7 @@ Each word has one meaning on every page. The last column is its name in the API,
 
 ## Orders API
 
-Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). The API reference lists them under **Crypto Processing**.
+Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a request signed in to the portal instead answers `403`. The API reference lists them under **Crypto Processing**.
 
 | Request | What it does |
 | --- | --- |
@@ -2206,7 +2207,7 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 | 403 | `merchant_unverified_limit` | Your business is not verified and has received 1,000 USD in total. Verify your business in the portal. Orders created before keep taking payments, and a repeat of one of them (same `reference` and `amount`) still answers `200`. |
 | 404 | `order_not_found` | You have no order with this id. |
 | 404 | `customer_not_found` | You have no customer with this id. |
-| 409 | `order_reference_conflict` | The order with this `reference` reads `open`, `partly_paid`, `paid` or `overpaid` and has another amount. Use a new `reference`, or close that order first. |
+| 409 | `order_reference_conflict` | The order with this `reference` has another amount. It holds the `reference` while it reads `open`, `partly_paid`, `paid` or `overpaid`, and for 15 minutes after its `expiresAt`. Use a new `reference`, or close that order first. |
 | 409 | `no_free_addresses` | No address type has a free address: see [Limits](#limits). Show the payer another way to pay, and open **Crypto processing** in the portal. |
 | 409 | `merchant_wallet_missing` | The account behind this API key has no Unigox wallet to receive payments. Write to support@unigox.com. |
 | 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it. Ship it. |

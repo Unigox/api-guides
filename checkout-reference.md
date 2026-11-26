@@ -32,7 +32,7 @@ Each word has one meaning on every page. The last column is its name in the API,
 
 ## Orders API
 
-Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). The API reference lists them under **Crypto Processing**.
+Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a request signed in to the portal instead answers `403`. The API reference lists them under **Crypto Processing**.
 
 | Request | What it does |
 | --- | --- |
@@ -121,7 +121,7 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 | 403 | `merchant_unverified_limit` | Your business is not verified and has received 1,000 USD in total. Verify your business in the portal. Orders created before keep taking payments, and a repeat of one of them (same `reference` and `amount`) still answers `200`. |
 | 404 | `order_not_found` | You have no order with this id. |
 | 404 | `customer_not_found` | You have no customer with this id. |
-| 409 | `order_reference_conflict` | The order with this `reference` reads `open`, `partly_paid`, `paid` or `overpaid` and has another amount. Use a new `reference`, or close that order first. |
+| 409 | `order_reference_conflict` | The order with this `reference` has another amount. It holds the `reference` while it reads `open`, `partly_paid`, `paid` or `overpaid`, and for 15 minutes after its `expiresAt`. Use a new `reference`, or close that order first. |
 | 409 | `no_free_addresses` | No address type has a free address: see [Limits](#limits). Show the payer another way to pay, and open **Crypto processing** in the portal. |
 | 409 | `merchant_wallet_missing` | The account behind this API key has no Unigox wallet to receive payments. Write to support@unigox.com. |
 | 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it. Ship it. |

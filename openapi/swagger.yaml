@@ -136,7 +136,8 @@ tags:
       order is paid: read the order.
 
       Every answer is `{status, code, data}`. An error is `{status, code, details}`, with `field` on a
-      `400`. A missing or unknown API key answers `401`, and a suspended partner `403`, both as
+      `400`. These routes take the API key only: a request signed in to the portal instead answers
+      `403`. A missing or unknown API key answers `401`, and a suspended partner `403`, both as
       `{"success": false, "error": "…"}`. The step-by-step guide is [Crypto processing](https://developers.unigox.com/tutorials/crypto-checkout).
     x-page-icon: coins
   - name: Orders
@@ -7569,10 +7570,12 @@ paths:
         had a free address; with none free, the answer is `409 no_free_addresses`.
 
         **Repeats.** While the order with this `reference` reads `open`, `partly_paid`, `paid` or
-        `overpaid`, a request with the same `reference` and the same `amount` answers `200` with that
-        order and creates nothing; the other fields of the repeat are not applied. The same `reference`
-        with another `amount` answers `409 order_reference_conflict`. Once the order reads `expired` or
-        `closed`, the `reference` is free and a request with it creates a new order. An order that was
+        `overpaid`, and for 15 minutes after its `expiresAt` (also when it reads `expired` then), a
+        request with the same `reference` and the same `amount` answers `200` with that order and
+        creates nothing; the other fields of the repeat are not applied. The same `reference` with
+        another `amount` answers `409 order_reference_conflict`. Use a new `reference` for a new
+        attempt. An order that is not paid frees its `reference` 15 minutes after its `expiresAt`, or
+        when you close it; a request with that `reference` then creates a new order. An order that was
         closed or expired and then receives its amount inside its window reads `paid` and holds its
         `reference` again, unless a newer order has taken it.
 

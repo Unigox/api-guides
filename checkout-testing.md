@@ -70,7 +70,7 @@ First check your server's requests, which move no money:
 
 1. **The same order twice:** create an order, then send the same `reference` and `amount` again. The second answer is `200` with the same `id`.
 2. **Another amount:** the same `reference` with another `amount` answers `409 order_reference_conflict`.
-3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`; the same `reference` then creates a new order with a new `id`.
+3. **An order that runs out:** create one with `"expiresInMinutes": 5` and pay nothing. After 5 minutes it reads `expired`, and for 15 more minutes the same `reference` returns this order. After that, the same `reference` creates a new order with a new `id`.
 4. **Close an order:** it reads `closed`, and its payment page no longer shows an address.
 5. **A currency other than USD:** `"currency": "EUR"` answers `400` with `field` `currency`.
 
