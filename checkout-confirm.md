@@ -15,7 +15,7 @@ Fulfil an order only after your server has checked with Unigox that the payment 
 | [Read your payment history](#read-your-payment-history) | Payment links and deposit pages | Your wallet's private key | Every payment to the link's addresses, also the ones made while no page was open |
 | Look in the portal | Everything | Nothing | Every payment, in **Payments**: for checking by hand |
 
-Unigox does not send payment notifications (webhooks) to your server yet. Run your check in two places: when the customer returns to your site, and in a job that goes over every open order every few minutes.
+Unigox does not send payment notifications (webhooks) to your server yet. Run your check in two places: when the customer returns to your site, and in a job that reads, every few minutes, every order whose status is not final yet ([What counts for an order](#what-counts-for-an-order)).
 
 ## Read the order
 
@@ -101,7 +101,7 @@ setInterval(async () => {
 | `partly_paid` | Part of the amount credited. Before `expiresAt` the payer can send the rest, on any network the order offers. | Wait |
 | `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It never goes back; it can still become `overpaid`. | Ship, once |
 | `overpaid` | More than the amount credited | Ship, once. The extra is in your wallet: settle it with your customer. |
-| `expired` | The time ran out before the order was paid. 15 minutes after `expiresAt`, every order that is not paid ends as `expired`, whatever came. | Do not ship, unless it turns `paid` (below). If `received` is above `"0.00"`, that part is in your wallet: settle it with your customer. |
+| `expired` | The time ran out before the order was paid. 15 minutes after `expiresAt`, every order still `open` or `partly_paid` ends as `expired`, whatever came. | Do not ship, unless it turns `paid` (below). If `received` is above `"0.00"`, that part is in your wallet: settle it with your customer. |
 | `closed` | You closed the order before it was paid | Do not ship, unless it turns `paid` (below). Settle any `received` with your customer. |
 
 ### What counts for an order
@@ -109,13 +109,13 @@ setInterval(async () => {
 - **`received`** is the USD credited to the order: the sum of its payments with status `credited`. One USDT, USDC, USDG or USDT0 counts as 1 USD. A payment that is `pending`, `on_hold`, `failed` or `refunded` is not in it.
 - **`payments`** lists every transfer to the order's addresses that counts for the order, oldest first, with its network (`chainId`), coin, USD `amount`, `status` and time (`at`). A payment whose `amount` is `""` is one Unigox cannot value; it is not counted.
 - **The allowance.** An order is `paid` when it is short by at most 0.5 % of the amount and by no more than 1.00 USD. This covers an exchange that takes its withdrawal fee out of the amount it sends.
-- **The window.** A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, when you close it, or when it is paid, whichever comes first. A transfer sent inside the window counts when it is credited, also if that is later. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`.
+- **The window.** A transfer counts for the order when it was sent between one minute before the order was created and 15 minutes after the order ended. The order ends at `expiresAt`, when you close it, or when Unigox finds it paid, whichever comes first: `closedAt` says when. A transfer sent inside the window counts when it is credited, also if that is later. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`.
 - **When a status is final.** Once the window has passed and none of the order's `payments` is `pending` or `on_hold`, nothing changes the order any more. Keep reading an order until then.
 - **A transfer after that time** is not the order's. It still reaches your Unigox wallet, and it appears in the portal's **Payments** under **Needs attention**, with no order. Reading the order does not show it. Match it to your customer by hand.
 
 ### Repeated requests and closing
 
-- **One order per `reference`.** While an order reads `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order, so retries never make a second one. Another amount answers `409 order_reference_conflict`. Once the order reads `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`, and keep reading the old one until it is final. If the old order turns `paid` after all, it holds the `reference` again, unless the new order has taken it; ship once, for whichever order is paid.
+- **One order per `reference`.** While an order reads `open`, `partly_paid`, `paid` or `overpaid`, creating it again with the same `reference` and `amount` answers `200` with that order and changes nothing in it, so retries never make a second one. Another amount answers `409 order_reference_conflict`. This holds in the 15 minutes after `expiresAt` too, while the order still reads `open` or `partly_paid` but takes no new transfer: use a new `reference` for a new attempt then. Once the order reads `closed` or `expired`, the same `reference` creates a new order: read the new one by its new `id`, and keep reading the old one until it is final. If the old order turns `paid` after all, it holds the `reference` again, unless the new order has taken it; ship once, for whichever order is paid.
 - **Close an order** that will not be paid, for example when the customer empties the cart: `POST /api/v1/partner/crypto/orders/{id}/close`, with no body. The payment page stops showing its addresses. A transfer sent up to 15 minutes after the close still counts, and if it brings the order to its amount, the order reads `paid`. A `paid` or `overpaid` order cannot be closed (`409 order_already_paid`), also when the payment is credited at the moment you close it: read the order and ship. A `closed` or `expired` one comes back as it is.
 
 There is no refund request in the API. To return money, agree an address and a network with your customer and send it from your Unigox wallet.

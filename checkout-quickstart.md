@@ -89,7 +89,7 @@ These settings are stored in your browser, not in your account. They go into eve
 
 You add this once. Every payment is then a new order that your server creates.
 
-**1. Get your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Get your API key**. On the page that opens, press **Generate** next to **API key** and copy the key: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take.
+**1. Get your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Get your API key**. On the page that opens, press **Generate** next to **API key** and copy the key: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`.
 
 **2. Put the checkout on your page.** The button asks your server for an order on its first press and opens the checkout over your page:
 
