@@ -95,7 +95,8 @@ test("the changelog announces the checkout guide and its link check, which is no
   assert.match(unreleased, /On the developer site it is six pages: /);
   for (const page of CHECKOUT_PAGES) assert.ok(unreleased.includes(`](./${page})`), `the Unreleased entry does not list ${page}`);
   assert.doesNotMatch(unreleased, /checkout-server\.md|\bfive pages\b/);
-  assert.match(unreleased, /section "Create a deposit page for a customer" of \[Create payment links from your server\]\(\.\/checkout-links\.md\)/);
+  // The page was "Create payment links from your server" until orders took the website (2026-11-26).
+  assert.match(unreleased, /section "Create a deposit page for a customer" of \[Deposit pages and signed links from your server\]\(\.\/checkout-links\.md\)/);
   // No internal service names in what partners read (L104); the reference's new address is named instead.
   assert.doesNotMatch(unreleased, /\bBridge\b|\brelay|public fingerprint/);
   assert.match(unreleased, /`api-reference\/payment-addresses`/);
