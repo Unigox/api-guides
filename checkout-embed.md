@@ -75,7 +75,7 @@ app.post("/your-server/crypto-order", async (req, res) => {
       merchantName: "Northwind",         // the name the payer sees
       reference: cart.id,                // your order number, at most 64 characters
       amount: cart.total,                // USD as a string, such as "25.00"
-      customer: { id: cart.customerId }, // optional
+      ...(cart.customerId ? { customer: { id: cart.customerId } } : {}), // optional: leave it out for a guest
     }),
     signal: AbortSignal.timeout(10_000),
   });
@@ -94,7 +94,7 @@ app.listen(3000);
 `yourCart()` and `saveUnigoxOrderId()` stand for your own code.
 
 - **Create the order when the payer chooses to pay, not when the page loads.** An order holds one address of each type until it ends, and each address then rests 24 hours before another order can take it. Orders that nobody pays use up addresses.
-- **Send the same `reference` for the same cart.** While that order is open or paid, a request with the same `reference` and `amount` returns the same order (`200`), so a double click or a retry never makes a second order. If the cart's total changed, use a new `reference`, or close the old order first: the same `reference` with another amount answers `409 order_reference_conflict`.
+- **Send the same `reference` for the same cart.** While that order is open or paid, a request with the same `reference` and `amount` returns the same order (`200`), so a double click or a retry never makes a second order. The repeat changes nothing in the order: its other fields are not applied. If the cart's total changed, use a new `reference`, or close the old order first: the same `reference` with another amount answers `409 order_reference_conflict`.
 - **Keep `data.id` with your order.** Your server reads the order with it to know when it is paid ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)). Never read an order by an id that the browser sends you.
 - **Send `merchantName`.** It is the name the payer sees, and every answer about the order returns it. Without it the payer sees your partner account's name. The name under **Settings → Shown to the payer as** is kept in your browser and does not reach orders.
 - **The order takes payments for 60 minutes.** Send `expiresInMinutes` for another time, from 5 to 10,080 (7 days).
@@ -139,7 +139,7 @@ Load `checkout.js` once on the page, from `https://www.unigox.com`, and open the
 </script>
 ```
 
-`checkout.js` calls the `token` function once, on the first `open()`. A failed request reaches `onError` as `TOKEN_MISSING`, and the next `open()` calls the function again. Once it has a token, every `open()` shows the same order. Closing the window does not cancel the payment. If the payer comes back after the order's time ran out, the checkout shows the order as ended: call `checkout.destroy()` and create a new checkout, which creates a new order.
+`checkout.js` calls the `token` function once, on the first `open()`. A failed request reaches `onError` as `TOKEN_MISSING`, and the next `open()` calls the function again. Once it has a token, every `open()` shows the same order. Closing the window does not cancel the payment. If the payer comes back after the order's time ran out, the checkout shows the order as ended: call `checkout.destroy()` and create a new checkout, which creates a new order. An order that has already ended when the checkout loads sends your page no status: only a paid or overpaid one calls `onComplete`, as a paid order does. Your server's read of the order tells you which it is.
 
 On a phone the window fills the screen. The window closes when the browser goes Back or leaves the page. In a single-page app, call `checkout.close()` when your route changes.
 
@@ -515,6 +515,8 @@ None of these codes means that a payment failed or that the payer must pay again
 
 ### Payment statuses
 
+These are the checkout's statuses, which your page receives. They are not the order's statuses, which your server reads ([Order statuses](https://developers.unigox.com/tutorials/crypto-checkout-reference#order-statuses)): an order that is short reads `partly_paid` there and `underpaid` here, and an order that ended short reads `expired` or `closed` there and `underpaid_closed` here. Your server ships by the order's status only.
+
 | Status | What it means | What your page does |
 | --- | --- | --- |
 | `choosing` | The payer is choosing a coin and network | Nothing |
@@ -543,8 +545,8 @@ Each callback gets the same fields, each only when it applies. Money is a decima
 | `mode` | `modal`, `inline`, `topup` on a deposit page, or `null` |
 | `livemode` | `true` for a real payment, `false` on a sample page |
 | `environment` | `production` or `staging` |
-| `reference` | Your order reference |
-| `invoiceId` | The full reference text, for example `NW-20418 · 250.00 USD` |
+| `reference` | Your order reference: an order's `reference`, as your server sent it |
+| `invoiceId` | For an order, the order's `id` (`ord_…`). For a payment link, the full reference text, for example `NW-20418 · 250.00 USD` |
 | `amountDue`, `currency` | The amount due, in `USD` |
 | `coin`, `chainId` | The coin and network the payer chose |
 | `address` | The address shown (`awaiting_payment` only) |
