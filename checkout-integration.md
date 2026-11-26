@@ -2167,7 +2167,7 @@ Each word has one meaning on every page. The last column is its name in the API,
 
 ## Orders API
 
-Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a request signed in to the portal instead answers `403`. The API reference lists them under **Crypto Processing**.
+Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a request signed in to the portal instead answers `403 api_key_required`. The API reference lists them under **Crypto Processing**.
 
 | Request | What it does |
 | --- | --- |
@@ -2252,6 +2252,7 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 | --- | --- | --- |
 | 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, a field of the wrong type, such as a number for `reference` or `5.5` for `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
 | 401 | none | No `X-API-Key` header, or a key Unigox does not know. The body is `{"success": false, "error": "…"}`, with the reason as text. |
+| 403 | `api_key_required` | The request was signed in to the portal, not made with your API key. The body is `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. Send the request from your server with `X-API-Key`. |
 | 403 | none | Your partner access is suspended: `{"success": false, "error": "partner access is suspended"}`. Write to support@unigox.com. |
 | 403 | `merchant_unverified_limit` | Your business is not verified and has received 1,000 USD in total. Verify your business in the portal. Orders created before keep taking payments, and a repeat of one of them (same `reference` and `amount`) still answers `200`. |
 | 404 | `order_not_found` | You have no order with this id. |

@@ -137,7 +137,8 @@ tags:
 
       Every answer is `{status, code, data}`. An error is `{status, code, details}`, with `field` on a
       `400`. These routes take the API key only: a request signed in to the portal instead answers
-      `403`. A missing or unknown API key answers `401`, and a suspended partner `403`, both as
+      `403` with `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. A missing
+      or unknown API key answers `401`, and a suspended partner `403`, both as
       `{"success": false, "error": "…"}`. The step-by-step guide is [Crypto processing](https://developers.unigox.com/tutorials/crypto-checkout).
     x-page-icon: coins
   - name: Orders
@@ -7662,17 +7663,26 @@ paths:
           $ref: '#/components/responses/CryptoCheckoutUnauthorized'
         '403':
           description: |
-            `merchant_unverified_limit`: your business is not verified and has received 1,000 USD in
-            total. No new order until the verification is approved. Orders created before keep taking
-            payments.
+            - `merchant_unverified_limit`: your business is not verified and has received 1,000 USD in
+              total. No new order until the verification is approved. Orders created before keep taking
+              payments.
+            - `api_key_required`: the request was signed in to the portal, not made with your API key.
+              Send it from your server with `X-API-Key`.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CryptoCheckoutError'
-              example:
-                status: order_failed
-                code: 403
-                details: merchant_unverified_limit
+              examples:
+                merchant_unverified_limit:
+                  value:
+                    status: order_failed
+                    code: 403
+                    details: merchant_unverified_limit
+                api_key_required:
+                  value:
+                    status: order_failed
+                    code: 403
+                    details: api_key_required
         '409':
           description: |
             - `order_reference_conflict`: the order with this `reference` is not closed or expired and
@@ -7765,6 +7775,8 @@ paths:
                       at: "2026-11-26T10:06:58.000000Z"
         '401':
           $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '403':
+          $ref: '#/components/responses/CryptoCheckoutAPIKeyRequired'
         '404':
           $ref: '#/components/responses/CryptoCheckoutOrderNotFound'
         '500':
@@ -7797,6 +7809,8 @@ paths:
                 $ref: '#/components/schemas/CryptoCheckoutOrderReadResponse'
         '401':
           $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '403':
+          $ref: '#/components/responses/CryptoCheckoutAPIKeyRequired'
         '404':
           $ref: '#/components/responses/CryptoCheckoutOrderNotFound'
         '409':
@@ -7866,6 +7880,8 @@ paths:
                 field: customer.email
         '401':
           $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '403':
+          $ref: '#/components/responses/CryptoCheckoutAPIKeyRequired'
         '500':
           $ref: '#/components/responses/CryptoCheckoutInternalError'
     get:
@@ -7890,6 +7906,8 @@ paths:
                 $ref: '#/components/schemas/CryptoCheckoutCustomerOrdersResponse'
         '401':
           $ref: '#/components/responses/CryptoCheckoutUnauthorized'
+        '403':
+          $ref: '#/components/responses/CryptoCheckoutAPIKeyRequired'
         '404':
           description: '`customer_not_found`: you have no customer with this id.'
           content:
@@ -12603,6 +12621,7 @@ components:
             - order_already_paid
             - internal_error
             - merchant_limit_unavailable
+            - api_key_required
           description: |
             | `details` | HTTP | Meaning |
             | --- | --- | --- |
@@ -12616,6 +12635,7 @@ components:
             | `order_already_paid` | 409 | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it |
             | `internal_error` | 500 | Unigox failed; send the request again later |
             | `merchant_limit_unavailable` | 503 | The limit before verification could not be checked; send the request again later |
+            | `api_key_required` | 403 | The request was signed in to the portal; these routes take your API key only (`X-API-Key`) |
         field:
           type: string
           description: With `validation_order_request_invalid` only, the value that cannot be accepted.
@@ -12710,6 +12730,18 @@ components:
           example:
             success: false
             error: invalid API key
+    CryptoCheckoutAPIKeyRequired:
+      description: |
+        `api_key_required`: the request was signed in to the portal (a session token), not made with your
+        API key. These routes take the API key only: send the request from your server with `X-API-Key`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CryptoCheckoutError'
+          example:
+            status: order_failed
+            code: 403
+            details: api_key_required
     CryptoCheckoutOrderNotFound:
       description: '`order_not_found`: you have no order with this id.'
       content:
