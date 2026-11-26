@@ -263,7 +263,8 @@ The request, with your order number and total:
 curl -X POST https://api.unigox.com/api/v1/partner/crypto/orders \
   -H "X-API-Key: $UNIGOX_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"merchantName": "Northwind", "reference": "A-1001", "amount": "25.00", "customer": {"id": "cus-77"}}'
+  -d '{"merchantName": "Northwind", "reference": "A-1001", "amount": "25.00",
+       "customer": {"id": "cus-77"}}'
 ```
 
 The answer, `201` (shortened):
