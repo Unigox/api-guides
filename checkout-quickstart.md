@@ -96,17 +96,28 @@ You add this once. Every payment is then a new order that your server creates.
 ```html
 <script src="https://www.unigox.com/checkout.js"></script>
 <button type="button" id="pay-with-crypto">Pay with crypto</button>
+<p id="pay-error" role="alert" hidden>The payment could not be started. Please try again.</p>
 <script>
-  // Your server's route of step 3: it creates the order and answers { token, payUrl }.
+  // Your server's route: it creates the order and answers { token, payUrl }.
   const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    .then((o) => (o && o.token && o.payUrl ? o : Promise.reject(new Error("no order"))));
+  const button = document.getElementById("pay-with-crypto");
+  const error = document.getElementById("pay-error");
+  // No order: the button comes back, and the payer reads why nothing opened.
+  const failed = () => { button.disabled = false; error.hidden = false; };
   let checkout;
-  document.getElementById("pay-with-crypto").addEventListener("click", () => {
+  button.addEventListener("click", () => {
+    error.hidden = true;
     // checkout.js did not load (an ad blocker, the network, your CSP): the order's payment page takes the payment.
-    if (!window.UnigoxCheckout) return newOrder().then((o) => location.assign(o.payUrl));
+    if (!window.UnigoxCheckout) {
+      button.disabled = true; // one order per press
+      return newOrder().then((o) => location.assign(o.payUrl), failed);
+    }
     checkout ??= UnigoxCheckout.create({
       token: () => newOrder().then((o) => o.token), // called on the first open: your server creates the order
       mode: "modal",
+      onError: ({ code }) => { if (code === "TOKEN_MISSING" || code === "TOKEN_TIMEOUT") failed(); },
       onComplete(payload) { /* update your page; only your server confirms the payment */ },
     });
     checkout.open();
@@ -130,17 +141,28 @@ The answer is `{"status": "order_created", "code": 201, "data": {"id": "ord_…"
 import express from "express";
 
 const app = express();
+const UNIGOX_API = "https://api.unigox.com";
 
 app.post("/your-server/crypto-order", async (req, res) => {
-  const cart = await yourCart(req); // your own order, e.g. { id: "A-1001", total: "25.00" }
-  const response = await fetch("https://api.unigox.com/api/v1/partner/crypto/orders", {
+  const cart = await yourCart(req); // your own order, e.g. { id: "A-1001", total: "25.00", customerId: "cus-77" }
+  const response = await fetch(`${UNIGOX_API}/api/v1/partner/crypto/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
-    body: JSON.stringify({ merchantName: "Northwind", reference: cart.id, amount: cart.total }),
+    body: JSON.stringify({
+      merchantName: "Northwind",         // the name the payer sees
+      // The same reference returns the same order. A new attempt needs a new one, such as "A-1001-2".
+      reference: cart.id,                // your order number, at most 64 characters
+      amount: cart.total,                // USD as a string, such as "25.00"
+      ...(cart.customerId ? { customer: { id: cart.customerId } } : {}), // optional: leave it out for a guest
+    }),
+    signal: AbortSignal.timeout(10_000),
   });
   const body = await response.json().catch(() => null);
-  if (!response.ok) return res.status(502).end();
-  await saveUnigoxOrderId(cart.id, body.data.id); // step 4 reads the order by this id
+  if (!response.ok) {
+    console.error("Unigox order not created:", response.status, body?.details, body?.field);
+    return res.status(502).end(); // your page tells the payer the payment could not be started
+  }
+  await saveUnigoxOrderId(cart.id, body.data.id); // you read the order by this id to confirm the payment
   res.json({ token: body.data.token, payUrl: body.data.payUrl });
 });
 
