@@ -605,49 +605,70 @@ The ordinary payment page cannot be shown in a frame. Only the URL with `embed=1
 
 ### React, Next.js, Vue and PHP
 
-Each example calls the route of step 1, `/your-server/crypto-order`, which answers `{ token, payUrl }`.
+Each example calls the route of step 1, `/your-server/crypto-order`, which answers `{ token, payUrl }`. As in the examples above, the order is made when the payer presses the button, and a refusal (an answer that is not ok, or one without `token` and `payUrl`, or `onError` with `TOKEN_MISSING` or `TOKEN_TIMEOUT`) brings the button back with one sentence for the payer.
 
-React:
+React: the payment button, and the checkout inside the page.
 
 ```jsx
 import { useEffect, useRef, useState } from "react";
 
+// Your server's route: it creates the order and answers { token, payUrl }. Anything else is a refusal.
 const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
-  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+  .then((o) => (o && o.token && o.payUrl ? o : Promise.reject(new Error("no order"))));
+const noOrder = ({ code }) => code === "TOKEN_MISSING" || code === "TOKEN_TIMEOUT";
+const Failed = () => <p role="alert">The payment could not be started. Please try again.</p>;
 
-// A button that creates the order on its first press and opens the checkout over the page.
+// The checkout over the page: the first press creates the order.
 export function PayWithCrypto({ cartId }) {
   const checkout = useRef(null);
+  const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
     return () => { checkout.current?.destroy(); checkout.current = null; };
   }, [cartId]);
   const pay = () => {
-    // checkout.js did not load, or the checkout failed: the order's payment page takes the payment.
-    if (!window.UnigoxCheckout || failed) return newOrder().then((o) => window.location.assign(o.payUrl));
+    setFailed(false);
+    // checkout.js did not load (an ad blocker, the network, your CSP): the order's payment page takes the payment.
+    if (!window.UnigoxCheckout) {
+      setBusy(true); // one order per press
+      return newOrder().then((o) => window.location.assign(o.payUrl), () => { setBusy(false); setFailed(true); });
+    }
     checkout.current ??= window.UnigoxCheckout.create({
-      token: () => newOrder().then((o) => o.token),
-      onError: () => setFailed(true), // the next press uses the payment page, never a dead button
+      token: () => newOrder().then((o) => o.token), // called on the first open: your server creates the order
+      onError: (e) => { if (noOrder(e)) setFailed(true); },
       onComplete: () => window.location.assign(`/orders/${cartId}`),
     });
     checkout.current.open();
   };
-  return <button type="button" onClick={pay}>Pay with crypto</button>;
+  return <><button type="button" onClick={pay} disabled={busy}>Pay with crypto</button>{failed && <Failed />}</>;
 }
 
-// The checkout inside the page, for an order your server has created: pass its token and payUrl.
-export function InlineCheckout({ token, payUrl }) {
+// The checkout inside the page: the press creates the order, and the checkout takes the button's place.
+export function InlineCheckout({ cartId }) {
   const box = useRef(null);
-  const [ready, setReady] = useState(false);
+  const checkout = useRef(null);
+  const [shown, setShown] = useState(false);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    setReady(false);
-    if (!window.UnigoxCheckout) return;
-    const checkout = window.UnigoxCheckout.create({ token, mode: "inline", onReady: () => setReady(true), onError: () => setReady(false) });
-    checkout.mount(box.current);
-    return () => checkout.destroy();
-  }, [token]);
-  return <><div ref={box} />{!ready && <a href={payUrl}>Open checkout</a>}</>;
+    setShown(false);
+    setFailed(false);
+    return () => { checkout.current?.destroy(); checkout.current = null; };
+  }, [cartId]);
+  const back = () => { setShown(false); setFailed(true); };
+  const pay = () => {
+    setFailed(false);
+    setShown(true); // one order per press
+    if (!window.UnigoxCheckout) return newOrder().then((o) => window.location.assign(o.payUrl), back);
+    checkout.current ??= window.UnigoxCheckout.create({
+      token: () => newOrder().then((o) => o.token), // called on the first mount: your server creates the order
+      mode: "inline",
+      onError: (e) => { if (noOrder(e)) back(); },
+    });
+    checkout.current.mount(box.current);
+  };
+  return <>{!shown && <button type="button" onClick={pay}>Pay with crypto</button>}{failed && <Failed />}<div ref={box} /></>;
 }
 ```
 
@@ -675,45 +696,70 @@ export async function POST(request) {
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
+// Your route above. Anything but { token, payUrl } is a refusal.
 const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
-  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))));
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+  .then((o) => (o && o.token && o.payUrl ? o : Promise.reject(new Error("no order"))));
 
 export default function PayButton() {
   const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
   const checkout = useRef(null);
   useEffect(() => () => { checkout.current?.destroy(); checkout.current = null; }, []);
+  const pay = () => {
+    setFailed(false);
+    // checkout.js not loaded (yet): the order's payment page takes the payment.
+    if (!loaded || !window.UnigoxCheckout) {
+      setBusy(true); // one order per press
+      return newOrder().then((o) => window.location.assign(o.payUrl), () => { setBusy(false); setFailed(true); });
+    }
+    (checkout.current ??= window.UnigoxCheckout.create({
+      token: () => newOrder().then((o) => o.token), // called on the first open: your server creates the order
+      onError: ({ code }) => { if (code === "TOKEN_MISSING" || code === "TOKEN_TIMEOUT") setFailed(true); },
+    })).open();
+  };
   return (
     <>
       <Script src="https://www.unigox.com/checkout.js" strategy="afterInteractive" onReady={() => setLoaded(true)} onError={() => setLoaded(false)} />
-      <button type="button" onClick={() => {
-        if (!loaded || !window.UnigoxCheckout) return newOrder().then((o) => window.location.assign(o.payUrl));
-        (checkout.current ??= window.UnigoxCheckout.create({ token: () => newOrder().then((o) => o.token), onError: () => setLoaded(false) })).open();
-      }}>Pay with crypto</button>
+      <button type="button" onClick={pay} disabled={busy}>Pay with crypto</button>
+      {failed && <p role="alert">The payment could not be started. Please try again.</p>}
     </>
   );
 }
 ```
 
-Vue, the checkout inside the page for an order your server has created:
+Vue, the checkout inside the page: the press creates the order, and the checkout takes the button's place:
 
 ```vue
-<template><div ref="box" /><a v-if="!ready" :href="props.payUrl">Open checkout</a></template>
+<template>
+  <button v-if="!shown" type="button" @click="pay">Pay with crypto</button>
+  <p v-if="failed" role="alert">The payment could not be started. Please try again.</p>
+  <div ref="box" />
+</template>
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-const props = defineProps({ token: String, payUrl: String });
+import { onBeforeUnmount, ref } from "vue";
+// Your server's route: it creates the order and answers { token, payUrl }. Anything else is a refusal.
+const newOrder = () => fetch("/your-server/crypto-order", { method: "POST" })
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+  .then((o) => (o && o.token && o.payUrl ? o : Promise.reject(new Error("no order"))));
 const box = ref(null);
-const ready = ref(false);
+const shown = ref(false);
+const failed = ref(false);
 let checkout;
-function mountCheckout() {
-  if (!box.value) return;
-  checkout?.destroy();
-  ready.value = false;
-  if (!window.UnigoxCheckout) return;
-  checkout = window.UnigoxCheckout.create({ token: props.token, mode: "inline", onReady: () => { ready.value = true; }, onError: () => { ready.value = false; } });
+function back() { shown.value = false; failed.value = true; }
+function pay() {
+  failed.value = false;
+  shown.value = true; // one order per press
+  // checkout.js did not load: the order's payment page takes the payment.
+  if (!window.UnigoxCheckout) return newOrder().then((o) => window.location.assign(o.payUrl), back);
+  checkout ??= window.UnigoxCheckout.create({
+    token: () => newOrder().then((o) => o.token), // called on the first mount: your server creates the order
+    mode: "inline",
+    onError: ({ code }) => { if (code === "TOKEN_MISSING" || code === "TOKEN_TIMEOUT") back(); },
+  });
   checkout.mount(box.value);
 }
-onMounted(mountCheckout);
-watch(() => props.token, mountCheckout, { flush: "post" });
 onBeforeUnmount(() => checkout?.destroy());
 </script>
 ```
@@ -735,9 +781,12 @@ curl_setopt_array($ch, [
 ]);
 $body = json_decode((string) curl_exec($ch), true);
 $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-if ($status !== 200 && $status !== 201) {
+// A refusal (409 no_free_addresses, any other error, no answer): a plain sentence, never the API's JSON.
+if (($status !== 200 && $status !== 201) || empty($body['data']['id']) || empty($body['data']['payUrl'])) {
+  error_log('Unigox order not created: ' . $status . ' ' . ($body['details'] ?? ''));
   http_response_code(502);
-  exit('Crypto payment is not available right now.');
+  header('Content-Type: text/plain; charset=utf-8');
+  exit('The payment could not be started. Please go back and try again.');
 }
 save_unigox_order_id($cart['id'], $body['data']['id']); // you read the order by this id to confirm the payment
 header('Location: ' . $body['data']['payUrl'], true, 303);
