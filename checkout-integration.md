@@ -50,7 +50,7 @@ Until your business is verified, you can create orders, payment links, invoices 
 
 To take payments from the portal you need only **Crypto processing in your business portal** ([Open crypto processing](#open-crypto-processing)). A developer who connects your website also needs:
 
-- **Your partner API key.** Your server sends it in the `X-API-Key` header to create and read orders, at `https://api.unigox.com`. Step 1 of [Your website in four steps](#your-website-in-four-steps) shows where to get it. Keep it on your server, never in a web page or a repository.
+- **Your partner API key.** Your server sends it in the `X-API-Key` header to create and read orders, at `https://api.unigox.com`. [Get your API key](#get-your-api-key) shows where to create it, how to check it and how to replace it. Keep it on your server, never in a web page or a repository.
 - **The portal open while you sell.** The portal keeps 10 free payment addresses of each address type and adds more only while **Crypto processing** is open in a browser, signed in as the account whose wallet receives the payments. Each order takes one of each type. With the portal closed your server can create 10 orders; the next answers `409 no_free_addresses` until the portal is open again or an address has rested 24 hours after its order ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
 
 Deposit pages, links your server signs and your payment history need two more things:
@@ -83,11 +83,73 @@ Everything for crypto processing is under **Crypto processing** in your business
 
 These settings are stored in your browser, not in your account. They go into every link you create or copy in this browser from then on. A link you already sent keeps what it had, and a link made in another browser does not have them. Orders do not use them: your server sends the name and the return page with each order (`merchantName`, `returnUrl`).
 
+## Get your API key
+
+Your server sends the API key in the `X-API-Key` header of every request to the orders API: it creates, reads and closes orders with it. You create it in the portal. The checkout on your page needs no key.
+
+1. Open **Crypto processing → Checkout** and pick **Payment button**. **Embedded checkout** and **Payment page** open the same setup, and so does **Developers → Website checkout → See the steps**.
+2. Scroll to **3. Create the order on your server**. Under the request your server sends, press **Create API key**.
+3. The portal asks **Create a new API key?** and says: "It replaces the API key of your account. Every server that still uses the old key stops working until you give it the new one." Press **Create key**.
+4. The new key appears under **API key**: 64 characters, the digits `0`-`9` and the letters `a`-`f`. Press **Copy key** and store the key on your server as `UNIGOX_API_KEY`, the environment variable every example in this guide reads.
+
+<figure><img src="assets/crypto-processing/api-key.gif" alt="Creating the API key in the portal: Checkout, Payment button, step 3 Create the order on your server, Create API key, the confirmation Create key, then the new key with Copy key"><figcaption><p>Creating the API key in the portal (sample data, a made-up key).</p></figcaption></figure>
+
+**The key is shown once.** It stays on the page until you leave or reload it. After that it cannot be shown again, not even by Unigox, which keeps only a hash of it. If you lose the key, create a new one and give it to your servers ([Replace the key](#replace-the-key)).
+
+<figure><img src="assets/crypto-processing/api-key.png" alt="Step 3 of the setup after Create key: the request your server sends, then the new API key with Copy key and the line Copy the key now and keep it on your server. It is not shown again."><figcaption><p>The new key under step 3, shown once (a made-up key).</p></figcaption></figure>
+
+### Check that the key works
+
+Read an order that does not exist. The answer tells you whether the key is valid:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "X-API-Key: $UNIGOX_API_KEY" \
+  https://api.unigox.com/api/v1/partner/crypto/orders/ord_test
+```
+
+| Answer | What it means |
+| --- | --- |
+| `404` | The key works: it is valid, and there is no order `ord_test`. |
+| `401` | The key does not work: the header is missing, the key was copied incompletely, a newer key replaced it, or the key belongs to the other environment. Copy the key again, or create a new one. |
+| `403` | Your partner access is suspended (write to support@unigox.com), or what you sent is a portal session token, not the API key (`api_key_required`). |
+
+On a test account, send the request to `https://api-staging.unigox.com` with the test account's key ([Test your server on a test account](https://developers.unigox.com/tutorials/crypto-checkout-testing#test-your-server-on-a-test-account)). The bodies of these answers are under [Errors](https://developers.unigox.com/tutorials/crypto-checkout-reference#errors).
+
+### Keep the key secret
+
+- Keep the key in your server's environment or secrets store. Never put it in a web page, a mobile app, a repository or a log. Anyone who has it can call the partner API as your business: create, read and close your orders, and create and read your customers.
+- Your page never needs the key. The page asks your own server for an order, and your server calls Unigox ([Your website in four steps](#your-website-in-four-steps)).
+- Your business has one API key at a time, the key of your Unigox account. Every integration of yours that calls the partner API sends this same key, so a new key has to reach all of them.
+- Anyone signed in to your business's portal can create a new key, and a new key stops the old one at once. Agree in your team who does it.
+- A test account has its own portal and its own key. A key works only with the API of the account it was created in: a test account's key at `https://api-staging.unigox.com`, your production key at `https://api.unigox.com`.
+
+### Replace the key
+
+Replace the key if it may have leaked, if someone who knew it leaves, or if you lost it. Only one key is valid at a time: pressing **Create key** stops the old key at once, and the two never work side by side. So a replacement always leaves a short window in which your servers still send the old key and every request answers `401`. Keep the window short:
+
+1. Prepare first: list every server and integration that sends `UNIGOX_API_KEY`, and know how each one takes a new value (a change in your secrets store, a restart).
+2. Pick a quiet hour.
+3. Create the new key as in [Get your API key](#get-your-api-key) and copy it.
+4. Give it to every server and integration at once.
+5. [Check that the key works](#check-that-the-key-works) on each of them: `404` means it has the new key.
+
+During the window your server cannot create orders. The button of [Your website in four steps](#your-website-in-four-steps) tells the payer that the payment could not be started; the next press after the window works. Orders created before the window are not affected: their checkouts keep taking payments, and your server reads them with the new key. A job that reads orders gets `401` during the window and reads them again on its next pass.
+
+### If the key leaks
+
+If the key was in a web page, a repository, a log, a chat or a support ticket, assume someone else has it:
+
+1. Create a new key at once. The leaked key stops working the moment you press **Create key**.
+2. Give the new key to your servers ([Replace the key](#replace-the-key)).
+3. Remove the key from where it leaked. A repository keeps it in its history: the new key protects you, not the deletion.
+4. If you find orders or customers your shop did not create, write to support@unigox.com.
+
 ## Your website in four steps
 
 You add this once. Every payment is then a new order that your server creates.
 
-**1. Create your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Create API key** and confirm. Anyone signed in to your business's portal can create it. The key appears there on the page; copy it: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Creating a key again replaces it, and a server that still sends the old key gets `401` at once. It is the one API key of your Unigox account: if another integration of yours calls the partner API, give it the new key too.
+**1. Create your API key** in the portal and keep it on your server as `UNIGOX_API_KEY`. [Get your API key](#get-your-api-key) shows where, step by step.
 
 **Before the first order, let the portal prepare addresses.** Leave **Crypto processing** open for a few minutes, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`. With the portal closed your server can create 10 orders ([What you need](#what-you-need)).
 
@@ -266,7 +328,7 @@ When the payer chooses to pay with crypto, your page asks your own server for an
 
 **Before you start:**
 
-- **Your partner API key.** In the portal, **Crypto processing → Checkout**, step **3. Create the order on your server**, has **Create API key**. Press it and confirm: the key appears there on the page and is shown once. Creating a key again replaces it and stops the old one at once, so give the new key to your server before you close the page. It is the one API key of your Unigox account: another integration of yours that calls the partner API needs the new key too. Keep the key on your server, never in a web page or a repository.
+- **Your partner API key**, on your server as `UNIGOX_API_KEY`. You create it in the portal under **Crypto processing → Checkout**, step **3. Create the order on your server**. [Get your API key](https://developers.unigox.com/tutorials/crypto-checkout#get-your-api-key) shows the steps, how to check the key with one request and how to replace it. Keep the key on your server, never in a web page or a repository.
 - **The portal open while you sell.** The portal keeps 10 free payment addresses of each address type and adds more only while **Crypto processing** is open in a browser, signed in as the account whose wallet receives the payments. Each order takes one of each type. With the portal closed your server can create 10 orders; the next answers `409 no_free_addresses` until the portal is open again or an address has rested 24 hours after its order. Open it once before your first order: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
 
 The request, with your order number and total:
@@ -361,7 +423,7 @@ app.listen(3000);
 1. Open **Crypto processing → Checkout** and pick **Payment button**, **Embedded checkout** or **Payment page**. The fourth tile, **Connect your store**, opens the same setup in **Developers**.
 2. Under **1. Choose how customers pay**, keep the way you picked or change it. **Your own frame** is in this list only. The preview beside the steps shows what your customer sees.
 3. Under **2. Add checkout to your site**, press **Copy code** and paste the code into your page.
-4. Under **3. Create the order on your server**, choose **cURL** or **Node.js** and add the request to your server. **Create API key**, under the code, makes the key your server sends.
+4. Under **3. Create the order on your server**, choose **cURL** or **Node.js** and add the request to your server. **Create API key**, under the code, makes the key your server sends ([Get your API key](https://developers.unigox.com/tutorials/crypto-checkout#get-your-api-key)).
 5. Read **4. Check the payment**: ship once your server reads the order as `paid` or `overpaid` ([Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm)).
 
 <figure><img src="assets/crypto-processing/website-checkout.gif" alt="Website checkout setup in the portal: choose the way, copy the code for your site, the request for your server, how to check the payment"><figcaption><p>Setting up the payment button in the portal (sample data).</p></figcaption></figure>
@@ -2167,7 +2229,7 @@ Then do the same on your own page with a sample id as the token, and check that 
 
 ## Test your server on a test account
 
-Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key you create in the test account's portal (**Crypto processing → Checkout**, step **3. Create the order on your server**, **Create API key**), and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
+Ask for a test account under **Developers → Test before you go live → Ask for a test account**. A test account has its own portal, API address and checkout site. Unigox sends you all three with the account. In every example, use that checkout site in place of `https://www.unigox.com`. Your server creates the test account's orders at `https://api-staging.unigox.com`, with the API key you create in the test account's portal, as in [Get your API key](https://developers.unigox.com/tutorials/crypto-checkout#get-your-api-key), and signs `environment: "staging"` in requests signed with the wallet's key. Before you send anything, ask Unigox which networks and coins the test account accepts, and open **Crypto processing** in the test portal so it reserves addresses for orders.
 
 First check your server's requests, which move no money:
 
@@ -2226,7 +2288,7 @@ Each word has one meaning on every page. The last column is its name in the API,
 | --- | --- | --- |
 | Order | One payment your server asks Unigox to take: an amount in USD, your order number and, if you like, your customer. Your server creates it with your API key. Every payment on your website is a new order. | `POST /api/v1/partner/crypto/orders`; its `id` is `ord_…` |
 | Order token | What opens an order's checkout: `o_` and the 24 characters of the order's `id`. It only names the order. Anyone who has it can open the order's payment page. | `token`; the payment page is `payUrl` |
-| API key | Your partner key. Your server sends it in the `X-API-Key` header to create and read orders. The key is 64 characters, 0-9 and a-f. Never put it in a web page. | `X-API-Key` |
+| API key | Your partner key. Your server sends it in the `X-API-Key` header to create and read orders. The key is 64 characters, 0-9 and a-f, and is shown once when you create it in the portal ([Get your API key](https://developers.unigox.com/tutorials/crypto-checkout#get-your-api-key)). Never put it in a web page. | `X-API-Key` |
 | Customer | Your own id for a buyer, with an optional name and email, kept for your records. | `customer` |
 | Payment link | A link for one payment that you make in the portal or that your server signs: `https://www.unigox.com/pay/{token}`. Its token holds the amount, the reference and the payment addresses. | The token: [The link format](https://developers.unigox.com/tutorials/crypto-checkout-links#the-link-format) |
 | Checkout | What the payer sees when an order or a payment link opens: on a Unigox page (the payment page), in a window over your page, or inside your page. | `checkout.js` |
@@ -2249,7 +2311,7 @@ Each word has one meaning on every page. The last column is its name in the API,
 
 ## Orders API
 
-Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a portal session token sent in its place answers `403 api_key_required`. The API reference lists them under **Crypto Processing**.
+Your server calls these with your partner API key ([Get your API key](https://developers.unigox.com/tutorials/crypto-checkout#get-your-api-key)) in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a portal session token sent in its place answers `403 api_key_required`. The API reference lists them under **Crypto Processing**.
 
 | Request | What it does |
 | --- | --- |
@@ -2402,6 +2464,7 @@ These five requests have no request limit of their own today. That can change: t
 
 | What you see | What to do |
 | --- | --- |
+| `401` on every request to the orders API | Your server sends no key, an incomplete key, or a key that a newer one replaced. [Check that the key works](https://developers.unigox.com/tutorials/crypto-checkout#check-that-the-key-works), and give your server the current key or create a new one. |
 | `409 no_free_addresses` when you create an order | Every address of every type is held by an order or resting. Open **Crypto processing** in the portal, signed in as the account whose wallet receives the payments, and leave it open for a few minutes: it adds addresses. Meanwhile offer the payer another way to pay. |
 | An order offers fewer networks than you expected | The order was created while some address types had no free address. Keep the portal open more often, so each type keeps free addresses. |
 | `403 merchant_unverified_limit` | Verify your business: **Verify business** in the band at the top of every **Crypto processing** page. |
@@ -2423,7 +2486,7 @@ These five requests have no request limit of their own today. That can change: t
 
 **Do I need a developer?** Not for payment links, invoices or deposit pages made in the portal. You need one to take payments on your website (your server creates an order for each payment) and to confirm payments on your server.
 
-**Is there an API key?** Yes, for orders. Your server creates and reads orders with your partner API key. Showing the checkout needs nothing secret. Deposit pages and links your server signs itself, and your payment history, use your wallet's private key instead ([Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links)).
+**Is there an API key?** Yes, for orders. Your server creates and reads orders with your partner API key, which you create in the portal ([Get your API key](https://developers.unigox.com/tutorials/crypto-checkout#get-your-api-key)). Showing the checkout needs nothing secret. Deposit pages and links your server signs itself, and your payment history, use your wallet's private key instead ([Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links)).
 
 **Does my server need the key of my whole wallet?** Not for your website: orders need only your API key. Your wallet's private key is needed only to create deposit pages or links from your server, or to read your payment history. Unigox has no narrower key for those. Keep the wallet's balance low and the key in a secrets store.
 
