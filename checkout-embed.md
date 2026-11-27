@@ -646,7 +646,8 @@ These are the checkout's statuses, which your page receives. They are not the or
 | `on_hold` | Received, being reviewed by Unigox; not in your wallet yet | Wait |
 | `failed` | Not credited, or being sent back | Do not fulfil |
 | `expired` | The pay-by date passed and nothing came | Create a new order (or link) if the sale stands |
-| `cancelled`, `closed` | The payer cancelled, or the order or link was closed | Nothing; money sent later still reaches your wallet |
+| `closed` | The order or link was closed | Nothing; money sent later still reaches your wallet |
+| `cancelled` | Kept for older integrations. The payment page offers the payer no cancel, so a real payment does not send it; a payer who leaves closes the window or the tab, and the order stays open until its time | Nothing |
 | `unreferenced` | Money reached the address after the payment was closed, so it is not recorded under it | Find it in **Payments** and match it to the order yourself |
 | `unavailable` | The checkout cannot reach Unigox right now | Nothing; it keeps trying |
 | `credited` | Deposit page only: a deposit was credited | Ask your server to add it to the customer's balance |

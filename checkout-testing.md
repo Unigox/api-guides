@@ -36,7 +36,7 @@ On a sample that waits for a payment, **Send the payment (sample)** plays the pa
 | `demo-frozen` | Received and on hold after a review: not in the balance | `READY`, `ON_HOLD` |
 | `demo-unreferenced` | Money that reached the address after the link closed | `READY`, `RECEIVED_WITHOUT_REFERENCE` |
 | `demo-closed` | A link that was closed: a newer payment uses the address | `READY`, `CANCELLED` with `status: "closed"` |
-| `demo-cancelled` | The payer cancelled on the page | `READY`, `CANCELLED` with `status: "cancelled"` |
+| `demo-cancelled` | A cancelled payment. The payment page no longer offers the payer a cancel; the sample is kept so an older handler of this status can be tested | `READY`, `CANCELLED` with `status: "cancelled"` |
 | `demo-unavailable` | The checkout cannot reach Unigox right now: the address stays on screen and the status does not change | `READY`, `AWAITING_PAYMENT`, `UNAVAILABLE` (`onError` `CHECKOUT_UNAVAILABLE`); after **Send the payment (sample)**: `PAYMENT_DETECTED`, then `PAID` (`onComplete`) |
 | `demo-preset` | A link that offers one coin on one network: the address straight away | `READY`, `AWAITING_PAYMENT`; after **Send the payment (sample)**: `PAYMENT_DETECTED`, then `PAID` (`onComplete`) |
 | `demo-preset-coin` | A link that offers one coin: the payer picks only the network | `READY`, `CHOOSING` |
