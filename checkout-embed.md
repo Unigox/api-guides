@@ -716,8 +716,8 @@ On the page the payer returns to, have your server read the order and show its s
 <figure><img src="assets/crypto-processing/payer-checkout.gif" alt="The payer chooses a coin and network, sees the address and amount, then the payment is confirmed"><figcaption><p>The checkout as your customer sees it (sample page, no real payment).</p></figcaption></figure>
 
 1. **Choose a coin**, then **Choose the network**. Coins and networks you did not accept are not offered. Each network shows how long a payment takes.
-2. **Awaiting payment.** The exact amount and the address, each with a copy button, a QR code (on a phone, behind **Show QR**), and the time to pay by: every order has one, a link when you set one.
+2. **Awaiting payment.** The exact amount and the address, each with a copy button, a QR code (on a phone, behind **Show QR**), and the time to pay by: every order has one, an invoice when you set a due date.
 3. **Payment detected.** The transfer was seen and is confirming on its network. The payer does nothing more.
 4. **Payment completed.** The payment is in your Unigox wallet. On the payment page the payer can **Print receipt**.
 
-A payer who already sent the money opens **Help with this payment** on the payment page and enters the transaction hash there.
+A payer who already sent the money does nothing more: while the payment is awaited the page finds the transfer by itself. After an order has expired or been closed its page takes no transaction hash; ask the payer for the hash and find the transfer in **Payments** in your portal.
