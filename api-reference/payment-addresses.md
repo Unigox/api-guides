@@ -1,6 +1,6 @@
 # API reference: crypto processing
 
-Every request a server makes for crypto processing: reserving payment addresses for orders and customers, ending reservations, reading payment status and payment history, and checking a link. For step-by-step use, see [Links from your server](https://developers.unigox.com/tutorials/crypto-checkout-links) and [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm).
+The requests your server signs with your wallet's key for crypto processing: reserving payment addresses for orders and customers, ending reservations, reading payment status and payment history, and checking a link. Orders for your website are not here: your server creates them with your partner API key ([Orders API](https://developers.unigox.com/tutorials/crypto-checkout-reference#orders-api)). For step-by-step use, see [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links) and [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm).
 
 Paths are relative to the **API address** on **Developers → Environment** (`UNIGOX_PAYMENTS_API`), except the link check, which has its own address. Payments are credited to your Unigox wallet; your server decides when to fulfil an order or credit a customer.
 

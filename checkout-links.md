@@ -1,24 +1,28 @@
-# Crypto processing: create payment links from your server
+# Crypto processing: deposit pages and signed links from your server
 
-> **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, `https://www.unigox.com/checkout.js`, the help pages and the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
+> **Not available yet.** Crypto processing is not released: `https://www.unigox.com/checkout.js` and the other addresses on this page can answer 404 until it is. Once released, crypto processing is in early access, turned on per business.
 
-> **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · **Links from your server** · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
+> **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · **Deposit pages and signed links** · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
 
-Create a payment link for every order, and a deposit page for every customer, from your server: nobody creates them by hand in the portal.
+Your server can reserve payment addresses itself, signing each request with your Unigox wallet's private key. Use this page for what an order does not do:
 
-For a few orders a day you do not need this page. Create the links in **Payment links** and show them with [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed).
+- **A deposit page** for a customer who keeps a balance with you: permanent addresses and no amount due ([Create a deposit page for a customer](#create-a-deposit-page-for-a-customer)).
+- **A payment link that stays payable longer than an order.** An order takes payments for at most 7 days; a link you sign can have a later pay-by date, or none.
+- **The addresses for a payment page you build yourself** ([Your own payment page](https://developers.unigox.com/tutorials/crypto-payments)).
+
+To take payments on your website you do not need this page or your wallet's key: your server creates an order for each payment with your API key ([Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed)). To send one customer a link, create it in the portal (**Payment links → Create payment link**).
 
 The API has its own names for three things this guide talks about. The reference (the text that names your order) is `memo`. The reservation of a payment address for a reference is a `lock`, under `/memo-locks`. The address ID (the number of a reservation) is `lockId`. The rest is in [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
 
 ## Before you start
 
-- **Your wallet's private key.** Your server signs every request on this page with the private key of your Unigox wallet. There is no other API key. Ask for the key under **Developers → Confirm payments on your server → Ask for the key**. Once Unigox enables export for you, your account settings show **Export Private Key**. This key can move your whole balance. Keep it in a secrets store on the server that signs, never in browser code or a repository. Keep the wallet's balance low: move the money you collect out regularly.
+- **Your wallet's private key.** Your server signs every request on this page with the private key of your Unigox wallet. These requests take no API key. Ask for the key under **Developers → Confirm payments on your server → Ask for the key**. Once Unigox enables export for you, your account settings show **Export Private Key**. This key can move your whole balance. Keep it in a secrets store on the server that signs, never in browser code or a repository. Keep the wallet's balance low: move the money you collect out regularly.
 - **The API address and the environment.** **Developers → Environment** shows the **API address** (`UNIGOX_PAYMENTS_API` below) and the environment. Sign `"production"` when you call the production address, and `"staging"` when you call a test account's.
 - **Node.js 20 or later and [viem](https://viem.sh)**, for the examples. Any language that can sign EIP-712 typed data works.
 
 <figure><img src="assets/crypto-processing/developers.gif" alt="Developers in the portal: the integrations, Confirm payments on your server with its steps, and Environment with the API address and your Unigox wallet"><figcaption><p>Developers in the portal (sample data).</p></figcaption></figure>
 
-## Create a link for an order
+## Create a signed payment link
 
 Your server makes a link in four steps:
 
@@ -82,7 +86,7 @@ export async function allocationRequest(chainType, memo) {
 // A new payment address, reserved for the memo. `signed` is the request you kept: sent again as it is, also after its
 // deadline, Unigox answers with the address and reservation it made the first time. Without `signed` it signs a new
 // request itself, so a lost answer cannot be sent again and a second call makes a second address: pass the request
-// you kept whenever your server keeps the order's state (server.mjs below does).
+// you kept whenever your server keeps the order's state.
 export async function reserveAddress(chainType, memo, signed = null) {
   signed ??= await allocationRequest(chainType, memo);
   const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/allocate`, {
@@ -188,7 +192,7 @@ async function readSignature() {
 
 // The address's newest reservation, from a signed POST /memo-locks/list: { lockId, wallet, memo, status, monitoring, … }
 // as the API reference lists it, or null when the address never had one. It throws when Unigox cannot be read, so the
-// caller cannot mistake "no answer" for "no reservation". "If a request fails" and server.mjs call it after a Lock
+// caller cannot mistake "no answer" for "no reservation". "If a request fails" calls it after a Lock
 // whose answer was lost: a reservation that is ACTIVE with your wallet and your memo is the one that Lock made.
 export async function newestReservation(chainType, address) {
   const { authorization, signature } = await readSignature();
@@ -274,6 +278,38 @@ Every error code is in the [API reference](https://developers.unigox.com/api-ref
 
 To close a link, end the reservation of each of its addresses: `POST /memo-locks/unlock`, signed `Unlock`. The link then opens as closed. Closing a link does not stop the address: money sent to it afterwards still reaches your wallet, but it is no longer recorded under the order's reference.
 
+`endReservation()` ends one address's reservation. It uses `domain`, `WALLET`, `ENVIRONMENT`, `nonce()` and `walletClient` from step 1:
+
+```js
+const unlockTypes = {
+  Unlock: [
+    { name: "action", type: "string" }, { name: "wallet", type: "address" },
+    { name: "environment", type: "string" }, { name: "chainType", type: "string" },
+    { name: "depositAddress", type: "string" }, { name: "lockId", type: "uint256" },
+    { name: "nonce", type: "bytes32" }, { name: "deadline", type: "uint64" },
+  ],
+};
+
+// Ends the reservation `lockId` of one address. Returns the ended reservation (status "UNLOCKED"). After a lost answer
+// the same request is refused (409 memo_lock_nonce_used): read newestReservation() instead; UNLOCKED means it worked.
+export async function endReservation(chainType, address, lockId) {
+  const { memoLimits } = await (await fetch(`${UNIGOX_PAYMENTS_API}/config`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })).json();
+  const message = {
+    action: "unlock", wallet: WALLET, environment: ENVIRONMENT, chainType, depositAddress: address, lockId: String(lockId),
+    nonce: nonce(), deadline: String(Number(memoLimits.serverTimeSeconds) + Number(memoLimits.maxWriteDeadlineSeconds) - 30),
+  };
+  const signature = await walletClient.signTypedData({ account, domain, types: unlockTypes, primaryType: "Unlock", message });
+  const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/unlock`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chainId: domain.chainId, message, signature }), signal: AbortSignal.timeout(10_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.status !== "memo_unlocked") throw new Error(result?.details ?? result?.status ?? `HTTP ${response.status}`);
+  return result.data.lock;
+}
+```
+
+Ending a reservation that is no longer active answers `409 memo_lock_not_active`.
+
 ### Reuse an address
 
 A new address for each order is the safe choice. Reuse an address only when both are true: its last order was paid in full and credited, and its reservation ended at least 7 days ago. A late second transfer from the same payer is then unlikely. Never reuse the address of an order that is open, partly paid or unpaid.
@@ -283,260 +319,6 @@ To reuse an address, end its old reservation (`POST /memo-locks/unlock`), then r
 If the second request fails, the address has no reference until a reservation succeeds, and a payment that arrives in between reaches your wallet without a reference. Send the reservation again, and match such a payment by its address in your history.
 
 The portal does the same. It takes new addresses until an address type holds 80 % of its 1,000-address limit. Then it reuses the addresses of links that were paid in full and closed at least 7 days ago, the longest unused first.
-
-### The whole flow in one server
-
-The example has three files. `unigox.mjs` holds the blocks above. `server.mjs` is a small shop's server: it creates an order, builds the order's link once its address is ready, checks the transfers the page reports and marks the order paid once. `public/index.html` is the shop's page with the **Pay with crypto** button. To stay short, the server keeps orders in memory: use your own database.
-
-**`unigox.mjs`**: paste the blocks of steps 1 to 3 (without the example calls), the builders of [The link format](#the-link-format) and the whole block of [Check the transfers your page reports](https://developers.unigox.com/tutorials/crypto-checkout-confirm#check-the-transfers-your-page-reports). Keep one `UNIGOX_PAYMENTS_API` line, move the `import` lines to the top and add:
-
-```js
-// At the top of unigox.mjs. npm install viem. The key comes from your secrets store, never from code.
-import { createWalletClient, http } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { arbitrum } from "viem/chains";
-const account = privateKeyToAccount(process.env.UNIGOX_WALLET_KEY);
-const walletClient = createWalletClient({ account, chain: arbitrum, transport: http() });
-
-// …the pasted blocks…
-
-// At the end of unigox.mjs: the names server.mjs imports that the pasted blocks do not export themselves.
-export { paymentToken, unigoxGet, WALLET };
-```
-
-**`server.mjs`**:
-
-```js
-// Node 20+. UNIGOX_PAYMENTS_API and UNIGOX_WALLET_KEY in the environment; run: node server.mjs
-import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
-import { Buffer } from "node:buffer";
-import { allocationRequest, isPaid, newestReservation, paymentToken, reserveAddress, reserveMemo, unigoxGet, verifyTransfers, waitUntilReady, WALLET } from "./unigox.mjs";
-
-const shop = new Map([["NW-20418", "250.00"]]); // your orders and their amounts in USD
-const orders = new Map();                         // what this example keeps per order: in your shop, a database row
-const counted = new Set();                        // transfer IDs (quoteId) already added, each once
-const HINTS_MAX = 200;                            // reported transfers waiting to be proved, per order (verifyTransfers reads that many)
-
-// 1. Order placed: reserve an address and build the link once the address is ready, once per order. This starts
-//    when the order is placed, because a new address takes a few minutes to be ready: Pay with crypto then gets the
-//    finished link. Every step is saved in the order before the next one starts, so a failed attempt continues where
-//    it stopped and nothing is done twice:
-//    - the signed request is saved before it is sent, and sent again unchanged after a lost answer (the same nonce,
-//      so Unigox answers with the address it made the first time);
-//    - after 401 memo_lock_signature_expired the request is spent: if it made an address, the address is saved and
-//      its memo reserved; if it made none, a new request is signed;
-//    - the address is saved before the order waits for its networks.
-const making = new Map();                         // order ID -> the attempt under way
-const linkFor = (id) => {
-  if (!making.has(id)) making.set(id, makeLink(id).catch((error) => { making.delete(id); throw error; }));
-  return making.get(id);
-};
-async function makeLink(id) {
-  const amount = shop.get(id);
-  if (amount === undefined) throw new Error(`no order ${id}`);
-  // Reject an invalid shop amount/reference BEFORE reserving any address. isPaid validates the same amount contract.
-  isPaid({ amount, tolerance: "none" }, 0n);
-  if (typeof id !== "string" || !id.trim() || id !== id.trim() || Array.from(id).length > 64 || /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(id)) throw new Error("Invalid order reference");
-  let order = orders.get(id);
-  if (!order) {
-    // A random part keeps the reference from being guessed (see step 1).
-    const memo = `${id}-${Math.random().toString(36).slice(2, 8)} · ${amount} USD`;
-    if (Buffer.byteLength(memo, "utf8") > 256) throw new Error("Order reference is too long");
-    order = { id, memo, amount, wallet: WALLET, tolerance: "default", request: null, address: null, lockSent: false, evm: null, token: null, lockIds: [], reported: [], micros: 0n, status: "open" };
-    orders.set(id, order);
-  }
-  if (order.token) return order.token;
-  if (!order.evm && !order.address) {
-    order.request ??= await allocationRequest("evm", order.memo);    // signed and kept before it is sent
-    try {
-      // Can throw (a lost answer): the button reports TOKEN_MISSING, the payer tries again, and the same request is sent again.
-      order.evm = await reserveAddress("evm", order.memo, order.request);
-      order.request = null;                                           // spent: the order has its address
-    } catch (error) {
-      if (error.code !== "memo_lock_signature_expired") {
-        if (error.unusedRequest) order.request = null; // correct configuration, then retry with a fresh signature
-        throw error;
-      }
-      // The deadline passed before the memo was reserved: the kept request is spent either way. An answer that names the
-      // address it made: keep it, its memo is reserved below. One that names none: the request never took effect, and
-      // the next attempt signs a new one (its nonce was never used, so this makes no second address).
-      order.request = null;
-      order.address = error.allocated?.address ?? null;
-      if (!order.address) throw error;
-    }
-  }
-  if (!order.evm) {
-    // The order has an address without its memo: reserve the memo with a signed Lock, a fresh nonce each attempt
-    // (step 1). A Lock whose answer was lost may still have worked, and every later Lock on the address then answers
-    // 409 deposit_address_already_locked. So the order records that a Lock was sent before sending it, and the next
-    // attempt first reads the address's newest reservation ("If a request fails"):
-    // - active, with your wallet and this memo: the lost Lock worked, so its address ID is taken as it is;
-    // - active, with another wallet or memo: the address belongs to another payment. The order stops here for you to
-    //   look at, and no further Lock is signed;
-    // - closed, or none: the Lock never took effect, so a new one is signed.
-    const found = order.lockSent ? await newestReservation("evm", order.address) : null; // throws while Unigox cannot be read: the next attempt reads again
-    if (found?.status === "ACTIVE") {
-      if (found.wallet?.toLowerCase() !== WALLET.toLowerCase() || found.memo !== order.memo) throw new Error(`${id}: ${order.address} is reserved for another payment (address ID ${found.lockId})`);
-      order.evm = { address: order.address, addressId: found.lockId, monitoring: found.monitoring };
-    } else {
-      order.lockSent = true;                                            // written before the Lock is sent
-      order.evm = await reserveMemo("evm", order.address, order.memo);
-    }
-  }
-  order.lockIds = [String(order.evm.addressId)];
-  const monitoring = await waitUntilReady("evm", order.evm.address); // step 2: a link built earlier offers no network
-  if (!monitoring) throw new Error(`${id}: the address is not ready yet`); // the address stays with the order: the next attempt waits again
-  order.token = paymentToken({
-    merchant: "Northwind", memo: order.memo, amount, wallet: WALLET, expiresAt: null, openedAt: Date.now(),
-    addresses: { evm: { address: order.evm.address, lockId: order.evm.addressId, monitoring } },
-  });
-  console.log(`${id}: link https://www.unigox.com/pay/${order.token.slice(0, 12)}…`);
-  return order.token;
-}
-
-// 2. A transfer was reported, or the job runs: ask Unigox, add each proven credit once, mark the order paid once.
-async function check(order) {
-  for (const credit of await verifyTransfers(order, order.reported)) {
-    order.reported = order.reported.filter((r) => r.quoteId !== credit.id); // proven: out of the hint queue, into counted
-    if (counted.has(credit.id)) continue;
-    counted.add(credit.id);
-    order.micros += credit.micros;
-    console.log(`${order.id}: credited ${Number(credit.micros) / 1e6} USD`);
-  }
-  // A hint that Unigox knows as a transfer of this order (pending, not credited yet) stays until it is credited. The
-  // other hints (not indexed yet, or made up) are the ones a full queue drops, oldest first. A hint without a quoteId
-  // (a logIndex, or only the hash) is read again here, so it leaves the queue once its transfer was counted above.
-  for (const r of order.reported) {
-    if (r.known && r.quoteId) continue;           // leaves through the credits loop above once Unigox credits it
-    const tx = await hintTransfer(order, r);
-    r.known = tx !== null;
-    r.proven = tx !== null && counted.has(tx.quoteId);
-  }
-  order.reported = order.reported.filter((r) => !r.proven);
-  if (order.status === "open" && isPaid(order, order.micros)) {
-    order.status = "paid";
-    console.log(`${order.id}: paid`);           // ship the order here, once
-  }
-}
-// One hint is one transfer: its quoteId once the page knows it, before that its place in the transaction (chainId,
-// txHash, logIndex). A report that adds the quoteId is a new hint, not a repeat of the earlier one.
-const sameHint = (a, b) => a.chainId === b.chainId && a.txHash === b.txHash && (a.quoteId || b.quoteId ? a.quoteId === b.quoteId : a.logIndex === b.logIndex);
-// The transfer Unigox knows under the hint, when it is one to this order's address IDs; null for a transfer not indexed
-// yet, a made-up one, another order's, or while Unigox cannot be read (asked again on the next check).
-async function hintTransfer(order, hint) {
-  const pick = hint.quoteId ? `?quoteId=${encodeURIComponent(hint.quoteId)}` : hint.logIndex != null ? `?logIndex=${encodeURIComponent(hint.logIndex)}` : "";
-  try {
-    const tx = (await unigoxGet(`/transaction/${hint.chainId}/${encodeURIComponent(hint.txHash)}${pick}`, "found")).data;
-    return order.lockIds.includes(String(tx.memoLockId)) ? tx : null;
-  } catch {
-    return null;
-  }
-}
-
-const json = (res, code, body) => res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(body));
-
-createServer(async (req, res) => {
-  try {
-    let body = "";
-    for await (const chunk of req) if ((body += chunk).length > 65_536) return json(res, 413, { error: "too large" });
-    // The shop's page, public/index.html below.
-    if (req.method === "GET" && req.url === "/") return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(await readFile(new URL("./public/index.html", import.meta.url)));
-    const [, id, action] = /^\/orders\/([\w-]+)\/(crypto-token|payments|status)$/.exec(req.url) ?? [];
-    if (action === "crypto-token" && req.method === "POST") return json(res, 200, { token: await linkFor(id) });
-    const order = orders.get(id);
-    if (!order) return json(res, 404, { error: "no such order" });
-    if (action === "payments" && req.method === "POST") {
-      // What the page reports is only a hint: check() reads every transfer again from Unigox, so a made-up hint
-      // credits nothing. Hints wait in a queue of HINTS_MAX until a check proves them. When the queue is full, a check
-      // first marks the hints that Unigox knows as this order's transfers (they stay until credited). Then the oldest
-      // hint that Unigox does not know is dropped. So made-up hints cannot push out a real transfer, and a real
-      // transfer that is not indexed yet returns with the page's next report. Each hint costs one read: serve this
-      // route only to the session that owns the order, as your shop does for its other order routes.
-      for (const p of JSON.parse(body || "{}").payments ?? []) {
-        if (!Number.isSafeInteger(p?.chainId) || typeof p.txHash !== "string" || !/^[\w-]{8,128}$/.test(p.txHash)) continue;
-        const hint = { chainId: p.chainId, txHash: p.txHash, logIndex: p.logIndex ?? null, quoteId: typeof p.quoteId === "string" ? p.quoteId : null, known: false };
-        if ((hint.quoteId && counted.has(hint.quoteId)) || order.reported.some((r) => sameHint(r, hint))) continue;
-        if (order.reported.length >= HINTS_MAX) {
-          await check(order);                       // proves what it can, marks the hints Unigox knows
-          const oldest = order.reported.findIndex((r) => !r.known);
-          if (oldest < 0) continue;                 // every queued hint is a transfer of this order: none makes room
-          order.reported.splice(oldest, 1);         // the oldest hint Unigox does not know goes
-        }
-        order.reported.push(hint);
-      }
-      await check(order);
-    }
-    return json(res, 200, { status: order.status });
-  } catch (error) {
-    console.error(error);                          // Unigox could not be read: the job tries again
-    return json(res, 503, { error: "try again" });
-  }
-}).listen(3000, () => console.log("shop on http://localhost:3000"));
-
-// Your shop places its orders: start making each order's link now, so it is ready when the payer presses Pay.
-for (const id of shop.keys()) linkFor(id).catch(console.error);
-
-// 3. The job, every minute: check the reported transfers of every order, also after the order is paid or cancelled,
-//    so that late money is recorded. It never fulfils an order twice and never reopens a closed one. A transfer that
-//    no page reported is not found here: for those, read your signed history (fulfilInvoice() in "Confirm payments")
-//    or look in the portal's Payments.
-setInterval(() => {
-  for (const order of orders.values()) if (order.reported.length > 0) check(order).catch(console.error);
-}, 60_000);
-```
-
-**`public/index.html`**:
-
-```html
-<script src="https://www.unigox.com/checkout.js"></script>
-<button type="button" id="pay">Pay with crypto</button>
-<a id="hosted-pay" hidden>Open payment page</a>
-<p id="pay-error" role="alert"></p>
-<script>
-  const orderId = "NW-20418";
-  const post = (path, body) => fetch(`/orders/${orderId}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
-  const report = (payload) => post("payments", { payments: payload.payments ?? [] }).catch(console.error);
-  const button = document.getElementById("pay");
-  const fallback = document.getElementById("hosted-pay");
-  const message = document.getElementById("pay-error");
-  let checkout;
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    message.textContent = "";
-    try {
-      // The server reuses the same order reservation on every retry.
-      const response = await post("crypto-token", {});
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const { token } = await response.json();
-      if (typeof token !== "string" || !/^[A-Za-z0-9_-]+$/.test(token)) throw new Error("Payment link is not ready");
-      fallback.href = `https://www.unigox.com/pay/${token}`;
-      fallback.hidden = false;
-      if (!window.UnigoxCheckout) { window.location.assign(fallback.href); return; }
-      checkout ??= UnigoxCheckout.create({
-        token,
-        onStatusChange: (status, payload) => report(payload),
-        onComplete: (payload) => report(payload), // your server has the last word
-        onError: () => { message.textContent = "Open the payment page to continue."; },
-      });
-      checkout.open();
-    } catch {
-      message.textContent = "Payment could not be opened. Try again.";
-    } finally {
-      button.disabled = false;
-    }
-  });
-</script>
-```
-
-Run `UNIGOX_PAYMENTS_API=… UNIGOX_WALLET_KEY=… node server.mjs`, open `http://localhost:3000` and follow the log:
-
-```text
-shop on http://localhost:3000
-NW-20418: link https://www.unigox.com/pay/eyJ2IjoxLCJt…   ← a few minutes after start: the address is ready
-NW-20418: credited 250 USD                                 ← the transfer was credited to your Unigox wallet
-NW-20418: paid                                             ← once, even if the page reports the payment again
-```
 
 ## Create a deposit page for a customer
 
@@ -687,7 +469,7 @@ const ENVIRONMENT = "production"; // one ledger per environment
 // customer: your record, e.g. { id: "CUST-7", wallet: "0x…", memo: "Top-up · CUST-7 · abcdefghij", lockIds: ["31", "32", "57"] },
 //   with every address ID the customer ever had (a restore adds new ones). reported: [{ chainId: payload.chainId,
 //   txHash: payload.txHash, quoteId: payload.quoteId }] from an onDeposit payload (one deposit per payload, no payments
-//   list), or [{ chainId, txHash }] for a hash a customer gave you (add quoteId or logIndex when you have it). Returns how many new credits it added.
+//   list), or [{ chainId, txHash }] for a hash a customer gave you (add quoteId or logIndex when you have it). Returns how many new deposits it recorded.
 export async function creditDeposits(customer, reported) {
   const credits = await verifyTransfers(customer, reported); // each one proven by Unigox, never taken from the browser
   let added = 0;
@@ -757,7 +539,7 @@ Links made in the portal have a shorter token of their own. It is not JSON, and 
 <reference> · <amount> USD · v2 [· <tag>] [· by <UTC deadline>] [· no tolerance] [· coins <coins>] [· networks <network ids>] [· note <description>]
 ```
 
-For example `NW-1042 · 250.00 USD · v2 · d6ppalq2 · by 2026-11-02T12:00Z · no tolerance · coins USDT,USDC · networks 42161,728126428`. The tag is 8 random characters from `a-z` and `2-7`. Your server can keep writing the short form, `<reference> · <amount> USD`. To confirm the payment of a portal link on your server, use its reference exactly as the portal wrote it: **Payment link details**, under the Website checkout code, shows it.
+For example `NW-1042 · 250.00 USD · v2 · d6ppalq2 · by 2026-11-02T12:00Z · no tolerance · coins USDT,USDC · networks 42161,728126428`. The tag is 8 random characters from `a-z` and `2-7`. Your server can keep writing the short form, `<reference> · <amount> USD`. To confirm the payment of a portal link on your server, read your payment history by its address IDs: **Payment links → Export CSV** with **For developers** lists them (`address_ids`).
 
 ### The builders
 

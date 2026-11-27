@@ -14,7 +14,7 @@ export const guides = [
   { source: "checkout-quickstart.md", path: "tutorials/crypto-checkout", sibling: "tutorials/fiat-accounts", title: "Crypto processing: get started" },
   { source: "checkout-embed.md", path: "tutorials/crypto-checkout-embed", sibling: "tutorials/fiat-accounts", title: "Crypto processing: add checkout to your website" },
   { source: "checkout-confirm.md", path: "tutorials/crypto-checkout-confirm", sibling: "tutorials/fiat-accounts", title: "Crypto processing: confirm payments on your server" },
-  { source: "checkout-links.md", path: "tutorials/crypto-checkout-links", sibling: "tutorials/fiat-accounts", title: "Crypto processing: create payment links from your server" },
+  { source: "checkout-links.md", path: "tutorials/crypto-checkout-links", sibling: "tutorials/fiat-accounts", title: "Crypto processing: deposit pages and signed links from your server" },
   { source: "checkout-testing.md", path: "tutorials/crypto-checkout-testing", sibling: "tutorials/fiat-accounts", title: "Crypto processing: test and go live" },
   { source: "checkout-reference.md", path: "tutorials/crypto-checkout-reference", sibling: "tutorials/fiat-accounts", title: "Crypto processing: reference" },
   // Published before as api-reference/bridge-payments ("Bridge payment addresses and credited webhooks"): that page is
