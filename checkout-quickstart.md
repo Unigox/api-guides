@@ -33,7 +33,7 @@ Creating an order or a link and opening a checkout move no money. A message the 
 
 ## Open crypto processing
 
-1. On `https://www.unigox.com/crypto-processing`, press **Start business onboarding**. Sign in or create an account if you have none.
+1. On `https://www.unigox.com/crypto-processing`, press **Start business onboarding** (when you are already signed in, the button reads **Open a business account**). Sign in or create an account if you have none.
 2. Answer **Your business** and **Your volume**, and under **Your products** pick **Crypto processing**.
 3. Answer the questions under **Before you start accepting crypto**. You upload no documents at this step. By finishing, you confirm that you take no payments from sanctioned countries and regions, as the Terms of Service require. The questions are:
    - who you accept payments for: yourself, or a company (then its name);
