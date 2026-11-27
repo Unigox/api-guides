@@ -276,7 +276,7 @@ When the customer pays, the link shows **Payment detected**, then **Paid**, and 
 An invoice is a payment link with an invoice document. Your customer gets the link and a PDF, and pays the total in full.
 
 1. Open **Crypto processing → Payment links** and press **Create invoice**.
-2. Under **Customer**, choose a customer or add one.
+2. Under **Customer**, choose a customer or add one. The list holds your customers under **Deposit addresses**; customers your server sends with orders through the API are a separate list and do not appear here.
 3. Under **Items**, enter what you charge for: **Description**, **Qty** and **Unit price (USD)**. **Add item** and **Add tax** add lines.
 4. Check **Number and dates** and **Your business**, and add **Terms and notes** if you need them. **Invoice preview** shows the document as your customer gets it.
 5. Press **Review invoice**, check the coins and networks under **Accepted payments**, then press **Create invoice & payment link**.
@@ -1328,6 +1328,8 @@ export function isPaid(order, creditedMicros) {
 
 **What this way misses:** a payment your page was never told about. That is a payment made from another device, after the customer closed the page, or through a link you sent by email. Find such a payment in **Payments**, or ask the customer for the transaction hash and pass `{ chainId, txHash }` to `verifyTransfers()`, or read your payment history (below).
 
+**A TON hash from a customer.** On TON, Unigox records a payment under the transaction in which the payment address received the coins, written as 64 hexadecimal characters. The hash a customer's wallet shows is the customer's own sending transaction, and `GET /transaction` answers `404 from_tx_not_found` for it. Open the payment address in a TON explorer, find the incoming USDT transfer, and use the hash of that transaction. On the other networks, the hash the customer's wallet shows is the one to use.
+
 ### Several transfers in one Solana transaction
 
 A Solana transaction can hold several transfers to one address, and `GET /transaction` returns one of them. To list them all, send this request with the address ID, the transaction signature, your wallet and the fingerprint:
@@ -1733,6 +1735,38 @@ Every error code is in the [API reference](https://developers.unigox.com/api-ref
 ### Close a link
 
 To close a link, end the reservation of each of its addresses: `POST /memo-locks/unlock`, signed `Unlock`. The link then opens as closed. Closing a link does not stop the address: money sent to it afterwards still reaches your wallet, but it is no longer recorded under the order's reference.
+
+`endReservation()` ends one address's reservation. It uses `domain`, `WALLET`, `ENVIRONMENT`, `nonce()` and `walletClient` from step 1:
+
+```js
+const unlockTypes = {
+  Unlock: [
+    { name: "action", type: "string" }, { name: "wallet", type: "address" },
+    { name: "environment", type: "string" }, { name: "chainType", type: "string" },
+    { name: "depositAddress", type: "string" }, { name: "lockId", type: "uint256" },
+    { name: "nonce", type: "bytes32" }, { name: "deadline", type: "uint64" },
+  ],
+};
+
+// Ends the reservation `lockId` of one address. Returns the ended reservation (status "UNLOCKED"). After a lost answer
+// the same request is refused (409 memo_lock_nonce_used): read newestReservation() instead; UNLOCKED means it worked.
+export async function endReservation(chainType, address, lockId) {
+  const { memoLimits } = await (await fetch(`${UNIGOX_PAYMENTS_API}/config`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })).json();
+  const message = {
+    action: "unlock", wallet: WALLET, environment: ENVIRONMENT, chainType, depositAddress: address, lockId: String(lockId),
+    nonce: nonce(), deadline: String(Number(memoLimits.serverTimeSeconds) + Number(memoLimits.maxWriteDeadlineSeconds) - 30),
+  };
+  const signature = await walletClient.signTypedData({ account, domain, types: unlockTypes, primaryType: "Unlock", message });
+  const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/unlock`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chainId: domain.chainId, message, signature }), signal: AbortSignal.timeout(10_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.status !== "memo_unlocked") throw new Error(result?.details ?? result?.status ?? `HTTP ${response.status}`);
+  return result.data.lock;
+}
+```
+
+Ending a reservation that is no longer active answers `409 memo_lock_not_active`.
 
 ### Reuse an address
 
@@ -2389,6 +2423,8 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 ### Customers
 
 A customer is your own id for a buyer, with an optional name and email. It is for your records: the payment page never shows it. You get it back in the order's `customer`, in `GET /api/v1/partner/crypto/customers/{external_id}` with the buyer's latest 20 orders, and in the portal's **Payments** beside the order's payments. Leave `customer` out for a guest: the order's `customer` is then `null`. Unigox stores the id, name and email as you sent them; `""` clears a name or an email, and the API has no request that deletes a customer. Anyone who has an order's `payUrl` can read your name, the reference, the description, the amount and how much was received: put no personal data in `reference` or `description`.
+
+These customers belong to your orders. The portal's customers, under **Deposit addresses** (each with permanent addresses, and the ones an invoice is made for), are a separate list: a customer you send through this API does not appear in the invoice form or under **Deposit addresses**, and a portal customer is not returned by this API.
 
 `PUT /api/v1/partner/crypto/customers/{external_id}` takes `{"name": "…", "email": "…"}`, both optional, with the same limits as an order's `customer`: a field you leave out keeps its stored value, and `""` clears it. Send `{}` to create a customer with only an id; a request without a body answers `400` with `field` `body`. A refused value names `customer.id` (the id in the path), `customer.name` or `customer.email`. An id with `/` in it cannot be used in the path, even URL-encoded (`404` with a plain-text body): give customers ids without `/`. The answer (`customer_saved`) is `{"id", "name", "email", "createdAt", "updatedAt"}`. `GET` on the same path answers `customer_retrieved` with the same fields and `orders`: the customer's latest 20 orders, newest first, each without `customer` and `payments`.
 

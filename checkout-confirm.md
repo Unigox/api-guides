@@ -238,6 +238,8 @@ export function isPaid(order, creditedMicros) {
 
 **What this way misses:** a payment your page was never told about. That is a payment made from another device, after the customer closed the page, or through a link you sent by email. Find such a payment in **Payments**, or ask the customer for the transaction hash and pass `{ chainId, txHash }` to `verifyTransfers()`, or read your payment history (below).
 
+**A TON hash from a customer.** On TON, Unigox records a payment under the transaction in which the payment address received the coins, written as 64 hexadecimal characters. The hash a customer's wallet shows is the customer's own sending transaction, and `GET /transaction` answers `404 from_tx_not_found` for it. Open the payment address in a TON explorer, find the incoming USDT transfer, and use the hash of that transaction. On the other networks, the hash the customer's wallet shows is the one to use.
+
 ### Several transfers in one Solana transaction
 
 A Solana transaction can hold several transfers to one address, and `GET /transaction` returns one of them. To list them all, send this request with the address ID, the transaction signature, your wallet and the fingerprint:

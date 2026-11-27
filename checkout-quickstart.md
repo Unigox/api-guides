@@ -278,7 +278,7 @@ When the customer pays, the link shows **Payment detected**, then **Paid**, and 
 An invoice is a payment link with an invoice document. Your customer gets the link and a PDF, and pays the total in full.
 
 1. Open **Crypto processing → Payment links** and press **Create invoice**.
-2. Under **Customer**, choose a customer or add one.
+2. Under **Customer**, choose a customer or add one. The list holds your customers under **Deposit addresses**; customers your server sends with orders through the API are a separate list and do not appear here.
 3. Under **Items**, enter what you charge for: **Description**, **Qty** and **Unit price (USD)**. **Add item** and **Add tax** add lines.
 4. Check **Number and dates** and **Your business**, and add **Terms and notes** if you need them. **Invoice preview** shows the document as your customer gets it.
 5. Press **Review invoice**, check the coins and networks under **Accepted payments**, then press **Create invoice & payment link**.

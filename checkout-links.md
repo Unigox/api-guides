@@ -278,6 +278,38 @@ Every error code is in the [API reference](https://developers.unigox.com/api-ref
 
 To close a link, end the reservation of each of its addresses: `POST /memo-locks/unlock`, signed `Unlock`. The link then opens as closed. Closing a link does not stop the address: money sent to it afterwards still reaches your wallet, but it is no longer recorded under the order's reference.
 
+`endReservation()` ends one address's reservation. It uses `domain`, `WALLET`, `ENVIRONMENT`, `nonce()` and `walletClient` from step 1:
+
+```js
+const unlockTypes = {
+  Unlock: [
+    { name: "action", type: "string" }, { name: "wallet", type: "address" },
+    { name: "environment", type: "string" }, { name: "chainType", type: "string" },
+    { name: "depositAddress", type: "string" }, { name: "lockId", type: "uint256" },
+    { name: "nonce", type: "bytes32" }, { name: "deadline", type: "uint64" },
+  ],
+};
+
+// Ends the reservation `lockId` of one address. Returns the ended reservation (status "UNLOCKED"). After a lost answer
+// the same request is refused (409 memo_lock_nonce_used): read newestReservation() instead; UNLOCKED means it worked.
+export async function endReservation(chainType, address, lockId) {
+  const { memoLimits } = await (await fetch(`${UNIGOX_PAYMENTS_API}/config`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })).json();
+  const message = {
+    action: "unlock", wallet: WALLET, environment: ENVIRONMENT, chainType, depositAddress: address, lockId: String(lockId),
+    nonce: nonce(), deadline: String(Number(memoLimits.serverTimeSeconds) + Number(memoLimits.maxWriteDeadlineSeconds) - 30),
+  };
+  const signature = await walletClient.signTypedData({ account, domain, types: unlockTypes, primaryType: "Unlock", message });
+  const response = await fetch(`${UNIGOX_PAYMENTS_API}/memo-locks/unlock`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chainId: domain.chainId, message, signature }), signal: AbortSignal.timeout(10_000),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.status !== "memo_unlocked") throw new Error(result?.details ?? result?.status ?? `HTTP ${response.status}`);
+  return result.data.lock;
+}
+```
+
+Ending a reservation that is no longer active answers `409 memo_lock_not_active`.
+
 ### Reuse an address
 
 A new address for each order is the safe choice. Reuse an address only when both are true: its last order was paid in full and credited, and its reservation ended at least 7 days ago. A late second transfer from the same payer is then unlikely. Never reuse the address of an order that is open, partly paid or unpaid.
