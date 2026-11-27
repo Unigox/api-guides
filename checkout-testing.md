@@ -1,10 +1,10 @@
 # Crypto processing: test and go live
 
-> **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, `https://www.unigox.com/checkout.js`, the help pages and the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
+> **Not available yet.** Crypto processing is not released: `https://www.unigox.com/checkout.js` and the other addresses on this page can answer 404 until it is. Once released, crypto processing is in early access, turned on per business.
 
 > **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links) · **Test and go live** · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
 
-There is no test mode: a real order or link takes real money. Build your page against the samples, test your server on a test account, then make one small real payment.
+There is no test mode: a real order or link takes real money. Build your page against the samples, test your server on a test account, then make one small real payment. There is no test network: a small payment in a test is real coins, and it reaches your wallet.
 
 ## Test your page without money
 
@@ -99,11 +99,11 @@ With deposit pages:
 
 - Your server creates orders at `https://api.unigox.com` with your production API key, and the key is only on your server.
 - Every order your server creates carries `merchantName`, the name your customers know.
-- You open **Crypto processing** in the portal often enough that orders find free addresses: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
+- **Crypto processing** is open in a browser while you sell, signed in as the account whose wallet receives the payments. With the portal closed your server can create only 10 orders before `409 no_free_addresses`: see [Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits).
 - If your server signs requests with your wallet's key: **Developers → Environment** shows **Production**, and your server signs `environment: "production"` against the production API address, with `callbackUrl: ""`.
 - Your business is verified, or you know how much is left of the 1,000 USD you can receive before verification (the band at the top of every **Crypto processing** page).
 - Every network you offer is ready for your addresses.
-- Your job reads every order until it is final (15 minutes after its `closedAt`, and none of its payments `pending` or `on_hold`), so a payment that is credited after the order ended is still recorded. It passed tests 14 and 15.
+- Your job reads every order until it is final: `closedAt` is set, 15 minutes have passed since it, and no payment is `pending` or `on_hold`. You ran tests 14 and 15 and both passed.
 - With deposit pages: your deposit job, or the person who credits deposits from **Payments**, runs as often as customers expect.
 - If you hold your wallet's key, it is only in your secrets store.
 - Your page ignores events whose `livemode` is not `true`.

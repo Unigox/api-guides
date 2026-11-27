@@ -1,6 +1,6 @@
 # Crypto processing: build your own payment page
 
-> **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
+> **Not available yet.** Crypto processing is not released: the addresses on this page can answer 404 until it is. Once released, crypto processing is in early access, turned on per business.
 
 Most businesses do not need this page. The Unigox checkout shows the payment for you, on your site or on a Unigox page, and it already handles every network, coin and payment state ([Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed)). Build your own page only when the checkout does not fit your product, for example inside a mobile app.
 

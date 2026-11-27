@@ -1,6 +1,6 @@
 # Crypto processing: reference
 
-> **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, `https://www.unigox.com/checkout.js`, the help pages and the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
+> **Not available yet.** Crypto processing is not released: `https://www.unigox.com/checkout.js` and the other addresses on this page can answer 404 until it is. Once released, crypto processing is in early access, turned on per business.
 
 > **Crypto processing guide:** [Get started](https://developers.unigox.com/tutorials/crypto-checkout) · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · **Reference**
 
@@ -11,8 +11,9 @@ Each word has one meaning on every page. The last column is its name in the API,
 | Word | What it means | In the API |
 | --- | --- | --- |
 | Order | One payment your server asks Unigox to take: an amount in USD, your order number and, if you like, your customer. Your server creates it with your API key. Every payment on your website is a new order. | `POST /api/v1/partner/crypto/orders`; its `id` is `ord_…` |
-| Order token | What opens an order's checkout: `o_` and the 24 characters of the order's `id`. It names the order and holds nothing else. | `token`; the payment page is `payUrl` |
-| API key | Your partner key. Your server sends it in the `X-API-Key` header to create and read orders. Never put it in a web page. | `X-API-Key` |
+| Order token | What opens an order's checkout: `o_` and the 24 characters of the order's `id`. It only names the order. Anyone who has it can open the order's payment page. | `token`; the payment page is `payUrl` |
+| API key | Your partner key. Your server sends it in the `X-API-Key` header to create and read orders. The key is 64 characters, 0-9 and a-f. Never put it in a web page. | `X-API-Key` |
+| Customer | Your own id for a buyer, with an optional name and email, kept for your records. | `customer` |
 | Payment link | A link for one payment that you make in the portal or that your server signs: `https://www.unigox.com/pay/{token}`. Its token holds the amount, the reference and the payment addresses. | The token: [The link format](https://developers.unigox.com/tutorials/crypto-checkout-links#the-link-format) |
 | Checkout | What the payer sees when an order or a payment link opens: on a Unigox page (the payment page), in a window over your page, or inside your page. | `checkout.js` |
 | Reference | For an order, your order number. For a payment link, the text that names your order, for example `NW-20418 · 250.00 USD`; only your wallet can read it back. | `reference` on an order; `memo` on a link |
@@ -26,13 +27,15 @@ Each word has one meaning on every page. The last column is its name in the API,
 | Credited | The money is in your Unigox wallet. Only a credited payment counts as paid. | `credited` on an order's payment; `status: "DONE"` with `subStatus: "COMPLETED"` and no `refund` on a transfer |
 | Unigox wallet | Your balance at Unigox, and its `0x` address. It receives every payment and owns your payment addresses. | `wallet`, `recipientAddress` |
 | Allowance | How far short a payment may be and still count as paid: 0.5 % of the amount, and never more than 1.00 USD. | `tol` in a link's token; `tolerance` in the examples |
-| Pay-by date | The time the payer is asked to pay by. An order stops taking payments at it; a link's page only shows it. | `expiresAt` on an order; `x` in a link's token |
+| Pay-by date | The time the payer is asked to pay by. At it an order's page stops showing its addresses; a transfer sent up to 15 minutes later still counts. A link's page only shows it. | `expiresAt` on an order; `x` in a link's token |
+| Ended | An order has ended when Unigox found it paid, you closed it, or its time ran out. | `closedAt` |
+| Payment period | From one minute before the order was created until 15 minutes after it ended. A transfer sent in it counts for the order. | none |
 | Deposit page | A page with one customer's permanent payment addresses. It has no amount due. | `p: "topup"` in the token |
 | Link check | The request the payment page makes before it shows an address: is this address still reserved for this link? | [Link check](https://developers.unigox.com/api-reference/payment-addresses#link-check) |
 
 ## Orders API
 
-Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a request signed in to the portal instead answers `403 api_key_required`. The API reference lists them under **Crypto Processing**.
+Your server calls these with your partner API key in the `X-API-Key` header, at `https://api.unigox.com` (`https://api-staging.unigox.com` on a test account). They take the API key only: a portal session token sent in its place answers `403 api_key_required`. The API reference lists them under **Crypto Processing**.
 
 | Request | What it does |
 | --- | --- |
@@ -55,11 +58,11 @@ Every answer is `{"status": "…", "code": <HTTP status>, "data": {…}}`. The o
 | `merchantName` | No | The name the payer sees, up to 64 characters. Without it the payer sees your partner account's name, written as the portal writes it (`acme-shop-12` becomes `Acme shop`). The name under **Settings → Shown to the payer as** is kept in your browser, so orders never use it: send `merchantName` with every order. |
 | `currency` | No | `"USD"`. Orders are in USD; any other value answers `400` with `field` `currency`. |
 | `description` | No | Text about the order for the payer, up to 140 characters. |
-| `customer` | No | `{"id": "…", "name": "…", "email": "…"}`. `id` is your own id for the customer, 1 to 64 characters (one with `/` in it cannot be read back by its path, so avoid `/`); `name` is up to 120 characters; `email` up to 254 and must look like an email address, or be `""`. The customer is created, or their name and email updated; a field you leave out keeps its stored value, and `""` clears it. |
+| `customer` | No | `{"id": "…", "name": "…", "email": "…"}`. `id` is required when you send `customer`: your own id for the customer, 1 to 64 characters (one with `/` in it cannot be read back by its path, so avoid `/`); `name` is up to 120 characters; `email` up to 254 and must look like an email address, or be `""`. The customer is created, or their name and email updated; a field you leave out keeps its stored value, and `""` clears it. |
 | `expiresInMinutes` | No | How long the order takes payments: 5 to 10,080 minutes (7 days). Default 60. |
 | `returnUrl` | No | An `https://` page of your site, up to 2,048 characters, without a user name or password. The payment page offers it as a link back to you and never opens it by itself. |
 
-Texts the payer reads (`merchantName`, `reference`, `description` and the customer's fields) refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069). Spaces at either end of these texts are removed. Fields the API does not know are ignored.
+These texts refuse control characters, line breaks among them, and the characters that change the direction of text (U+202A to U+202E, U+2066 to U+2069): `merchantName`, `reference` and `description`, which the payer reads, and the customer's fields, which only you read. Spaces at either end of these texts are removed. Fields the API does not know are ignored.
 
 ### The order
 
@@ -96,18 +99,20 @@ A transfer counts for the order when it was sent between one minute before the o
 
 | `status` | What it means | Ship? |
 | --- | --- | --- |
-| `open` | Nothing credited yet. Before `expiresAt` the order takes payments. In the 15 minutes after `expiresAt`, `open` means a transfer sent in time is still on its way. | No. Wait. |
+| `open` | Nothing credited yet. Before `expiresAt` the order takes payments. In the 15 minutes after `expiresAt`, `open` means a transfer is on its way and not credited yet. | No. Wait. |
 | `partly_paid` | Some money credited, short of the amount by more than the allowance. Before `expiresAt` the payer can send the rest, on any network the order offers. | No. Wait. |
-| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It never goes back to another status; a later credit inside the window can make it `overpaid`. | Yes |
+| `paid` | The amount credited, or short of it by at most 0.5 % and never more than 1.00 USD. It never goes back to another status; a later credit inside the payment period can make it `overpaid`. | Yes |
 | `overpaid` | More than the amount credited. The extra is in your wallet. | Yes. Settle the extra with your customer. |
-| `expired` | The time ran out before the order was paid; `received` says what came. In the 15 minutes after `expiresAt`, an order with nothing credited and nothing on its way already reads `expired`. 15 minutes after `expiresAt`, every order that is still `open` or `partly_paid` ends as `expired`, whatever came and whatever is still on its way. | No. If `received` is above `"0.00"`, settle that part with your customer. |
+| `expired` | The time ran out before the order was paid. From `expiresAt` it reads `expired` when nothing is credited and nothing is on its way; 15 minutes after `expiresAt` it reads `expired` in every other unpaid case too. `received` says what came. | No. If `received` is above `"0.00"`, settle that part with your customer. |
 | `closed` | You closed the order before it was paid. `received` says what came. | No |
 
-**When a status is final.** A transfer counts for an order when it was sent inside the order's window: from one minute before the order was created until 15 minutes after it ended. A transfer sent inside the window that is credited later still counts, also after the order has ended. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`. A status is final once the window has passed and none of the order's `payments` is `pending` or `on_hold`.
+**When a status is final.** A transfer counts for an order when it was sent inside the order's payment period: from one minute before the order was created until 15 minutes after it ended. A transfer sent inside the payment period that is credited later still counts, also after the order has ended. So `expired` and `closed` turn `paid` or `overpaid` when such a transfer brings the order to its amount, and `paid` can turn `overpaid`. An order is final when `closedAt` is set, 15 minutes have passed since it, and none of its `payments` is `pending` or `on_hold`.
 
 An order that is not paid gives up its addresses 15 minutes after `expiresAt` at the latest; they then rest 24 hours.
 
 ### Customers
+
+A customer is your own id for a buyer, with an optional name and email. It is for your records: the payment page never shows it. You get it back in the order's `customer`, in `GET /api/v1/partner/crypto/customers/{external_id}` with the buyer's latest 20 orders, and in the portal's **Payments** beside the order's payments. Leave `customer` out for a guest: the order's `customer` is then `null`. Unigox stores the id, name and email as you sent them; `""` clears a name or an email, and the API has no request that deletes a customer. Anyone who has an order's `payUrl` can read your name, the reference, the description, the amount and how much was received: put no personal data in `reference` or `description`.
 
 `PUT /api/v1/partner/crypto/customers/{external_id}` takes `{"name": "…", "email": "…"}`, both optional, with the same limits as an order's `customer`: a field you leave out keeps its stored value, and `""` clears it. Send `{}` to create a customer with only an id; a request without a body answers `400` with `field` `body`. A refused value names `customer.id` (the id in the path), `customer.name` or `customer.email`. An id with `/` in it cannot be used in the path, even URL-encoded (`404` with a plain-text body): give customers ids without `/`. The answer (`customer_saved`) is `{"id", "name", "email", "createdAt", "updatedAt"}`. `GET` on the same path answers `customer_retrieved` with the same fields and `orders`: the customer's latest 20 orders, newest first, each without `customer` and `payments`.
 
@@ -116,8 +121,8 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 | HTTP | `details` | What to do |
 | --- | --- | --- |
 | 400 | `validation_order_request_invalid` | `field` names the value: `body` (not a JSON object, anything after the object, a field of the wrong type, such as a number for `reference` or `5.5` for `expiresInMinutes`, or over 64 KB), `merchantName`, `currency`, `reference`, `amount`, `description`, `customer.id`, `customer.name`, `customer.email`, `expiresInMinutes` or `returnUrl`. Fix it and send again. |
-| 401 | none | No `X-API-Key` header, or a key Unigox does not know. The body is `{"success": false, "error": "…"}`, with the reason as text. |
-| 403 | `api_key_required` | The request was signed in to the portal, not made with your API key. The body is `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. Send the request from your server with `X-API-Key`. |
+| 401 | none | No `X-API-Key` header: `{"success": false, "error": {"code": "UNAUTHORIZED", "message": "missing X-API-Key header"}}`. A key Unigox does not know: `{"success": false, "error": "invalid API key"}`. `error` is an object in the first and a string in the second. |
+| 403 | `api_key_required` | The request carried a portal session token in `X-API-Key`, not your API key. The body is `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. Send the request from your server with `X-API-Key`. |
 | 403 | none | Your partner access is suspended: `{"success": false, "error": "partner access is suspended"}`. Write to support@unigox.com. |
 | 403 | `merchant_unverified_limit` | Your business is not verified and has received 1,000 USD in total. Verify your business in the portal. Orders created before keep taking payments, and a repeat of one of them (same `reference` and `amount`) still answers `200`. |
 | 404 | `order_not_found` | You have no order with this id. |
@@ -127,7 +132,10 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 | 409 | `merchant_wallet_missing` | The account behind this API key has no Unigox wallet to receive payments. Write to support@unigox.com. |
 | 409 | `order_already_paid` | A `paid` or `overpaid` order cannot be closed, also one paid at the moment you close it. Ship it. |
 | 500 | `internal_error` | Send the request again later. A repeated create with the same `reference` and `amount` never makes a second order. |
+| 502 | none | Unigox could not reach its order service: `{"success": false, "data": {"error_key": "backend_service_unavailable"}}`. Send the request again later; a repeated create with the same `reference` and `amount` never makes a second order. |
 | 503 | `merchant_limit_unavailable` | Unigox could not check how much you may still receive before verification, so no order was created. Send the request again later. |
+
+These five requests have no request limit of their own today. That can change: treat `429` as wait and send again.
 
 ## Networks and coins
 
@@ -165,7 +173,7 @@ An order that is not paid gives up its addresses 15 minutes after `expiresAt` at
 | Order amount | 1.00 USD to 999,999,999,999.99 USD, up to two decimals |
 | Order time | 5 to 10,080 minutes (7 days); 60 minutes when you send none |
 | Addresses an order holds | One per address type, from its creation until it ends. Each then rests 24 hours before another order can take it. |
-| Addresses kept ready for orders | The portal adds addresses while you are signed in with **Crypto processing** open, as the account whose wallet receives your orders' payments; a team member signed in with another account adds none. It keeps 10 free addresses of each type, up to 200 of each type in all. Addresses that have rested become free again on their own; new ones are added only while the portal is open. |
+| Addresses kept ready for orders | 10 free addresses of each type, at most 200 of each type in all. Added only while the portal is open under the account whose wallet receives the payments; a team member's own account adds none. Rested addresses become free without the portal. |
 | Orders a day | Each address serves one order, then rests 24 hours. 200 addresses of a type serve about 190 orders of 60 minutes a day, and fewer when orders take longer. Write to support@unigox.com if you need more. |
 | A late transfer | Counts for the order up to 15 minutes after the order ends |
 | Customer's orders returned with the customer | The latest 20 |
@@ -232,7 +240,7 @@ The API address and the link check address can change: keep both in your configu
 ## Changes
 
 - **2026-11-26, orders:** every payment on your website is a new order that your server creates with your API key (`POST /api/v1/partner/crypto/orders`) and reads to confirm. The checkout is no longer tied to one payment link, and the website no longer needs your wallet's key. Payment links, invoices and deposit pages stay as they were. Money: an order is paid by the same rule as a link, short by at most 0.5 % and never more than 1.00 USD.
-- **2026-11-26:** the guide is rewritten in plainer words, with [Words this guide uses](#words-this-guide-uses). The onboarding no longer asks whether you can link payments to customers. The limit before verification shows on every page. Money: no change.
+- **2026-11-26:** the onboarding no longer asks whether you can link payments to customers. The limit before verification shows on every page. Money: no change.
 - **2026-11-25:** the guide is rewritten around tasks. Crypto processing opens before verification, up to 1,000 USD received. Money: no change to how payments are credited.
 - **2026-11-15:** portal setup starts in **Checkout**; invoice links keep their document in the checkout; several transfers in one Solana transaction can be listed. Money: listing a transfer never counts it as a credit.
 - **2026-11-02:** `checkout.d.ts` lists the `onClose` reason `return`. Money: no change.

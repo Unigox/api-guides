@@ -137,8 +137,10 @@ tags:
 
       Every answer is `{status, code, data}`. An error is `{status, code, details}`, with `field` on a
       `400`. These routes take the API key only: a request signed in to the portal instead answers
-      `403` with `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. A missing
-      or unknown API key answers `401`, and a suspended partner `403`, both as
+      `403` with `{"status": "order_failed", "code": 403, "details": "api_key_required"}`. A request
+      with no `X-API-Key` header answers `401` with
+      `{"success": false, "error": {"code": "UNAUTHORIZED", "message": "missing X-API-Key header"}}`;
+      an unknown key answers `401`, and a suspended partner `403`, as
       `{"success": false, "error": "…"}`. The step-by-step guide is [Crypto processing](https://developers.unigox.com/tutorials/crypto-checkout).
     x-page-icon: coins
   - name: Orders
@@ -7577,7 +7579,7 @@ paths:
         another `amount` answers `409 order_reference_conflict`. Use a new `reference` for a new
         attempt. An order that is not paid frees its `reference` 15 minutes after its `expiresAt`, or
         when you close it; a request with that `reference` then creates a new order. An order that was
-        closed or expired and then receives its amount inside its window reads `paid` and holds its
+        closed or expired and then receives its amount inside its payment period reads `paid` and holds its
         `reference` again, unless a newer order has taken it.
 
         Amounts are USD. One USDT, USDC, USDG or USDT0 counts as 1 USD.
@@ -12405,7 +12407,7 @@ components:
           enum: [open, partly_paid, paid, overpaid, expired, closed]
           description: |
             - `open`: nothing credited yet. Before `expiresAt` the order takes payments; in the 15
-              minutes after it, `open` means a transfer sent in time is still on its way.
+              minutes after it, `open` means a transfer is on its way and not credited yet.
             - `partly_paid`: less than the amount credited, short by more than the allowance. Before
               `expiresAt` the payer can still send the rest.
             - `paid`: the amount credited, or short of it by at most 0.5 % and never more than 1.00 USD.
@@ -12418,13 +12420,13 @@ components:
             - `closed`: you closed it before it was paid; `received` says what came.
 
             `expired` and `closed` turn `paid` or `overpaid` when a transfer sent inside the order's
-            window is credited later. A status is final once the window has passed and none of the
-            order's `payments` is `pending` or `on_hold`.
+            payment period is credited later. A status is final once `closedAt` is set, 15 minutes
+            have passed since it, and none of the order's `payments` is `pending` or `on_hold`.
         received:
           type: string
           description: |
             USD credited to the order so far: the sum of its `credited` payments (transfers to its
-            addresses inside its window), with two to six decimals. `"0.00"` on a new order.
+            addresses inside its payment period), with two to six decimals. `"0.00"` on a new order.
           example: "25.00"
         createdAt:
           type: string
@@ -12655,8 +12657,10 @@ components:
         error:
           type: string
           description: |
-            The reason, as text. Without a key: `"missing API key. Provide X-API-Key header or
-            Authorization: Bearer token"`. With a key Unigox does not know: `"invalid API key"`. A
+            The reason. Without an `X-API-Key` header the whole answer is
+            `{"success": false, "error": {"code": "UNAUTHORIZED", "message": "missing X-API-Key header"}}`:
+            `error` is an object. With a key Unigox does not know it is
+            `{"success": false, "error": "invalid API key"}`: `error` is text. A
             suspended partner gets `403` with `"partner access is suspended"`.
 
   parameters:

@@ -1,12 +1,12 @@
 # Crypto processing: get started
 
-> **Not available yet.** This page describes crypto processing ahead of its release. Until this notice is gone, `https://www.unigox.com/checkout.js`, the help pages and the link check it names can answer 404. Once released, crypto processing is in early access, turned on per business.
+> **Not available yet.** Crypto processing is not released: `https://www.unigox.com/checkout.js` and the other addresses on this page can answer 404 until it is. Once released, crypto processing is in early access, turned on per business.
 
 > **Crypto processing guide:** **Get started** · [Website checkout](https://developers.unigox.com/tutorials/crypto-checkout-embed) · [Confirm payments](https://developers.unigox.com/tutorials/crypto-checkout-confirm) · [Deposit pages and signed links](https://developers.unigox.com/tutorials/crypto-checkout-links) · [Test and go live](https://developers.unigox.com/tutorials/crypto-checkout-testing) · [Reference](https://developers.unigox.com/tutorials/crypto-checkout-reference)
 
 Crypto processing lets your customers pay you in USDT, USDC, USDG and USDT0 on 13 networks. Unigox shows the payer the amount, the address and the progress of the transfer, so you do not build a payment page. Each payment arrives in your Unigox wallet (your balance at Unigox) in the coin the customer sent: Unigox does not convert it.
 
-This page shows how to open crypto processing for your business, the shortest way to take payments on your website, and how to create a payment link, an invoice and a customer's deposit addresses in the portal, which needs no code. The other pages give the developer of your website every detail. The guide uses each of its terms in one meaning: [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
+This page shows how to open crypto processing for your business, the shortest way to take payments on your website, and how to create a payment link, an invoice and a customer's deposit addresses in the portal, which needs no code. The other pages give the developer of your website every detail. The guide's terms: [Words this guide uses](https://developers.unigox.com/tutorials/crypto-checkout-reference#words-this-guide-uses).
 
 ## Pick your task
 
@@ -46,21 +46,21 @@ Creating an order or a link and opening a checkout move no money. A message the 
 
 <figure><img src="assets/crypto-processing/onboarding.gif" alt="Business onboarding: Crypto processing, then the questions of Before you start accepting crypto, filled in for a sample company"><figcaption><p>The crypto processing questions in business onboarding (sample answers).</p></figcaption></figure>
 
-Until your business is verified, you can receive up to 1,000 USD in total. A band at the top of every **Crypto processing** page shows how much of it you have received, with the **Verify business** button. Once you reach 1,000 USD, you cannot create orders, payment links, invoices or deposit addresses until your business is verified. Payments to the ones you already created still arrive.
+Until your business is verified, you can create orders, payment links, invoices and deposit addresses only while you have received less than 1,000 USD in total. The check is made when you create one: an order of any amount can be created below 1,000 USD, and payments to what you already created still arrive. A band at the top of every **Crypto processing** page shows how much of it you have received, with the **Verify business** button. Once you reach 1,000 USD, you cannot create orders, payment links, invoices or deposit addresses until your business is verified. Payments to the ones you already created still arrive.
 
 ## What you need
 
 To take payments from the portal you need only **Crypto processing in your business portal** ([Open crypto processing](#open-crypto-processing)). A developer who connects your website also needs:
 
 - **Your partner API key.** Your server sends it in the `X-API-Key` header to create and read orders, at `https://api.unigox.com`. Step 1 of [Your website in four steps](#your-website-in-four-steps) shows where to get it. Keep it on your server, never in a web page or a repository.
-- **The portal open now and then.** Each order takes payment addresses that the portal reserves while you are signed in with **Crypto processing** open, as the account whose wallet receives the payments ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
+- **The portal open while you sell.** The portal keeps 10 free payment addresses of each address type and adds more only while **Crypto processing** is open in a browser, signed in as the account whose wallet receives the payments. Each order takes one of each type. With the portal closed your server can create 10 orders; the next answers `409 no_free_addresses` until the portal is open again or an address has rested 24 hours after its order ([Limits](https://developers.unigox.com/tutorials/crypto-checkout-reference#limits)).
 
 Deposit pages, links your server signs and your payment history need two more things:
 
 - **The API address**, which **Developers → Environment** shows as **API address**. It can change, so keep it in your configuration, not in your code. The examples call it `UNIGOX_PAYMENTS_API`.
 - **Your wallet's private key**, to sign those requests. Unigox gives you the key on request (**Developers → Confirm payments on your server → Ask for the key**). This key can move your whole balance. Keep it in a secrets store on the server that signs, never in browser code or a repository. Keep the wallet's balance low: move the money you collect out regularly. **Developers → Environment** shows your wallet's address as **Your Unigox wallet**.
 
-Unigox does not send payment notifications (webhooks) to your server yet. Your server reads each order itself: when the customer returns to your site, and from a job that runs every few minutes.
+Unigox sends no payment notifications yet: [Payment notifications](https://developers.unigox.com/tutorials/crypto-checkout-reference#payment-notifications).
 
 ## The portal
 
@@ -89,7 +89,9 @@ These settings are stored in your browser, not in your account. They go into eve
 
 You add this once. Every payment is then a new order that your server creates.
 
-**1. Create your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Create API key** and confirm. The key appears there on the page; copy it: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Creating a key again replaces it, and a server that still sends the old key gets `401` at once. It is the one API key of your Unigox account: if another integration of yours calls the partner API, give it the new key too. Leave **Crypto processing** open for a few minutes the first time, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`.
+**1. Create your API key.** Open **Crypto processing → Checkout** and pick **Payment button**. Under **3. Create the order on your server**, press **Create API key** and confirm. Anyone signed in to your business's portal can create it. The key appears there on the page; copy it: it is shown only once. Keep it on your server as `UNIGOX_API_KEY`. Creating a key again replaces it, and a server that still sends the old key gets `401` at once. It is the one API key of your Unigox account: if another integration of yours calls the partner API, give it the new key too.
+
+**Before the first order, let the portal prepare addresses.** Leave **Crypto processing** open for a few minutes, signed in as the account whose wallet receives the payments: the portal reserves the addresses your orders will take. Until it has reserved some, creating an order answers `409 no_free_addresses`. With the portal closed your server can create 10 orders ([What you need](#what-you-need)).
 
 **2. Put the checkout on your page.** The button asks your server for an order on its first press and opens the checkout over your page:
 
@@ -142,22 +144,32 @@ import express from "express";
 
 const app = express();
 const UNIGOX_API = "https://api.unigox.com";
+// One POST to the orders API: "orders" with the order's fields, or "orders/{id}/close" with no body.
+const unigoxPost = (path, json) => fetch(`${UNIGOX_API}/api/v1/partner/crypto/${path}`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
+  ...(json ? { body: JSON.stringify(json) } : {}),
+  signal: AbortSignal.timeout(10_000),
+});
 
 app.post("/your-server/crypto-order", async (req, res) => {
   const cart = await yourCart(req); // your own order, e.g. { id: "A-1001", total: "25.00", customerId: "cus-77" }
-  const response = await fetch(`${UNIGOX_API}/api/v1/partner/crypto/orders`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-API-Key": process.env.UNIGOX_API_KEY },
-    body: JSON.stringify({
-      merchantName: "Northwind",         // the name the payer sees
-      // The same reference returns the same order. A new attempt needs a new one, such as "A-1001-2".
-      reference: cart.id,                // your order number, at most 64 characters
-      amount: cart.total,                // USD as a string, such as "25.00"
-      ...(cart.customerId ? { customer: { id: cart.customerId } } : {}), // optional: leave it out for a guest
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  const body = await response.json().catch(() => null);
+  const order = {
+    merchantName: "Northwind",         // the name the payer sees
+    // The same reference returns the same order, so a retry or a second press never makes a second one.
+    reference: cart.id,                // your order number, at most 64 characters
+    amount: cart.total,                // USD as a string, such as "25.00"
+    ...(cart.customerId ? { customer: { id: cart.customerId } } : {}), // optional: leave it out for a guest
+  };
+  let response = await unigoxPost("orders", order);
+  let body = await response.json().catch(() => null);
+  // A repeat (200) can return this cart's earlier order after its time ran out: it reads "expired" and takes no
+  // payment. Close it, which frees the reference at once, and create the order again.
+  if (response.status === 200 && body?.data?.status === "expired") {
+    await unigoxPost(`orders/${body.data.id}/close`);
+    response = await unigoxPost("orders", order);
+    body = await response.json().catch(() => null);
+  }
   if (!response.ok) {
     console.error("Unigox order not created:", response.status, body?.details, body?.field);
     return res.status(502).end(); // your page tells the payer the payment could not be started
