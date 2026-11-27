@@ -643,7 +643,8 @@ Use this only if you cannot load `checkout.js`. Serve your page over HTTPS (or `
     frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-to-custom-protocols");
     frame.allow = "clipboard-write";
     frame.referrerPolicy = "strict-origin-when-cross-origin";
-    frame.style.cssText = "width:100%;max-width:480px;height:560px;border:0;color-scheme:normal";
+    // Start at the height of the checkout's first step, so the frame does not jump when the checkout reports its height.
+    frame.style.cssText = "width:100%;max-width:480px;height:1160px;border:0;color-scheme:normal";
     let visible = true;
     // The link to the hosted page shows only while the frame cannot: 10 seconds without READY, or a frame that fails.
     if (fallback) {
